@@ -62,6 +62,23 @@ canvas {
   width: 50%;
   flex: 0 0 50%;
   transform-origin: top left;
+  transition: transform 200ms ease-out;
+}
+
+.hud-play-jug--bump {
+  animation: hud-jug-bump 220ms ease-out;
+}
+
+@keyframes hud-jug-bump {
+  0% {
+    transform: scale(var(--jug-scale, 1));
+  }
+  40% {
+    transform: scale(calc(var(--jug-scale, 1) * 1.12));
+  }
+  100% {
+    transform: scale(var(--jug-scale, 1));
+  }
 }
 
 .hud-currency-strip {
@@ -869,6 +886,12 @@ canvas {
 .tree-node__badge--ready {
   color: #142010;
   background: #9ee86a;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.tree-node__badge--ready:active {
+  transform: translateX(-50%) scale(0.92);
 }
 
 .tree-node__badge--locked,

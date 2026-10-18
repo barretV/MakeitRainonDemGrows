@@ -262,10 +262,6 @@ export function TreeNodeCloud({
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
-        if (node.afford) {
-          onBuy();
-          return;
-        }
         onPick();
       }}
       className={`tree-node tree-node--${state} tree-node--${shape}${picked ? ' tree-node--picked' : ''}${node.id === 'puff' ? ' tree-node--center' : ''}`}
@@ -307,7 +303,24 @@ export function TreeNodeCloud({
         )}
       </div>
       {badge && (
-        <span className={`tree-node__badge tree-node__badge--${state === 'ghost' ? 'locked' : state}`}>{badge}</span>
+        <span
+          role={state === 'ready' ? 'button' : undefined}
+          tabIndex={state === 'ready' ? 0 : undefined}
+          className={`tree-node__badge tree-node__badge--${state === 'ghost' ? 'locked' : state}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (state === 'ready') onBuy();
+          }}
+          onKeyDown={(e) => {
+            if (state === 'ready' && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault();
+              e.stopPropagation();
+              onBuy();
+            }
+          }}
+        >
+          {badge}
+        </span>
       )}
       {showRank && <span className="tree-node__rank">{node.level}/{node.max}</span>}
     </button>

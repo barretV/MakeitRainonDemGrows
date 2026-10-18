@@ -73,21 +73,20 @@ export const NODE_IDS: readonly NodeId[] = [
   'twist',
 ];
 
-/** Greedy campaign order. A node is skipped until its parent rank is high enough and the player can afford the next rank. */
-/** Workshop “next up” order — interleave branches for ebb/flow (mirrors balance/game_constants.py). */
+/** Workshop “next up” + sim buy order (mirrors balance/upgrades.json via dump-upgrades). */
 export const PRIORITY: readonly NodeId[] = [
   'puff',
   'bottle',
   'flask',
-  'reach',
-  'circle',
+  'reservoir',
   'drizzle',
   'specks',
+  'reach',
+  'circle',
+  'mist',
+  'soak',
   'charm',
   'dew',
-  'soak',
-  'reservoir',
-  'mist',
   'wide',
   'bounty',
   'linger',
@@ -242,7 +241,7 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'reach',
     kind: 'gate',
     name: 'Reach',
-    desc: 'Open the reach petal. The circle can grow past the puff.',
+    desc: 'Open the reach petal. Grow your bottle first — then widen the rain circle.',
     max: 1,
     color: '#b6e86a',
     costs: [12],

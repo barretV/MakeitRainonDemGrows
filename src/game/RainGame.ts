@@ -451,9 +451,11 @@ export class RainGame {
           void main() {
             vec2 p = vUv * 2.0 - 1.0;
             float d = length(p);
+            float fill = smoothstep(1.0, 0.15, d) * 0.22;
             float rim = smoothstep(1.0, 0.86, d) * smoothstep(0.72, 0.86, d);
-            if (rim < 0.02) discard;
-            gl_FragColor = vec4(vec3(0.7, 0.92, 1.0), rim * 0.55);
+            if (fill + rim < 0.02) discard;
+            vec3 col = mix(vec3(0.45, 0.95, 0.62), vec3(0.7, 0.92, 1.0), rim);
+            gl_FragColor = vec4(col, fill + rim * 0.65);
           }
         `,
       }),

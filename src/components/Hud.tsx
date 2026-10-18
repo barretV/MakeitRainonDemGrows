@@ -39,10 +39,12 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
   const playing = model.screen === 'play';
   const plantTotal = model.stats.tiles;
   const dewNow = walletDew(model.dew);
-  const bumpRef = useRef({ dew: dewNow, plants: plantTotal });
+  const bumpRef = useRef({ dew: dewNow, plants: plantTotal, liters: model.liters });
   const bumpDew = dewNow > bumpRef.current.dew;
   const bumpPlants = plantTotal > bumpRef.current.plants;
-  bumpRef.current = { dew: dewNow, plants: plantTotal };
+  const bumpLiters = model.liters > bumpRef.current.liters;
+  bumpRef.current = { dew: dewNow, plants: plantTotal, liters: model.liters };
+  const jugScale = 0.88 + Math.min(0.22, Math.max(0, (model.liters - 260) / 900) * 0.22);
 
   return (
     <div className="pointer-events-none absolute inset-0">
@@ -50,7 +52,10 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
         <>
           <div className="hud-play-stack absolute top-[2%] left-[1.1%] z-10 select-none">
             <div className="hud-play-top">
-              <div className="hud-play-jug">
+              <div
+                className={`hud-play-jug${bumpLiters ? ' hud-play-jug--bump' : ''}`}
+                style={{ transform: `scale(${jugScale})`, ['--jug-scale' as string]: String(jugScale) }}
+              >
                 <Bottle
                   tank={model.tank}
                   slosh={model.slosh}
