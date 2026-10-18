@@ -80,19 +80,25 @@ const TILE_FRAG = /* glsl */ `
     float rip = m.g;
     vec2 local = fract(muv * uMaskSize) - 0.5;
     float d = length(local) * 2.0;
-    float grown = smoothstep(0.84, 0.99, wet);
+    float soak = smoothstep(0.03, 0.2, wet);
+    float moss = smoothstep(0.18, 0.42, wet);
+    float grass = smoothstep(0.38, 0.65, wet);
+    float bloom = smoothstep(0.58, 0.9, wet);
+    float grown = smoothstep(0.82, 0.98, wet);
     vec2 uv = fract(vUv * 2.0);
     vec3 dead = texture2D(uDead, uv).rgb;
     vec3 live = texture2D(uLive, uv).rgb;
-    vec3 damp = mix(dead, dead * vec3(0.52, 0.78, 1.08), clamp(wet, 0.0, 0.98));
+    vec3 damp = mix(dead, dead * vec3(0.48, 0.76, 1.1), soak);
     float cell = fract(sin(dot(floor(muv * uMaskSize), vec2(12.9898, 78.233))) * 43758.5453);
-    damp = mix(damp, vec3(0.4, 0.78, 0.28), step(0.72, cell) * wet * (1.0 - grown));
-    float glisten = step(0.9, fract(cell * 5.0 + uTime * 0.4)) * wet * (1.0 - grown);
+    damp = mix(damp, vec3(0.42, 0.32, 0.22), moss * 0.55);
+    damp = mix(damp, vec3(0.38, 0.72, 0.32), step(0.72, cell) * grass * (1.0 - bloom));
+    float glisten = step(0.9, fract(cell * 5.0 + uTime * 0.4)) * wet * (1.0 - grass);
     damp += vec3(0.7, 0.92, 1.0) * glisten;
-    vec3 col = mix(damp, live, grown);
-    float edge = smoothstep(0.2, 0.0, abs(d - rip * 1.3)) * rip * (1.0 - grown);
-    col += vec3(1.0, 0.96, 0.7) * edge;
-    col += vec3(1.0, 0.9, 0.55) * grown * (0.045 + 0.03 * sin(uTime * 2.6 + muv.x * 48.0));
+    vec3 col = mix(damp, live, grass * 0.85 + grown * 0.35);
+    col = mix(col, live, grown);
+    float edge = smoothstep(0.22, 0.0, abs(d - rip * 1.25)) * rip;
+    col += vec3(1.0, 0.96, 0.7) * edge * (0.5 + soak * 0.4);
+    col += vec3(1.0, 0.9, 0.55) * bloom * (0.06 + 0.04 * sin(uTime * 2.6 + muv.x * 48.0));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -949,6 +955,7 @@ export class RainGame {
       this.track.add(view.bar);
     }
     const flat = !this.globe;
+    const wet = state.hillWet(index);
     view.prop =
       spec.kind === 'seed'
         ? this.billboard(restored ? art.money : art.seed, 1.15, 1.7, 0.2)
@@ -956,6 +963,7 @@ export class RainGame {
           ? null
           : this.propMesh(spec.decor, restored, world);
     if (view.prop) {
+      view.prop.visible = restored || wet > 0.14 || spec.kind === 'seed';
       if (flat) {
         const jx = (((index * 37) % 11) / 11 - 0.5) * TILE * 0.5;
         const jz = (((index * 53) % 13) / 13 - 0.5) * TILE * 0.5;
@@ -1024,11 +1032,28 @@ export class RainGame {
       const view = this.views[i];
       const tile = state.current()[i];
       if (!view || !tile) continue;
-      if (view.bar && state.spec(i).kind === 'pond' && !state.isRestored(i)) {
+      const spec = state.spec(i);
+      if (view.bar && spec.kind === 'pond' && !state.isRestored(i)) {
         view.bar.scale.x = Math.max(0.05, tile.pond);
         view.bar.visible = tile.pond < 1;
       }
-      if (view.prop && state.isRestored(i)) {
+      const wet = state.hillWet(i);
+      const restored = state.isRestored(i);
+      if (view.prop && spec.kind !== 'seed') {
+        view.prop.visible = restored || wet > 0.14;
+        if (view.prop.visible) {
+          const live = restored || wet > 0.68;
+          const map =
+            spec.kind === 'pond'
+              ? null
+              : this.propTexture(spec.decor, live, state.world, false);
+          if (map) (view.prop.material as THREE.MeshBasicMaterial).map = map;
+          const base = Number(view.prop.userData['s']) || 1;
+          const pop = restored ? 1 : clamp(0.32 + wet * 0.78, 0.32, 0.96);
+          view.prop.scale.setScalar(base * pop);
+        }
+      }
+      if (view.prop && restored) {
         view.prop.rotation.z = Math.sin(t * 1.6 + i) * 0.05;
       } else if (view.prop) view.prop.rotation.z *= 0.9;
       if (view.koi) view.koi.position.y = 0.48 + Math.abs(Math.sin(t * 3 + i)) * 0.22;

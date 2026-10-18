@@ -279,7 +279,11 @@ const VOXEL_FRAG = /* glsl */ `
       vec4 m = maskAt(vWorld.xz);
       float wet = m.r;
       float rip = m.g;
-      float grown = step(0.992, wet);
+      float soak = smoothstep(0.03, 0.2, wet);
+      float moss = smoothstep(0.18, 0.42, wet);
+      float grass = smoothstep(0.38, 0.65, wet);
+      float bloom = smoothstep(0.58, 0.9, wet);
+      float grown = smoothstep(0.82, 0.98, wet);
       vec2 slab = vWorld.xz * 1.7;
       vec2 cell = floor(slab);
       vec2 f = fract(slab);
@@ -290,23 +294,26 @@ const VOXEL_FRAG = /* glsl */ `
       float crack = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
       dead = mix(dead * 0.52, dead, smoothstep(0.0, 0.07, crack));
       if (n2 > 0.93) dead *= 0.78;
-      vec3 wetCol = mix(dead * vec3(0.38, 0.52, 0.92), vec3(0.22, 0.48, 0.78), wet);
-      vec3 damp = mix(dead, wetCol, clamp(wet * 1.15, 0.0, 1.0));
-      float glint = step(0.965, fract(n * 7.0 + uTime * 0.45)) * wet * (1.0 - grown);
+      vec3 mud = mix(uDirtA, uDirtB, step(0.45, n));
+      vec3 wetCol = mix(dead * vec3(0.42, 0.58, 0.95), vec3(0.28, 0.52, 0.82), soak);
+      vec3 damp = mix(dead, wetCol, soak);
+      damp = mix(damp, mud * vec3(0.9, 1.05, 0.82), moss * 0.85);
+      float glint = step(0.965, fract(n * 7.0 + uTime * 0.45)) * wet * (1.0 - grass);
       damp += vec3(0.55, 0.85, 1.0) * glint;
       vec3 live = mix(uLiveA, uLiveB, step(0.55, n)) * (0.92 + 0.12 * h21(cell + 8.0));
       float fl = h21(cell + 3.0);
-      if (grown > 0.5) {
-        if (fl > 0.95) {
-          live = fl > 0.985 ? vec3(1.0, 0.92, 0.96) : fl > 0.968 ? vec3(1.0, 0.36, 0.55) : vec3(0.42, 0.7, 1.0);
-        } else if (n2 > 0.9) {
-          live *= 1.18;
-        }
+      vec3 patch = mix(live * 0.55, live, grass);
+      if (bloom > 0.35 && fl > 0.94) {
+        patch = fl > 0.985 ? vec3(1.0, 0.92, 0.96) : fl > 0.968 ? vec3(1.0, 0.42, 0.58) : vec3(0.48, 0.78, 1.0);
+      } else if (n2 > 0.9 && grass > 0.4) {
+        patch *= 1.12;
       }
-      col = mix(damp, live, grown);
+      col = mix(damp, patch, grass * 0.92 + bloom * 0.25);
+      col = mix(col, live, grown);
       vec2 local = fract(vWorld.xz * 3.125) - 0.5;
-      float ring = smoothstep(0.18, 0.0, abs(length(local) * 2.0 - (1.0 - rip) * 1.4));
-      col += vec3(1.0, 0.95, 0.65) * rip * (0.35 + ring * 0.6);
+      float ring = smoothstep(0.22, 0.0, abs(length(local) * 2.0 - (1.0 - rip) * 1.35)) * rip;
+      col += vec3(1.0, 0.95, 0.65) * ring * (0.45 + soak * 0.35);
+      col += vec3(0.75, 1.0, 0.85) * bloom * 0.08 * sin(uTime * 3.2 + vWorld.x * 2.0);
       vec2 vf = fract((vWorld.xz - uBoard.xy) / ${VOX.toFixed(2)});
       float seam = step(vf.x, 0.04) + step(vf.y, 0.04);
       col *= 1.0 - min(seam, 1.0) * 0.06;
@@ -347,11 +354,12 @@ const FLORA_VERT = /* glsl */ `
   void main() {
     vec2 muv = clamp((aSpot.xz - uBoard.xy) / uBoard.zw, 0.0, 0.9999);
     vec4 m = texture2D(uMask, (floor(muv * uMaskSize) + 0.5) / uMaskSize);
-    float grown = step(0.999, m.r);
+    float wet = m.r;
+    float grown = smoothstep(0.32, 0.88, wet);
     float frame = mix(aFrame.x, aFrame.y, grown);
     float hidden = step(2.5, frame) * step(frame, 3.5);
     float pop = 1.0 + m.g * 0.9;
-    float size = aSpot.w * pop * (1.0 - hidden) * mix(0.8, 1.0, grown);
+    float size = aSpot.w * pop * (1.0 - hidden) * mix(0.15, 1.0, grown);
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     float sway = sin(uTime * 1.8 + aSpot.x * 3.0 + aSpot.z * 2.0) * 0.06 * grown * position.y;
     vec3 wp = aSpot.xyz + right * (position.x + sway) * size + vec3(0.0, position.y * size, 0.0);

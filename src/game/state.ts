@@ -390,6 +390,28 @@ export class SaveState {
     return this.green[index] === true;
   }
 
+  /** Average mask soak for one board tile (0–1). Drives staged props before the hill is "green". */
+  hillWet(index: number): number {
+    const { cols, rows } = gridOf(this.world);
+    const { cols: maskCols, rows: maskRows } = maskOf(this.world);
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const c0 = Math.floor((col / cols) * maskCols);
+    const c1 = Math.floor(((col + 1) / cols) * maskCols);
+    const r0 = Math.floor((row / rows) * maskRows);
+    const r1 = Math.floor(((row + 1) / rows) * maskRows);
+    const hp = cellHp(this.world);
+    let sum = 0;
+    let seen = 0;
+    for (let r = r0; r < r1; r += 1) {
+      for (let c = c0; c < c1; c += 1) {
+        seen += 1;
+        sum += Math.min(hp, this.progress[r * maskCols + c] ?? 0) / hp;
+      }
+    }
+    return seen > 0 ? sum / seen : 0;
+  }
+
   spec(index: number): TileSpec {
     const tiles = this.current();
     return tileSpec(this.world, index, tiles.length);
@@ -506,17 +528,23 @@ export class SaveState {
         if (respectPatches && this.ranks.specks >= 2 && hash01(c + 19, r + 3) > gate + edge * 0.28) continue;
         const index = r * cols + c;
         if ((this.progress[index] ?? 0) >= hp) continue;
+        const was = this.progress[index] ?? 0;
         let crit = false;
-        if ((this.progress[index] ?? 0) <= 0 && Math.random() < critChance(this.ranks)) {
+        if (was <= 0 && Math.random() < critChance(this.ranks)) {
           this.progress[index] = hp;
           crit = true;
           crits += 1;
         } else {
           // Full soak on every speck in the disc. The rim hash already keeps early rain to a few cells, and a bottle has to finish those cells or the run banks nothing.
-          this.progress[index] = Math.min(hp, (this.progress[index] ?? 0) + amount);
+          this.progress[index] = Math.min(hp, was + amount);
         }
-        const done = (this.progress[index] ?? 0) >= hp;
-        const byte = done ? 255 : Math.min(254, Math.floor(((this.progress[index] ?? 0) / hp) * 254));
+        const now = this.progress[index] ?? 0;
+        if (now > was) {
+          this.splashRipple(index);
+          this.bleedMask(c, r, cols, rows, (now - was) * 0.14, hp, respectPatches, gate);
+        }
+        const done = now >= hp;
+        const byte = done ? 255 : Math.min(254, Math.floor((now / hp) * 254));
         const pixel = index * 4;
         this.pixels[pixel] = byte;
         if (done) {
@@ -548,6 +576,54 @@ export class SaveState {
       minR: Math.max(0, Math.floor(Math.min(a.r, b.r))),
       maxR: Math.min(rows - 1, Math.ceil(Math.max(a.r, b.r))),
     };
+  }
+
+  private splashRipple(index: number): void {
+    const pixel = index * 4 + 1;
+    const g = this.pixels[pixel] ?? 0;
+    if (g < 210) {
+      this.pixels[pixel] = 220;
+      this.ripples += 1;
+    }
+    this.maskDirty = true;
+  }
+
+  private bleedMask(
+    c: number,
+    r: number,
+    cols: number,
+    rows: number,
+    amount: number,
+    hp: number,
+    respectPatches: boolean,
+    gate: number,
+  ): void {
+    if (amount <= 0.001) return;
+    const neighbors = [
+      [c - 1, r],
+      [c + 1, r],
+      [c, r - 1],
+      [c, r + 1],
+    ];
+    for (const pair of neighbors) {
+      const nc = pair[0];
+      const nr = pair[1];
+      if (nc === undefined || nr === undefined) continue;
+      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+      if (respectPatches && hash01(nc, nr) < gate) continue;
+      const i = nr * cols + nc;
+      const was = this.progress[i] ?? 0;
+      if (was >= hp) continue;
+      const cap = hp * 0.94;
+      const next = Math.min(cap, was + amount);
+      if (next <= was) continue;
+      this.progress[i] = next;
+      const byte = Math.min(254, Math.floor((next / hp) * 254));
+      const pixel = i * 4;
+      this.pixels[pixel] = byte;
+      this.splashRipple(i);
+      this.maskDirty = true;
+    }
   }
 
   private maskPos(x: number, z: number, cols: number, rows: number): { c: number; r: number } {
