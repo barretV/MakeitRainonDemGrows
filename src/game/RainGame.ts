@@ -224,6 +224,8 @@ export class RainGame {
   private camGroundY = 1;
   private camZoom = 1;
   private camZoomPulse = 0;
+  /** Smoothed follow distance multiplier as Cloud Puff grows (1 = day-one size). */
+  private camGrowPull = 1;
   private skyLift = 0;
   private readonly skyBase = new THREE.Color();
   private readonly pointers = new Map<number, { x: number; y: number }>();
@@ -974,7 +976,7 @@ export class RainGame {
     const sky = this.globe ? '#24356e' : worldDef(world).skyMid;
     this.scene.background = this.globe ? new THREE.Color(sky) : (art.skies[world] ?? new THREE.Color(sky));
     this.skyBase.copy(this.scene.background as THREE.Color);
-    const dist = this.frameDist();
+    const dist = this.frameDist(0);
     this.scene.fog = this.globe ? new THREE.Fog(sky, 18, 48) : new THREE.Fog(sky, dist * 1.05, dist * 2.65);
     this.mountain.visible = false;
     for (const peak of this.peaks) peak.visible = false;
@@ -1528,7 +1530,7 @@ export class RainGame {
     this.shake *= Math.exp(-Math.max(dt, 0) * 3.5);
     const jx = (Math.random() - 0.5) * this.shake;
     const jy = (Math.random() - 0.5) * this.shake;
-    const dist = this.frameDist() * this.camZoom;
+    const dist = this.frameDist(dt) * this.camZoom;
     if (this.globe) {
       const a = this.lonLatPoint(this.camX, this.camZ, 6.85);
       const n = Math.hypot(a.x, a.y, a.z) || 1;
@@ -1544,8 +1546,9 @@ export class RainGame {
       const span = Math.min(this.terrain.width, this.terrain.depth);
       const panX = (this.camX - boardX) * 0.35;
       const panZ = (this.camZ - boardZ) * 0.35;
-      const lift = span * 0.72 * this.camZoom;
-      const back = span * 0.78 * this.camZoom;
+      const pull = this.cameraGrowPull(dt);
+      const lift = span * 0.72 * this.camZoom * pull;
+      const back = span * 0.78 * this.camZoom * pull;
       this.camera.position.set(boardX + panX + jx, 2.2 + lift + jy, boardZ + panZ + back);
       this.camera.lookAt(boardX + panX * 0.4, 1.6, boardZ + panZ * 0.2);
       return;
@@ -1584,16 +1587,27 @@ export class RainGame {
     state.maskDirty = false;
   }
 
-  private frameDist(): number {
+  /** Camera pull-back vs puff size; lerps so upgrades feel like stepping back. */
+  private cameraGrowPull(dt: number): number {
+    const scale = Math.max(BASE_SCALE, this.state?.scale() ?? BASE_SCALE);
+    const target = Math.pow(scale / BASE_SCALE, 0.62);
+    if (dt <= 0) {
+      this.camGrowPull = target;
+      return target;
+    }
+    this.camGrowPull += (target - this.camGrowPull) * Math.min(1, dt * 4.2);
+    return this.camGrowPull;
+  }
+
+  private frameDist(dt = 0): number {
     const state = this.state;
-    const scale = Math.max(BASE_SCALE, state?.scale() ?? BASE_SCALE);
-    const grown = scale / BASE_SCALE;
-    if (this.globe) return (9 + 6 / grown) * Math.pow(grown, 0.35);
+    const pull = this.cameraGrowPull(dt);
+    if (this.globe) return (9 + 6 / pull) * Math.pow(pull, 0.35);
     const world = state?.world ?? 0;
     const { cols, rows } = state ? gridOf(world) : { cols: 8, rows: 6 };
     const span = Math.max(cols * TILE, rows * TILE);
     const worldPad = 1 + world * 0.055;
-    return clamp(span * 0.35 * worldPad * Math.pow(grown, 0.62), 8, 34);
+    return clamp(span * 0.35 * worldPad * pull, 8, 34);
   }
 
   private dressSky(t: number): void {
