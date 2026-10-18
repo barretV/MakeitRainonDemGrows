@@ -143,7 +143,7 @@ export class Terrain {
         uDirtA: { value: linear(pal.dirtA) },
         uDirtB: { value: linear(pal.dirtB) },
         uFog: { value: fog.color.clone() },
-        uFogRange: { value: new THREE.Vector2(fog.near, fog.far) },
+        uFogRange: { value: new THREE.Vector2(Math.max(55, fog.far * 0.9), Math.max(160, fog.far * 2.8)) },
       },
       vertexShader: VOXEL_VERT,
       fragmentShader: VOXEL_FRAG,
@@ -220,7 +220,7 @@ export class Terrain {
         uBoard: { value: new THREE.Vector4(this.originX, this.originZ, this.width, this.depth) },
         uTime: time,
         uFog: { value: fog.color.clone() },
-        uFogRange: { value: new THREE.Vector2(fog.near, fog.far) },
+        uFogRange: { value: new THREE.Vector2(Math.max(55, fog.far * 0.9), Math.max(160, fog.far * 2.8)) },
       },
       vertexShader: FLORA_VERT,
       fragmentShader: FLORA_FRAG,
@@ -341,8 +341,7 @@ const VOXEL_FRAG = /* glsl */ `
       col *= abs(vN.z) > 0.5 ? (vN.z > 0.0 ? 0.9 : 0.72) : (vN.x < 0.0 ? 0.78 : 0.72);
       col *= mix(0.82, 1.0, smoothstep(1.2, 0.0, below));
     }
-    float f = smoothstep(uFogRange.x, uFogRange.y, vDepth);
-    gl_FragColor = vec4(mix(col, uFog, f), 1.0);
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
@@ -383,7 +382,6 @@ const FLORA_FRAG = /* glsl */ `
   void main() {
     vec4 c = texture2D(uAtlas, vUv);
     if (c.a < 0.5) discard;
-    float f = smoothstep(uFogRange.x, uFogRange.y, vDepth);
-    gl_FragColor = vec4(mix(c.rgb, uFog, f), 1.0);
+    gl_FragColor = vec4(c.rgb, 1.0);
   }
 `;

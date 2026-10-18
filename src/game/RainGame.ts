@@ -14,10 +14,13 @@ import { bridge } from './bridge';
 
 /** MashKin-style board camera: pitched down over a flat XZ slab, slight yaw so billboards have a face. */
 const YAW = -0.38;
-const PITCH = 0.78;
+const PITCH = 0.72;
 const MOVE = 6.4;
 /** World units per pixel of finger travel. Same idea as Chimney Fisher's relative drag: the press is an anchor, not a teleport. */
 const STEER = 0.042;
+/** 1 = default framing (closest). Larger values pull the camera back. */
+const CAM_ZOOM_MIN = 1;
+const CAM_ZOOM_MAX = 1.85;
 
 const TiltShiftShader = {
   name: 'TiltShift',
@@ -201,6 +204,10 @@ export class RainGame {
   private grin = 0;
   private hoverY = 2;
   private camGroundY = 1;
+  private camZoom = 1;
+  private readonly pointers = new Map<number, { x: number; y: number }>();
+  private pinchSpan0 = 0;
+  private pinchZoom0 = 1;
   private maskTex: THREE.DataTexture | null = null;
   private terrain: Terrain | null = null;
   private maskMats: THREE.ShaderMaterial[] = [];
@@ -214,7 +221,6 @@ export class RainGame {
   private peaks: THREE.Mesh[] = [];
   private puffs: THREE.Mesh[] = [];
   private farTrees: THREE.Mesh[] = [];
-  private hillBand: THREE.Mesh | null = null;
   private animals: Critter[] = [];
   private helpers: THREE.Mesh[] = [];
   private boxes: THREE.Mesh[] = [];
@@ -245,13 +251,13 @@ export class RainGame {
     this.renderer.domElement.style.touchAction = 'none';
     container.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(34, w / h, 0.35, 420);
+    this.camera = new THREE.PerspectiveCamera(38, w / h, 0.35, 420);
     this.scene.background = new THREE.Color('#f7c6df');
     this.scene.fog = new THREE.Fog('#f7c6df', 24, 52);
     this.scene.add(this.track);
     this.scene.add(this.camera);
 
-    this.mountain = this.billboard(this.art.mountain, 18, 11, 0.12);
+    this.mountain = this.billboard(this.art.mountain, 15, 9.2, 0.12);
     this.scene.add(this.mountain);
     for (let i = 0; i < 2; i += 1) {
       const peak = this.billboard(this.art.mountain, 11, 7.5, 0.12);
@@ -381,6 +387,7 @@ export class RainGame {
     el.addEventListener('pointerup', this.onUp);
     el.addEventListener('pointercancel', this.onUp);
     el.addEventListener('pointermove', this.onMove);
+    el.addEventListener('wheel', this.onWheel, { passive: false });
     window.addEventListener('pointerup', this.onUp);
     window.addEventListener('pointercancel', this.onUp);
     el.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -402,6 +409,7 @@ export class RainGame {
     el.removeEventListener('pointerup', this.onUp);
     el.removeEventListener('pointercancel', this.onUp);
     el.removeEventListener('pointermove', this.onMove);
+    el.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('pointerup', this.onUp);
     window.removeEventListener('pointercancel', this.onUp);
     window.removeEventListener('keydown', this.onKey);
@@ -815,7 +823,7 @@ export class RainGame {
     const sky = this.globe ? '#24356e' : worldDef(world).skyMid;
     this.scene.background = this.globe ? new THREE.Color(sky) : (art.skies[world] ?? new THREE.Color(sky));
     const dist = this.frameDist();
-    this.scene.fog = this.globe ? new THREE.Fog(sky, 18, 48) : new THREE.Fog(sky, dist * 0.92, dist * 2.45);
+    this.scene.fog = this.globe ? new THREE.Fog(sky, 18, 48) : new THREE.Fog(sky, dist * 1.05, dist * 2.65);
     this.mountain.visible = !this.globe;
     for (const peak of this.peaks) peak.visible = !this.globe;
     for (const tree of this.farTrees) tree.visible = !this.globe;
@@ -926,17 +934,7 @@ export class RainGame {
     const backZ = -Math.cos(YAW);
     const rightX = Math.cos(YAW);
     const rightZ = -Math.sin(YAW);
-    if (this.hillBand) {
-      this.scene.remove(this.hillBand);
-      this.hillBand = null;
-    }
-    if (!this.globe) {
-      const hillTex = art.hills[world] ?? art.hills[0]!;
-      this.hillBand = this.billboard(hillTex, spanX + 10, (spanX + 10) * 0.3, 0.04);
-      this.hillBand.position.set(spanX / 2 + backX * 7.5, 2.4, spanZ / 2 + backZ * 7.5);
-      this.scene.add(this.hillBand);
-    }
-    this.mountain.position.set(spanX / 2 + backX * 11 + rightX * 3.5, 3.1, spanZ / 2 + backZ * 11 + rightZ * 3.5);
+    this.mountain.position.set(spanX / 2 + backX * 15 + rightX * 3.5, 4.2, spanZ / 2 + backZ * 15 + rightZ * 3.5);
     this.peaks[0]?.position.set(spanX / 2 + backX * 9 - rightX * 5, 2.2, spanZ / 2 + backZ * 9 - rightZ * 5);
     this.peaks[1]?.position.set(spanX / 2 + backX * 8 + rightX * 7, 1.8, spanZ / 2 + backZ * 8 + rightZ * 7);
     this.farTrees.forEach((tree, i) => {
@@ -1201,6 +1199,12 @@ export class RainGame {
     this.audio.unlock();
     const state = this.state;
     if (!state) return;
+    this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (this.pointers.size >= 2) {
+      this.pinchSpan0 = this.pointerSpan();
+      this.pinchZoom0 = this.camZoom;
+      this.stick = null;
+    }
     this.aim(event);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hits = this.raycaster.intersectObjects(this.animals.map((a) => a.mesh), false);
@@ -1225,7 +1229,7 @@ export class RainGame {
       }
     }
     const touch = event.pointerType === 'touch' || event.pointerType === 'pen';
-    if (touch) {
+    if (touch && this.pointers.size < 2) {
       this.stick = { id: event.pointerId, x: event.clientX, y: event.clientY, cx: this.cloudX, cz: this.cloudZ };
       this.renderer.domElement.setPointerCapture(event.pointerId);
     } else if (event.button === 0) {
@@ -1234,11 +1238,29 @@ export class RainGame {
   };
 
   private onUp = (event: PointerEvent): void => {
+    this.pointers.delete(event.pointerId);
+    if (this.pointers.size < 2) this.pinchSpan0 = 0;
     if (this.stick && event.pointerId === this.stick.id) this.stick = null;
     if (event.pointerType !== 'touch' && event.pointerType !== 'pen') this.mouseRain = false;
   };
 
+  private onWheel = (event: WheelEvent): void => {
+    if (!this.state || this.state.phase !== 'play') return;
+    event.preventDefault();
+    const step = 0.0016;
+    const delta = event.deltaY * step;
+    this.setCamZoom(this.camZoom * (1 + delta));
+  };
+
   private onMove = (event: PointerEvent): void => {
+    if (this.pointers.has(event.pointerId)) {
+      this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+    if (this.pointers.size >= 2 && this.pinchSpan0 > 0) {
+      const span = this.pointerSpan();
+      if (span > 6) this.setCamZoom(this.pinchZoom0 * (span / this.pinchSpan0));
+      return;
+    }
     if (!this.stick || event.pointerId !== this.stick.id || !this.state || this.state.phase !== 'play') return;
     if (this.globe) {
       const dx = event.clientX - this.stick.x;
@@ -1290,7 +1312,19 @@ export class RainGame {
   }
 
   private wantsRain(): boolean {
-    return this.keyRain || this.mouseRain || this.stick !== null;
+    return this.keyRain || this.mouseRain || (this.stick !== null && this.pointers.size < 2);
+  }
+
+  private pointerSpan(): number {
+    const pts = [...this.pointers.values()];
+    const a = pts[0];
+    const b = pts[1];
+    if (!a || !b) return 0;
+    return Math.hypot(b.x - a.x, b.y - a.y);
+  }
+
+  private setCamZoom(next: number): void {
+    this.camZoom = clamp(next, CAM_ZOOM_MIN, CAM_ZOOM_MAX);
   }
 
   private placeCamera(dt: number): void {
@@ -1300,7 +1334,7 @@ export class RainGame {
     this.shake *= Math.exp(-Math.max(dt, 0) * 3.5);
     const jx = (Math.random() - 0.5) * this.shake;
     const jy = (Math.random() - 0.5) * this.shake;
-    const dist = this.frameDist();
+    const dist = this.frameDist() * this.camZoom;
     if (this.globe) {
       const a = this.lonLatPoint(this.camX, this.camZ, 6.85);
       const n = Math.hypot(a.x, a.y, a.z) || 1;
@@ -1309,7 +1343,19 @@ export class RainGame {
       this.camera.lookAt(a.x, a.y, a.z);
       return;
     }
-    const gy = this.globe ? this.groundY(this.camX, this.camZ) : this.camGroundY;
+    const gy = this.camGroundY;
+    if (this.terrain) {
+      const boardX = this.terrain.originX + this.terrain.width * 0.5;
+      const boardZ = this.terrain.originZ + this.terrain.depth * 0.5;
+      const panX = (this.camX - boardX) * 0.72;
+      const panZ = (this.camZ - boardZ) * 0.72;
+      const base = this.frameDist();
+      const lift = (6.8 + base * 0.22) * this.camZoom;
+      const back = (11.5 + base * 0.35) * this.camZoom;
+      this.camera.position.set(boardX + panX + jx, gy + lift + jy, boardZ + panZ + back);
+      this.camera.lookAt(boardX + panX + jx * 0.2, gy + 1.15, boardZ + panZ - 0.45);
+      return;
+    }
     this.camera.position.set(
       this.camX + Math.sin(YAW) * Math.cos(PITCH) * dist + jx,
       gy + Math.sin(PITCH) * dist * 0.72 + jy,
@@ -1349,9 +1395,8 @@ export class RainGame {
     const scale = Math.max(0.35, state?.scale() ?? 0.48);
     if (this.globe) return 9 + 6 / scale;
     const { cols, rows } = state ? gridOf(state.world) : { cols: 8, rows: 6 };
-    const span = Math.max(cols, rows) * TILE;
-    // Apparent size grows with scale squared and shrinks with the next board, so a new world feels modest without going back to day one.
-    return clamp((span * 0.34) / scale, 8, 34);
+    const span = Math.max(cols * TILE, rows * TILE);
+    return clamp((span * 0.34) / scale, 7, 22);
   }
 
   private dressSky(t: number): void {
