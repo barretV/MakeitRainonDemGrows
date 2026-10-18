@@ -656,14 +656,25 @@ export interface TreeNodeView {
   afford: boolean;
 }
 
+/** True when the player can spend dew on the next rank (not a preview ghost). */
+export function canPurchase(id: NodeId, ranks: Ranks, spendable: number): boolean {
+  if (!isVisible(id, ranks) || isGhost(id, ranks)) return false;
+  const node = upgradeNode(id);
+  const level = ranks[id];
+  if (level >= node.max) return false;
+  if (!prereqMet(id, ranks)) return false;
+  return spendable >= nodeCost(id, level);
+}
+
 export function buildTree(ranks: Ranks, dew: number, spendable = Math.floor(dew)): TreeNodeView[] {
   const points = new Map(layoutTree().map((point) => [point.id, point]));
   return allNodes().map((node) => {
     const level = ranks[node.id];
     const point = points.get(node.id);
     const visible = isVisible(node.id, ranks);
+    const ghost = isGhost(node.id, ranks);
     const maxed = level >= node.max;
-    const cost = nodeCost(node.id, Math.min(level, node.max - 1));
+    const cost = nodeCost(node.id, level);
     return {
       id: node.id,
       name: node.name,
@@ -679,9 +690,9 @@ export function buildTree(ranks: Ranks, dew: number, spendable = Math.floor(dew)
       y: point?.y ?? 0,
       parent: node.parent,
       visible,
-      ghost: isGhost(node.id, ranks),
+      ghost,
       maxed,
-      afford: visible && !maxed && spendable >= cost,
+      afford: canPurchase(node.id, ranks, spendable),
     };
   });
 }

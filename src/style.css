@@ -473,6 +473,7 @@ canvas {
 
 .workshop-nodes {
   position: relative;
+  z-index: 2;
 }
 
 .workshop-panel {
@@ -603,6 +604,7 @@ canvas {
 
 .tree-node {
   position: absolute;
+  z-index: 1;
   transform: translate(-50%, -50%);
   border: none;
   padding: 0;

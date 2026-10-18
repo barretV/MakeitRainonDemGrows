@@ -545,14 +545,14 @@ export class RainGame {
     if (!this.state) return;
     const node = upgradeNode(id);
     const gateUnlock = node.kind === 'gate' && this.state.ranks[id] === 0;
-    if (!this.state.buy(id)) this.state.toast = 'Need more dew for that.';
-    else {
+    if (!this.state.buy(id)) {
+      /* toast set in SaveState.buy */
+    } else {
       this.audio.coin();
       this.cloudPop = id === 'puff' ? 1.28 : 1.18;
       this.setCamZoom(this.camZoom * 0.93);
       this.camZoomPulse = 0.45;
       if (gateUnlock) this.shake = 0.3;
-      this.rebuild();
       void this.saveNow();
     }
     this.pushHud(true);

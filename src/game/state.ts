@@ -586,13 +586,23 @@ export class SaveState {
   }
 
   buy(id: NodeId): boolean {
-    if (this.screen !== 'workshop') return false;
-    if (!prereqMet(id, this.ranks)) return false;
+    if (this.screen !== 'workshop') {
+      this.toast = 'Open Workshop from the results screen.';
+      return false;
+    }
+    if (!prereqMet(id, this.ranks)) {
+      this.toast = 'Unlock the parent upgrade first.';
+      return false;
+    }
     const node = upgradeNode(id);
     const level = this.ranks[id];
     if (level >= node.max) return false;
     const cost = nodeCost(id, level);
-    if (walletDew(this.dew) < cost) return false;
+    const wallet = walletDew(this.dew);
+    if (wallet < cost) {
+      this.toast = `Need ${cost} dew (you have ${wallet}).`;
+      return false;
+    }
     this.dew -= cost;
     this.ranks[id] += 1;
     this.toast = node.kind === 'gate' ? `${node.name} unlocked.` : `${node.name} rank ${this.ranks[id]}.`;

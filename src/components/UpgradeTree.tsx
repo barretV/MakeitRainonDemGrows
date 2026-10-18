@@ -57,11 +57,12 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     return node.visible || (node.ghost && puffLevel >= 1);
   });
   const nextBuy = PRIORITY.map((id) => model.tree.find((node) => node.id === id)).find(
-    (node) => node && !node.maxed && node.visible && !node.ghost && node.afford,
+    (node) => node && node.afford,
   );
   const [picked, setPicked] = useState<NodeId>('puff');
   const [tab, setTab] = useState<'power' | 'petals'>('power');
-  const selected = model.tree.find((node) => node.id === picked) ?? shown[0];
+  const pickedId = shown.some((n) => n.id === picked) ? picked : (nextBuy?.id ?? shown[0]?.id ?? 'puff');
+  const selected = model.tree.find((node) => node.id === pickedId) ?? shown[0];
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -107,6 +108,8 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('.tree-node, .workshop-panel, .workshop-wallet, button, a')) return;
     moved.current = false;
     const p = pointerPos(e.clientX, e.clientY);
     panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
@@ -165,7 +168,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
         onPointerCancel={onPointerUp}
         onWheel={onWheel}
         onClick={() => {
-          if (!moved.current) setPicked('puff');
+          if (!moved.current) setPicked(nextBuy?.id ?? 'puff');
         }}
       >
         <DewWallet amount={model.dew} />
@@ -209,7 +212,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
               <TreeNodeCloud
                 key={node.id}
                 node={node}
-                picked={picked === node.id}
+                picked={pickedId === node.id}
                 onPick={() => setPicked(node.id)}
                 onBuy={() => purchase(node.id)}
               />

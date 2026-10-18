@@ -22,6 +22,7 @@ function nodeVisual(node: TreeNodeView): Visual {
   if (node.maxed) return 'maxed';
   if (node.afford) return 'ready';
   if (node.level > 0) return 'owned';
+  if (!node.visible) return 'ghost';
   return 'locked';
 }
 
@@ -240,7 +241,7 @@ export function TreeNodeCloud({
   const shape = nodeShape(node.branch);
   const branchColor = BRANCH_COLORS[node.branch];
   const { w, h } = nodeSize(node, shape);
-  const gateOpen = node.kind !== 'gate' || node.level > 0;
+  const gateOpen = node.kind !== 'gate' || node.level > 0 || node.afford;
   const mutedIcon = state === 'ghost' || state === 'locked';
   const badge = stateLabel(state);
   const showRank = node.max > 1 && !node.maxed;
@@ -248,11 +249,10 @@ export function TreeNodeCloud({
   return (
     <button
       type="button"
+      onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
-        const chip = (e.target as HTMLElement).closest('.tree-node__badge');
-        const canBuy = node.afford && !node.maxed && !node.ghost;
-        if (canBuy && (chip || state === 'ready')) {
+        if (node.afford) {
           onBuy();
           return;
         }
