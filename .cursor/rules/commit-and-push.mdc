@@ -31,3 +31,7 @@ When you finish a task that changed the repo (code, config, assets, rules), **al
 ## If the user only asked a question
 
 Answer-only turns with no repo edits do not need a commit.
+
+## Visual / HUD / gameplay changes
+
+After changing how the game looks or feels, open the local dev build in the browser MCP (`http://127.0.0.1:5174/?fresh=1` or the active Vite port), play briefly (rain, move cloud), and screenshot to confirm the result before pushing.
