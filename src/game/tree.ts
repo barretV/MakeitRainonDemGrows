@@ -113,7 +113,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Get bigger. A bigger cloud drinks a wider circle and the camera leans in.',
     max: 8,
     color: '#ffe56a',
-    costs: [7, 20, 48, 110, 255, 590, 1350, 3000],
+    costs: [4, 8, 22, 55, 130, 300, 690, 1550],
     effect: (level) => `Size ${cloudScale({ ...emptyRanks(), puff: level }).toFixed(2)}`,
   },
   {
@@ -125,7 +125,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the bottle petal. The next ranks hold more water.',
     max: 1,
     color: '#8fd4ff',
-    costs: [12],
+    costs: [9],
     effect: () => 'Bottle petal open',
   },
   {
@@ -137,7 +137,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'More liters in the next bottle. Nothing refills while you fly.',
     max: 5,
     color: '#8fd4ff',
-    costs: [14, 34, 78, 178, 410],
+    costs: [11, 26, 60, 138, 320],
     effect: (level) => `${Math.round(maxLiters({ ...emptyRanks(), bottle: 1, flask: level }))} L`,
   },
   {
@@ -185,7 +185,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the rain petal. The first cloud only leaks.',
     max: 1,
     color: '#7eb6ff',
-    costs: [14],
+    costs: [10],
     effect: () => 'Drizzle petal open',
   },
   {
@@ -197,7 +197,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'More drops in the circle. Still patchy.',
     max: 5,
     color: '#7eb6ff',
-    costs: [16, 38, 88, 200, 460],
+    costs: [13, 32, 75, 172, 400],
     effect: (level) => `${Math.round(patchFraction({ ...emptyRanks(), drizzle: 1, specks: level }) * 100)}% of the circle`,
   },
   {
@@ -245,7 +245,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the reach petal. The circle can grow past the puff.',
     max: 1,
     color: '#b6e86a',
-    costs: [16],
+    costs: [12],
     effect: () => 'Reach petal open',
   },
   {
@@ -257,7 +257,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A wider rain circle.',
     max: 5,
     color: '#b6e86a',
-    costs: [18, 44, 102, 235, 540],
+    costs: [14, 34, 78, 180, 415],
     effect: (level) => `Radius x${(1 + 0.32 * level).toFixed(2)}`,
   },
   {
@@ -293,7 +293,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the charm petal. The cloud gets loud about it.',
     max: 1,
     color: '#ff9bb8',
-    costs: [18],
+    costs: [13],
     effect: () => 'Charm petal open',
   },
   {
@@ -305,7 +305,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Every finished patch pays more.',
     max: 5,
     color: '#ff9bb8',
-    costs: [20, 48, 112, 260, 600],
+    costs: [15, 36, 84, 195, 450],
     effect: (level) => `Dew x${(1.22 ** level).toFixed(2)}`,
   },
   {
