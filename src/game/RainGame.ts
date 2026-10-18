@@ -6,7 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GLOBE_WORLD, TILE, gridOf, worldDef } from './balance';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
-import { BASE_SCALE, maskOf, upgradeNode, type NodeId } from './tree';
+import { BASE_SCALE, maskOf, upgradeNode, type NodeId, type Ranks } from './tree';
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
 import type { PetalId } from './petal';
@@ -541,21 +541,26 @@ export class RainGame {
     this.pushHud(true);
   }
 
-  buy(id: NodeId): void {
-    if (!this.state) return;
+  getRanks(): Ranks | null {
+    return this.state ? { ...this.state.ranks } : null;
+  }
+
+  buy(id: NodeId): boolean {
+    if (!this.state) return false;
     const node = upgradeNode(id);
     const gateUnlock = node.kind === 'gate' && this.state.ranks[id] === 0;
     if (!this.state.buy(id)) {
-      /* toast set in SaveState.buy */
-    } else {
-      this.audio.coin();
-      this.cloudPop = id === 'puff' ? 1.28 : 1.18;
-      this.setCamZoom(this.camZoom * 0.93);
-      this.camZoomPulse = 0.45;
-      if (gateUnlock) this.shake = 0.3;
-      void this.saveNow();
+      this.pushHud(true);
+      return false;
     }
+    this.audio.coin();
+    this.cloudPop = id === 'puff' ? 1.28 : 1.18;
+    this.setCamZoom(this.camZoom * 0.93);
+    this.camZoomPulse = 0.45;
+    if (gateUnlock) this.shake = 0.3;
+    void this.saveNow();
     this.pushHud(true);
+    return true;
   }
 
   buyPetal(id: PetalId): void {

@@ -229,11 +229,21 @@ function NodeSymbol({
 export function TreeNodeCloud({
   node,
   picked,
+  reveal,
+  buyPop,
+  affordPing,
+  onRevealEnd,
+  onAffordPingEnd,
   onPick,
   onBuy,
 }: {
   node: TreeNodeView;
   picked: boolean;
+  reveal?: boolean;
+  buyPop?: number;
+  affordPing?: boolean;
+  onRevealEnd?: () => void;
+  onAffordPingEnd?: () => void;
   onPick: () => void;
   onBuy: () => void;
 }) {
@@ -269,18 +279,33 @@ export function TreeNodeCloud({
       }}
       aria-label={node.name}
     >
-      {shape === 'cloud' ? (
-        <svg className="tree-node__svg" viewBox="0 0 72 48" aria-hidden>
-          <path className="tree-node__body tree-node__cloud" d={CLOUD} />
-          <NodeSymbol id={node.id} gateOpen={gateOpen && state !== 'ghost'} shape="cloud" muted={mutedIcon} />
-        </svg>
-      ) : (
-        <svg className="tree-node__svg tree-node__svg--drop" viewBox="0 0 48 60" aria-hidden>
-          <path className="tree-node__body tree-node__drop" d={DROP} />
-          <ellipse className="tree-node__shine" cx={18} cy={16} rx={6} ry={4} />
-          <NodeSymbol id={node.id} gateOpen={gateOpen && state !== 'ghost'} shape="drop" muted={mutedIcon} />
-        </svg>
+      {affordPing && (
+        <span
+          className="workshop-afford-aura"
+          aria-hidden
+          onAnimationEnd={onAffordPingEnd}
+        />
       )}
+      <div
+        className={`tree-node__inner${reveal ? ' tree-node__inner--reveal' : ''}${buyPop ? ' tree-node__inner--buy' : ''}${affordPing ? ' tree-node__inner--ping' : ''}`}
+        key={buyPop ? `buy-${buyPop}` : undefined}
+        onAnimationEnd={() => {
+          if (reveal) onRevealEnd?.();
+        }}
+      >
+        {shape === 'cloud' ? (
+          <svg className="tree-node__svg" viewBox="0 0 72 48" aria-hidden>
+            <path className="tree-node__body tree-node__cloud" d={CLOUD} />
+            <NodeSymbol id={node.id} gateOpen={gateOpen && state !== 'ghost'} shape="cloud" muted={mutedIcon} />
+          </svg>
+        ) : (
+          <svg className="tree-node__svg tree-node__svg--drop" viewBox="0 0 48 60" aria-hidden>
+            <path className="tree-node__body tree-node__drop" d={DROP} />
+            <ellipse className="tree-node__shine" cx={18} cy={16} rx={6} ry={4} />
+            <NodeSymbol id={node.id} gateOpen={gateOpen && state !== 'ghost'} shape="drop" muted={mutedIcon} />
+          </svg>
+        )}
+      </div>
       {badge && (
         <span className={`tree-node__badge tree-node__badge--${state === 'ghost' ? 'locked' : state}`}>{badge}</span>
       )}

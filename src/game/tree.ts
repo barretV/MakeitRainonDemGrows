@@ -657,6 +657,18 @@ export interface TreeNodeView {
 }
 
 /** True when the player can spend dew on the next rank (not a preview ghost). */
+/** Nodes that became fully visible (not ghost) since the previous ranks snapshot. */
+export function nodesUnlockedSince(before: Ranks, after: Ranks): NodeId[] {
+  const out: NodeId[] = [];
+  for (const id of NODE_IDS) {
+    if (id === 'puff') continue;
+    const was = isVisible(id, before) && !isGhost(id, before);
+    const now = isVisible(id, after) && !isGhost(id, after);
+    if (now && !was) out.push(id);
+  }
+  return out;
+}
+
 export function canPurchase(id: NodeId, ranks: Ranks, spendable: number): boolean {
   if (!isVisible(id, ranks) || isGhost(id, ranks)) return false;
   const node = upgradeNode(id);

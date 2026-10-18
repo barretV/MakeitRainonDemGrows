@@ -1,6 +1,13 @@
-import { useRef, useState } from 'react';
+import { useReducer, useRef, useState } from 'react';
 import type { RainGame } from '../game/RainGame';
-import { BRANCH_COLORS, PRIORITY, TREE_CANVAS, type NodeId, type TreeNodeView } from '../game/tree';
+import {
+  BRANCH_COLORS,
+  PRIORITY,
+  TREE_CANVAS,
+  nodesUnlockedSince,
+  type NodeId,
+  type TreeNodeView,
+} from '../game/tree';
 import { formatDew, type HudModel } from '../game/state';
 import { DewWallet } from './DewWallet';
 import { PetalShop } from './PetalShop';
@@ -8,6 +15,28 @@ import { TreeNodeCloud } from './TreeNodeCloud';
 
 const MIN_ZOOM = 0.42;
 const MAX_ZOOM = 1.35;
+const COMFORT_ZOOM = 0.9;
+
+type View = { x: number; y: number; s: number };
+
+type FlyingSeed = {
+  id: number;
+  childId: NodeId;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  start: number;
+  dur: number;
+};
+
+let seedUid = 0;
+
+let savedWorkshopView: View | null = null;
+let lastWorkshopFocusId: NodeId = 'puff';
+
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 function WorkshopStatus({ node, onBuy }: { node: TreeNodeView; onBuy: () => void }) {
   let kind = 'owned';
@@ -49,7 +78,21 @@ function vinePath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} Q ${mx + nx} ${my + ny} ${x2} ${y2}`;
 }
 
+function pickFocusId(tree: TreeNodeView[]): NodeId {
+  const byId = new Map(tree.map((n) => [n.id, n]));
+  for (const id of PRIORITY) {
+    const node = byId.get(id);
+    if (node?.afford) return id;
+  }
+  for (const id of PRIORITY) {
+    const node = byId.get(id);
+    if (node && node.visible && !node.ghost && !node.maxed) return id;
+  }
+  return lastWorkshopFocusId;
+}
+
 export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }) {
+  const [, bump] = useReducer((n: number) => n + 1, 0);
   const puffLevel = model.tree.find((node) => node.id === 'puff')?.level ?? 0;
   const totalRanks = model.tree.reduce((sum, node) => sum + node.level, 0);
   const shown = model.tree.filter((node) => {
@@ -61,21 +104,155 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   );
   const [picked, setPicked] = useState<NodeId>('puff');
   const [tab, setTab] = useState<'power' | 'petals'>('power');
+  const [affordPingIds, setAffordPingIds] = useState<Set<NodeId>>(() => new Set());
   const pickedId = shown.some((n) => n.id === picked) ? picked : (nextBuy?.id ?? shown[0]?.id ?? 'puff');
   const selected = model.tree.find((node) => node.id === pickedId) ?? shown[0];
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef({ x: 0, y: 0, s: 0.82 });
+  const viewRef = useRef<View>(savedWorkshopView ?? { x: 0, y: 0, s: 0.82 });
+  const tweenRef = useRef<View | null>(null);
+  const tweenRafRef = useRef<number | null>(null);
   const panStart = useRef<{ vx: number; vy: number; cx: number; cy: number } | null>(null);
   const moved = useRef(false);
   const fitted = useRef(false);
+  const entryPulseRef = useRef(false);
+  const revealRef = useRef<Set<NodeId>>(new Set());
+  const edgeAnimRef = useRef<Set<NodeId>>(new Set());
+  const buyPopRef = useRef<Partial<Record<NodeId, number>>>({});
+  const affordTimerRef = useRef<number | null>(null);
+  const seedRef = useRef<FlyingSeed[]>([]);
+  const [seeds, setSeeds] = useState<FlyingSeed[]>([]);
+  const pickedRef = useRef(pickedId);
+  pickedRef.current = pickedId;
+
+  const nodesById = new Map(model.tree.map((n) => [n.id, n]));
 
   const applyTransform = () => {
     const layer = layerRef.current;
     if (!layer) return;
     const { x, y, s } = viewRef.current;
     layer.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  };
+
+  const persistView = () => {
+    savedWorkshopView = { ...viewRef.current };
+  };
+
+  const landSeed = (seed: FlyingSeed) => {
+    revealRef.current.add(seed.childId);
+    edgeAnimRef.current.add(seed.childId);
+    bump();
+  };
+
+  const ensureTweenLoop = () => {
+    if (tweenRafRef.current != null) return;
+    const loop = (now: number) => {
+      tweenRafRef.current = null;
+      let active = false;
+
+      const target = tweenRef.current;
+      if (target) {
+        const v = viewRef.current;
+        const nx = lerp(v.x, target.x, 0.18);
+        const ny = lerp(v.y, target.y, 0.18);
+        const ns = lerp(v.s, target.s, 0.18);
+        if (
+          Math.abs(nx - target.x) < 0.6 &&
+          Math.abs(ny - target.y) < 0.6 &&
+          Math.abs(ns - target.s) < 0.003
+        ) {
+          viewRef.current = target;
+          tweenRef.current = null;
+          persistView();
+        } else {
+          viewRef.current = { x: nx, y: ny, s: ns };
+          active = true;
+        }
+        applyTransform();
+      }
+
+      if (seedRef.current.length) {
+        const live: FlyingSeed[] = [];
+        for (const seed of seedRef.current) {
+          const t = (now - seed.start) / seed.dur;
+          if (t >= 1) landSeed(seed);
+          else live.push(seed);
+        }
+        seedRef.current = live;
+        setSeeds([...live]);
+        if (live.length) active = true;
+      }
+
+      if (active) tweenRafRef.current = requestAnimationFrame(loop);
+    };
+    tweenRafRef.current = requestAnimationFrame(loop);
+  };
+
+  const launchReveal = (childId: NodeId) => {
+    const child = nodesById.get(childId);
+    const parent = child?.parent ? nodesById.get(child.parent) : null;
+    if (!child || !parent) {
+      revealRef.current.add(childId);
+      edgeAnimRef.current.add(childId);
+      bump();
+      return;
+    }
+    const dist = Math.hypot(child.x - parent.x, child.y - parent.y);
+    const seed: FlyingSeed = {
+      id: seedUid++,
+      childId,
+      fromX: parent.x,
+      fromY: parent.y,
+      toX: child.x,
+      toY: child.y,
+      start: performance.now(),
+      dur: 620 + dist * 0.35,
+    };
+    seedRef.current = [...seedRef.current, seed];
+    setSeeds([...seedRef.current]);
+    ensureTweenLoop();
+  };
+
+  const focusNode = (id: NodeId, animate = true, zoom?: number) => {
+    const node = nodesById.get(id);
+    const canvas = canvasRef.current;
+    if (!node || !canvas) return;
+    lastWorkshopFocusId = id;
+    const side = 268;
+    const w = canvas.clientWidth - side;
+    const h = canvas.clientHeight;
+    const centerY = h * 0.46;
+    const s = clamp(zoom ?? viewRef.current.s, MIN_ZOOM, MAX_ZOOM);
+    const target: View = { x: w / 2 - node.x * s, y: centerY - node.y * s, s };
+    if (animate) {
+      tweenRef.current = target;
+      ensureTweenLoop();
+    } else {
+      viewRef.current = target;
+      persistView();
+      applyTransform();
+    }
+  };
+
+  const triggerAffordPing = () => {
+    const ids = model.tree.filter((n) => n.afford).map((n) => n.id);
+    if (!ids.length) return;
+    setAffordPingIds(new Set(ids));
+    if (affordTimerRef.current != null) window.clearTimeout(affordTimerRef.current);
+    affordTimerRef.current = window.setTimeout(() => {
+      setAffordPingIds(new Set());
+      affordTimerRef.current = null;
+    }, 1400);
+  };
+
+  const scheduleEntryPulse = () => {
+    if (entryPulseRef.current) return;
+    entryPulseRef.current = true;
+    window.setTimeout(() => {
+      focusNode(pickFocusId(model.tree), true, savedWorkshopView ? viewRef.current.s : COMFORT_ZOOM);
+      window.setTimeout(() => triggerAffordPing(), 520);
+    }, 120);
   };
 
   const fitView = (el: HTMLDivElement) => {
@@ -91,13 +268,28 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       s: clamped,
     };
     applyTransform();
+    persistView();
   };
 
   const bindCanvas = (el: HTMLDivElement | null) => {
+    if (!el) {
+      if (tweenRafRef.current != null) cancelAnimationFrame(tweenRafRef.current);
+      tweenRafRef.current = null;
+      if (affordTimerRef.current != null) window.clearTimeout(affordTimerRef.current);
+      persistView();
+      lastWorkshopFocusId = pickedRef.current;
+      canvasRef.current = null;
+      return;
+    }
     canvasRef.current = el;
-    if (!el || fitted.current) return;
-    fitted.current = true;
-    requestAnimationFrame(() => fitView(el));
+    if (savedWorkshopView) {
+      viewRef.current = { ...savedWorkshopView };
+      applyTransform();
+    } else if (!fitted.current) {
+      fitted.current = true;
+      requestAnimationFrame(() => fitView(el));
+    }
+    scheduleEntryPulse();
   };
 
   const pointerPos = (clientX: number, clientY: number) => {
@@ -111,6 +303,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     const target = e.target as HTMLElement;
     if (target.closest('.tree-node, .workshop-panel, .workshop-wallet, button, a')) return;
     moved.current = false;
+    tweenRef.current = null;
     const p = pointerPos(e.clientX, e.clientY);
     panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
     (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
@@ -131,11 +324,13 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   };
 
   const onPointerUp = () => {
+    if (panStart.current) persistView();
     panStart.current = null;
   };
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    tweenRef.current = null;
     const p = pointerPos(e.clientX, e.clientY);
     const factor = e.deltaY < 0 ? 1.1 : 0.91;
     const v = viewRef.current;
@@ -148,13 +343,50 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       s: nextS,
     };
     applyTransform();
+    persistView();
   };
 
-  const nodesById = new Map(model.tree.map((n) => [n.id, n]));
+  const clearAffordPingId = (id: NodeId) => {
+    setAffordPingIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const onEdgeDrawEnd = (childId: NodeId) => {
+    edgeAnimRef.current.delete(childId);
+    bump();
+  };
+
+  const onRevealEnd = (id: NodeId) => {
+    revealRef.current.delete(id);
+    bump();
+  };
 
   const purchase = (id: NodeId) => {
-    game.buy(id);
+    const ranksBefore = game.getRanks();
+    if (!ranksBefore) return;
+    if (!game.buy(id)) return;
+    const ranksAfter = game.getRanks();
+    if (!ranksAfter) return;
+
+    lastWorkshopFocusId = id;
     setPicked(id);
+    buyPopRef.current[id] = (buyPopRef.current[id] ?? 0) + 1;
+
+    const revealed = nodesUnlockedSince(ranksBefore, ranksAfter);
+    for (const rid of revealed) launchReveal(rid);
+
+    if (revealed.length > 0) {
+      const first = revealed[0]!;
+      window.setTimeout(() => focusNode(first, true, viewRef.current.s), 120);
+      window.setTimeout(() => triggerAffordPing(), 1100);
+    } else {
+      focusNode(id, true, COMFORT_ZOOM);
+      window.setTimeout(() => triggerAffordPing(), 380);
+    }
   };
 
   return (
@@ -168,7 +400,11 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
         onPointerCancel={onPointerUp}
         onWheel={onWheel}
         onClick={() => {
-          if (!moved.current) setPicked(nextBuy?.id ?? 'puff');
+          if (!moved.current) {
+            const id = pickFocusId(model.tree);
+            setPicked(id);
+            focusNode(id, true, viewRef.current.s);
+          }
         }}
       >
         <DewWallet amount={model.dew} />
@@ -189,21 +425,42 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
               if (!node.parent) return null;
               const parent = nodesById.get(node.parent);
               if (!parent || (!parent.visible && !parent.ghost)) return null;
+              const drawing = edgeAnimRef.current.has(node.id);
+              const showEdge = !node.ghost || drawing;
+              if (!showEdge && node.ghost) return null;
               const color = BRANCH_COLORS[node.branch];
               return (
                 <path
                   key={`${parent.id}-${node.id}`}
                   d={vinePath(parent.x, parent.y, node.x, node.y)}
                   fill="none"
-                  stroke={node.ghost ? '#5a5668' : color}
-                  strokeWidth={node.ghost ? 2.5 : 3.5}
+                  stroke={node.ghost && !drawing ? '#5a5668' : color}
+                  strokeWidth={node.ghost && !drawing ? 2.5 : 3.5}
                   strokeLinecap="round"
-                  opacity={node.ghost ? 0.35 : 0.55}
-                  strokeDasharray={node.ghost ? '6 9' : undefined}
+                  opacity={node.ghost && !drawing ? 0.35 : drawing ? 0.85 : 0.55}
+                  strokeDasharray={node.ghost && !drawing ? '6 9' : undefined}
+                  pathLength={drawing ? 1 : undefined}
+                  className={drawing ? 'workshop-vine--draw' : undefined}
+                  onAnimationEnd={drawing ? () => onEdgeDrawEnd(node.id) : undefined}
                 />
               );
             })}
           </svg>
+          {seeds.map((seed) => {
+            const t = Math.min(1, (performance.now() - seed.start) / seed.dur);
+            const ease = 1 - (1 - t) * (1 - t);
+            const arc = Math.sin(t * Math.PI) * 36;
+            const x = seed.fromX + (seed.toX - seed.fromX) * ease;
+            const y = seed.fromY + (seed.toY - seed.fromY) * ease - arc;
+            return (
+              <div
+                key={seed.id}
+                className="workshop-seed"
+                style={{ left: x, top: y }}
+                aria-hidden
+              />
+            );
+          })}
           <div
             className="workshop-nodes"
             style={{ width: TREE_CANVAS.w, height: TREE_CANVAS.h }}
@@ -213,7 +470,16 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
                 key={node.id}
                 node={node}
                 picked={pickedId === node.id}
-                onPick={() => setPicked(node.id)}
+                reveal={revealRef.current.has(node.id)}
+                buyPop={buyPopRef.current[node.id] ?? 0}
+                affordPing={affordPingIds.has(node.id)}
+                onRevealEnd={() => onRevealEnd(node.id)}
+                onAffordPingEnd={() => clearAffordPingId(node.id)}
+                onPick={() => {
+                  setPicked(node.id);
+                  lastWorkshopFocusId = node.id;
+                  focusNode(node.id, true, viewRef.current.s);
+                }}
                 onBuy={() => purchase(node.id)}
               />
             ))}
@@ -243,45 +509,45 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
             <PetalShop model={model} game={game} />
           ) : (
             <>
-          {nextBuy && (
-            <button
-              type="button"
-              className="workshop-next workshop-next--buy pixel"
-              onClick={() => purchase(nextBuy.id)}
-            >
-              {nextBuy.id === selected.id ? 'Buy now' : 'Next up'}: <span>{nextBuy.name}</span> ·{' '}
-              {formatDew(nextBuy.cost)} dew
-            </button>
-          )}
-          <WorkshopStatus node={selected} onBuy={() => purchase(selected.id)} />
-          <div className="workshop-panel__title pixel">{selected.name}</div>
-          {totalRanks === 0 && (
-            <p className="workshop-panel__desc pixel">Rain first. Bloom a patch. Spend dew on Cloud Puff to grow.</p>
-          )}
-          <p className="workshop-panel__desc">{selected.desc}</p>
-          <p className="workshop-panel__effect">{selected.effect}</p>
-          {!selected.maxed && !selected.ghost && (
-            <p className="workshop-panel__cost pixel">
-              Cost <span>{formatDew(selected.cost)}</span> dew
-            </p>
-          )}
-          <button
-            type="button"
-            disabled={!selected.afford}
-            onClick={() => purchase(selected.id)}
-            className={`workshop-buy pixel${selected.afford ? ' workshop-buy--go' : ''}`}
-          >
-            {selected.maxed
-              ? 'Maxed out'
-              : selected.ghost
-                ? 'Not unlocked yet'
-                : selected.kind === 'gate'
-                  ? `Unlock`
-                  : `Rank up`}
-          </button>
-          <button type="button" onClick={() => game.retry()} className="workshop-back pixel">
-            Back to rain
-          </button>
+              {nextBuy && (
+                <button
+                  type="button"
+                  className="workshop-next workshop-next--buy pixel"
+                  onClick={() => purchase(nextBuy.id)}
+                >
+                  {nextBuy.id === selected.id ? 'Buy now' : 'Next up'}: <span>{nextBuy.name}</span> ·{' '}
+                  {formatDew(nextBuy.cost)} dew
+                </button>
+              )}
+              <WorkshopStatus node={selected} onBuy={() => purchase(selected.id)} />
+              <div className="workshop-panel__title pixel">{selected.name}</div>
+              {totalRanks === 0 && (
+                <p className="workshop-panel__desc pixel">Rain first. Bloom a patch. Spend dew on Cloud Puff to grow.</p>
+              )}
+              <p className="workshop-panel__desc">{selected.desc}</p>
+              <p className="workshop-panel__effect">{selected.effect}</p>
+              {!selected.maxed && !selected.ghost && (
+                <p className="workshop-panel__cost pixel">
+                  Cost <span>{formatDew(selected.cost)}</span> dew
+                </p>
+              )}
+              <button
+                type="button"
+                disabled={!selected.afford}
+                onClick={() => purchase(selected.id)}
+                className={`workshop-buy pixel${selected.afford ? ' workshop-buy--go' : ''}`}
+              >
+                {selected.maxed
+                  ? 'Maxed out'
+                  : selected.ghost
+                    ? 'Not unlocked yet'
+                    : selected.kind === 'gate'
+                      ? `Unlock`
+                      : `Rank up`}
+              </button>
+              <button type="button" onClick={() => game.retry()} className="workshop-back pixel">
+                Back to rain
+              </button>
             </>
           )}
         </aside>
