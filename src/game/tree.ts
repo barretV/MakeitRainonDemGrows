@@ -458,10 +458,13 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
     case 'puff':
       return true;
     case 'bottle':
-    case 'drizzle':
-    case 'reach':
-    case 'charm':
       return ranks.puff >= 1;
+    case 'drizzle':
+      return ranks.bottle >= 1;
+    case 'reach':
+      return ranks.drizzle >= 1;
+    case 'charm':
+      return ranks.reach >= 1;
     case 'flask':
       return ranks.bottle >= 1;
     case 'reservoir':

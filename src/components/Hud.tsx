@@ -129,6 +129,9 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
         <div className="menu-card__title">{model.cleared ? 'Land restored' : 'Bottle empty'}</div>
         <p className="menu-card__sub">{model.worldName}</p>
         <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
+        {model.runDew > 0 && model.runTiles > 0 && (
+          <p className="menu-card__sub mt-1">Rain earned {formatDew(model.runDew)} dew · {model.runTiles} blooms</p>
+        )}
         <div className="mt-3 grid grid-cols-3 gap-2">
           <Stat label="This bottle" value={`${formatDew(model.runDew)} dew`} />
           <Stat label="Reached" value={pct} />

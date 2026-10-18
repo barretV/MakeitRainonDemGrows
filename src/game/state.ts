@@ -21,6 +21,7 @@ import {
   emptyRanks,
   maskOf,
   maxLiters,
+  NODE_IDS,
   nodeCost,
   patchFraction,
   prereqMet,
@@ -104,6 +105,28 @@ export interface HudModel {
   achievements: Array<AchievementDef & { done: boolean }>;
 }
 
+interface PersistedLand {
+  world: number;
+  progress: number[];
+  green: boolean[];
+  tiles: TileState[];
+}
+
+interface PersistedV3 {
+  v: 3;
+  dew: number;
+  ranks: Partial<Ranks>;
+  world: number;
+  unlocked: number;
+  best: number[];
+  stats: Stats;
+  achievements: string[];
+  lands: PersistedLand[];
+  sfx: boolean;
+  music: boolean;
+  lastSave: number;
+}
+
 interface PersistedV2 {
   v: 2;
   dew: number;
@@ -125,6 +148,13 @@ interface PersistedV1 {
   music?: boolean;
 }
 
+interface LandPack {
+  progress: Float32Array;
+  pixels: Uint8Array;
+  green: boolean[];
+  tiles: TileState[];
+}
+
 const LIGHTNING_CD = 16;
 const TORNADO_CD = 42;
 const SPIN_CD = 11;
@@ -136,6 +166,24 @@ function emptyStats(): Stats {
 function hash01(c: number, r: number): number {
   const n = Math.sin(c * 127.1 + r * 311.7) * 43758.5453;
   return n - Math.floor(n);
+}
+
+function rankTotal(ranks: Ranks): number {
+  return NODE_IDS.reduce((sum, id) => sum + ranks[id], 0);
+}
+
+function sanitizeLoadedState(s: SaveState): void {
+  for (const id of NODE_IDS) {
+    const node = upgradeNode(id);
+    s.ranks[id] = Math.max(0, Math.min(node.max, Math.floor(s.ranks[id] ?? 0)));
+  }
+  const tiles = s.stats.tiles ?? 0;
+  const earned = s.stats.dewEarned ?? 0;
+  if (tiles === 0 && rankTotal(s.ranks) === 0 && earned < 0.01 && s.dew > 0) {
+    s.dew = 0;
+    s.achievements = [];
+    s.stats = emptyStats();
+  }
 }
 
 export class SaveState {
@@ -162,13 +210,14 @@ export class SaveState {
   runReached = 0;
   best: number[] = [0, 0, 0, 0, 0];
 
-  progress = new Float32Array(0);
-  pixels = new Uint8Array(0);
+  progress: Float32Array = new Float32Array(0);
+  pixels: Uint8Array = new Uint8Array(0);
   maskDirty = false;
   private filled = 0;
   private green: boolean[] = [];
   private justGreen: number[] = [];
   private ripples = 0;
+  private lands = new Map<number, LandPack>();
 
   static fresh(): SaveState {
     const s = new SaveState();
@@ -180,14 +229,16 @@ export class SaveState {
     s.achievements = [];
     s.best = [0, 0, 0, 0, 0];
     s.toast = 'A little cloud. A little drizzle.';
-    s.resetLand();
+    s.lands.clear();
+    s.tiles = [];
+    s.beginWorld(0, true);
     return s;
   }
 
   static fromJSON(raw: string): SaveState | null {
     try {
-      const data = JSON.parse(raw) as PersistedV2 | PersistedV1;
-      if (!data || (data.v !== 1 && data.v !== 2)) return null;
+      const data = JSON.parse(raw) as PersistedV3 | PersistedV2 | PersistedV1;
+      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3)) return null;
       const s = new SaveState();
       s.sfx = data.sfx !== false;
       s.music = data.music === true;
@@ -199,7 +250,7 @@ export class SaveState {
         s.stats = emptyStats();
         s.achievements = [];
         s.best = [0, 0, 0, 0, 0];
-      } else if (data.v === 2) {
+      } else if (data.v === 2 || data.v === 3) {
         s.dew = Number.isFinite(data.dew) ? Number(data.dew) : 0;
         s.ranks = { ...emptyRanks(), ...data.ranks };
         s.world = Math.max(0, Math.min(GLOBE_WORLD, data.world | 0));
@@ -210,10 +261,15 @@ export class SaveState {
           const n = data.best?.[i];
           return typeof n === 'number' && n >= 0 ? Math.min(1, n) : 0;
         });
+        if (data.v === 3 && Array.isArray(data.lands)) {
+          s.importLands(data.lands);
+        }
       }
+      sanitizeLoadedState(s);
       s.screen = 'play';
       s.phase = 'play';
-      s.resetLand();
+      s.beginWorld(s.world, false);
+      s.syncPhaseAfterLoad();
       s.lastSave = Date.now();
       return s;
     } catch {
@@ -222,8 +278,8 @@ export class SaveState {
   }
 
   toJSON(): string {
-    const data: PersistedV2 = {
-      v: 2,
+    const data: PersistedV3 = {
+      v: 3,
       dew: this.dew,
       ranks: this.ranks,
       world: this.world,
@@ -231,6 +287,7 @@ export class SaveState {
       best: this.best,
       stats: this.stats,
       achievements: this.achievements,
+      lands: this.exportLands(),
       sfx: this.sfx,
       music: this.music,
       lastSave: Date.now(),
@@ -289,21 +346,153 @@ export class SaveState {
     this.finishIfDone();
   }
 
-  resetLand(): void {
-    const { cols, rows } = maskOf(this.world);
-    this.progress = new Float32Array(cols * rows);
-    this.pixels = new Uint8Array(cols * rows * 4);
+  /** Attach this world's saved mask + tiles, or create empty land. */
+  beginWorld(world: number, forceFresh: boolean): void {
+    this.world = world;
+    if (forceFresh) {
+      this.lands.delete(world);
+    }
+    this.mountWorld(world);
+    this.refillBottle();
+  }
+
+  private mountWorld(world: number): void {
+    const { cols, rows } = maskOf(world);
+    const cells = cols * rows;
+    let pack = this.lands.get(world);
+    if (!pack || pack.progress.length !== cells) {
+      pack = this.createLandPack(world);
+      this.lands.set(world, pack);
+    }
+    this.progress = pack.progress;
+    this.pixels = pack.pixels;
+    this.green = pack.green;
+    this.tiles[world] = pack.tiles;
     this.filled = 0;
     this.maskDirty = true;
     this.ripples = 0;
-    this.tiles[this.world] = makeTiles(this.world);
-    this.green = this.tiles[this.world]?.map(() => false) ?? [];
     this.justGreen = [];
+    this.rebuildMaskPixels();
+    this.refreshGreenFromProgress();
+  }
+
+  private createLandPack(world: number): LandPack {
+    const { cols, rows } = maskOf(world);
+    const cells = cols * rows;
+    const tiles = makeTiles(world);
+    return {
+      progress: new Float32Array(cells),
+      pixels: new Uint8Array(cells * 4),
+      green: tiles.map(() => false),
+      tiles,
+    };
+  }
+
+  private refillBottle(): void {
     this.tank = 1;
-    this.phase = 'play';
     this.lightningCd = abilityOn(this.ranks, 'lightning') ? 6 : LIGHTNING_CD;
     this.tornadoCd = abilityOn(this.ranks, 'tornado') ? 10 : TORNADO_CD;
     this.spinCd = abilityOn(this.ranks, 'sprinkler') ? 4 : SPIN_CD;
+    if (this.ratio() < 1) {
+      this.phase = 'play';
+    }
+  }
+
+  private syncPhaseAfterLoad(): void {
+    if (this.ratio() >= 1) {
+      this.phase = 'clear';
+      this.screen = 'results';
+      this.toast = `${worldDef(this.world).name} is green again.`;
+    }
+  }
+
+  private exportLands(): PersistedLand[] {
+    const out: PersistedLand[] = [];
+    for (const [world, pack] of this.lands) {
+      out.push({
+        world,
+        progress: [...pack.progress],
+        green: [...pack.green],
+        tiles: pack.tiles.map((t) => ({ ...t })),
+      });
+    }
+    return out;
+  }
+
+  private importLands(rows: PersistedLand[]): void {
+    this.lands.clear();
+    for (const row of rows) {
+      if (row.world < 0 || row.world > GLOBE_WORLD) continue;
+      const { cols, rows: maskRows } = maskOf(row.world);
+      const cells = cols * maskRows;
+      const tiles = row.tiles?.length === worldDef(row.world).tiles ? row.tiles : makeTiles(row.world);
+      const green =
+        row.green?.length === tiles.length ? row.green : tiles.map(() => false);
+      const progress = new Float32Array(cells);
+      const src = row.progress ?? [];
+      for (let i = 0; i < cells; i += 1) {
+        const v = src[i];
+        progress[i] = typeof v === 'number' && v >= 0 ? v : 0;
+      }
+      const pixels = new Uint8Array(cells * 4);
+      this.lands.set(row.world, { progress, pixels, green, tiles });
+    }
+  }
+
+  private rebuildMaskPixels(): void {
+    const hp = cellHp(this.world);
+    const pixels = this.pixels;
+    const progress = this.progress;
+    for (let i = 0; i < progress.length; i += 1) {
+      const now = progress[i] ?? 0;
+      const pixel = i * 4;
+      if (now >= hp) {
+        pixels[pixel] = 255;
+        pixels[pixel + 1] = 255;
+      } else if (now > 0) {
+        pixels[pixel] = Math.min(254, Math.floor((now / hp) * 254));
+      } else {
+        pixels[pixel] = 0;
+        pixels[pixel + 1] = 0;
+      }
+    }
+  }
+
+  private refreshGreenFromProgress(): void {
+    const { cols, rows } = gridOf(this.world);
+    const count = cols * rows;
+    for (let i = 0; i < count; i += 1) {
+      this.green[i] = false;
+      this.syncHillFromMask(i);
+    }
+  }
+
+  private syncHillFromMask(index: number): void {
+    const { cols, rows } = gridOf(this.world);
+    const { cols: maskCols, rows: maskRows } = maskOf(this.world);
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const c0 = Math.floor((col / cols) * maskCols);
+    const c1 = Math.floor(((col + 1) / cols) * maskCols);
+    const r0 = Math.floor((row / rows) * maskRows);
+    const r1 = Math.floor(((row + 1) / rows) * maskRows);
+    const hp = cellHp(this.world);
+    let seen = 0;
+    let done = 0;
+    for (let r = r0; r < r1; r += 1) {
+      for (let c = c0; c < c1; c += 1) {
+        seen += 1;
+        if ((this.progress[r * maskCols + c] ?? 0) >= hp) done += 1;
+      }
+    }
+    if (seen === 0 || done / seen < 0.62) return;
+    this.green[index] = true;
+    const tile = this.tiles[this.world]?.[index];
+    if (tile) {
+      tile.hp = 0;
+      tile.pond = 1;
+      tile.cracked = true;
+    }
   }
 
   retryRun(): void {
@@ -311,7 +500,12 @@ export class SaveState {
     this.runTiles = 0;
     this.runReached = 0;
     this.screen = 'play';
-    this.resetLand();
+    this.mountWorld(this.world);
+    this.refillBottle();
+    if (this.ratio() >= 1) {
+      this.phase = 'clear';
+      this.screen = 'results';
+    }
     this.toast = worldDef(this.world).name;
   }
 
@@ -335,8 +529,13 @@ export class SaveState {
       this.toast = 'That land is still shut.';
       return false;
     }
-    this.world = world;
-    this.retryRun();
+    this.beginWorld(world, false);
+    this.runDew = 0;
+    this.runTiles = 0;
+    this.runReached = 0;
+    this.screen = 'play';
+    this.syncPhaseAfterLoad();
+    this.toast = worldDef(this.world).name;
     return true;
   }
 
@@ -569,8 +768,8 @@ export class SaveState {
         this.pixels[pixel] = byte;
         if (now > was && !done) {
           const pay = cellDew(this.world, this.ranks);
-          const drip = pay * ((now - was) / hp) * 0.15;
-          if (drip >= 0.01) {
+          const drip = pay * ((now - was) / hp) * 0.22;
+          if (drip >= 0.001) {
             const gain = this.addDew(drip);
             dew += gain;
           }
@@ -806,6 +1005,7 @@ function makeTiles(world: number): TileState[] {
 export function formatDew(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 10_000) return `${(n / 1000).toFixed(1)}K`;
+  if (n < 100 && !Number.isInteger(n)) return n.toFixed(1).replace(/\.0$/, '');
   return Math.floor(n).toLocaleString();
 }
 

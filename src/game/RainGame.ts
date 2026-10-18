@@ -9,7 +9,12 @@ import { getArt, type ArtSet, type CloudMood } from './pixels';
 import { BASE_SCALE, maskOf, type NodeId } from './tree';
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
-import { SaveState, type HudModel, type SoakResult } from './state';
+import { SaveState, formatDew, type HudModel, type SoakResult } from './state';
+
+function formatSplashDew(n: number): string {
+  if (n < 10 && Math.abs(n - Math.round(n)) > 0.05) return formatDew(n);
+  return formatDew(Math.round(n));
+}
 import { bridge } from './bridge';
 
 /** MashKin-style board camera: pitched down over a flat XZ slab, slight yaw so billboards have a face. */
@@ -527,7 +532,10 @@ export class RainGame {
   buy(id: NodeId): void {
     if (!this.state) return;
     if (!this.state.buy(id)) this.state.toast = 'Need more dew for that.';
-    else this.audio.coin();
+    else {
+      this.audio.coin();
+      void this.saveNow();
+    }
     this.pushHud(true);
   }
 
@@ -590,11 +598,13 @@ export class RainGame {
 
   private async boot(): Promise<void> {
     const fresh = new URLSearchParams(window.location.search).has('fresh');
-    this.skipSave = fresh;
+    if (fresh) await clearProgress();
     const raw = fresh ? null : await readProgress();
     if (this.dead) return;
     const loaded = raw ? SaveState.fromJSON(raw) : null;
     this.state = loaded ?? SaveState.fresh();
+    this.skipSave = false;
+    if (fresh) await this.saveNow();
     this.lastPhase = this.state.phase;
     this.audio.setMuted(!this.state.sfx);
     if (this.state.music) this.audio.toggleMusic();
@@ -674,7 +684,10 @@ export class RainGame {
     const raining = held && state.tank > 0.008;
     state.tick(dt, { raining: held, moving: speed > 0.4 });
     if (state.phase !== this.lastPhase) {
-      if (state.phase !== 'play') this.pushHud(true);
+      if (state.phase !== 'play') {
+        this.pushHud(true);
+        void this.saveNow();
+      }
       this.lastPhase = state.phase;
     }
     if (raining && !this.audio.muted) this.audio.rainStart();
@@ -691,13 +704,12 @@ export class RainGame {
       splashCrits += hit.crits;
       if (hit.filled > 0) this.grin = 0.75;
     }
-    if (splashDew > 0) {
-      this.floatText(
-        this.cloud.position.x,
-        this.cloud.position.y + 0.45,
-        splashCrits > 0 ? `CRIT +${Math.floor(splashDew)}` : `+${Math.floor(splashDew)}`,
-        splashCrits > 0,
-      );
+    if (splashDew >= 0.05) {
+      const label =
+        splashCrits > 0
+          ? `CRIT +${formatSplashDew(splashDew)}`
+          : `+${formatSplashDew(splashDew)}`;
+      this.floatText(this.cloud.position.x, this.cloud.position.y + 0.45, label, splashCrits > 0);
     }
 
     if (raining && state.armLightning()) {
