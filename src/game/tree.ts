@@ -655,7 +655,7 @@ export interface TreeNodeView {
   afford: boolean;
 }
 
-export function buildTree(ranks: Ranks, dew: number): TreeNodeView[] {
+export function buildTree(ranks: Ranks, dew: number, spendable = Math.floor(dew)): TreeNodeView[] {
   const points = new Map(layoutTree().map((point) => [point.id, point]));
   return allNodes().map((node) => {
     const level = ranks[node.id];
@@ -680,7 +680,7 @@ export function buildTree(ranks: Ranks, dew: number): TreeNodeView[] {
       visible,
       ghost: isGhost(node.id, ranks),
       maxed,
-      afford: visible && !maxed && dew >= cost,
+      afford: visible && !maxed && spendable >= cost,
     };
   });
 }

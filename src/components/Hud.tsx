@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { RainGame } from '../game/RainGame';
-import { formatDew, type HudModel } from '../game/state';
+import { formatDew, walletDew, type HudModel } from '../game/state';
 import { Bottle } from './Bottle';
 import { HudDewIcon, HudPlantIcon } from './HudCurrencyIcons';
 import { RevivalBar } from './RevivalBar';
@@ -55,7 +55,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
               </div>
               <div className="hud-currency-strip">
                 <HudChip
-                  value={Math.floor(model.dew)}
+                  value={walletDew(model.dew)}
                   display={formatDew(model.dew)}
                   icon={<HudDewIcon />}
                   ariaLabel={`${formatDew(model.dew)} dew`}

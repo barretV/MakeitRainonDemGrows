@@ -9,11 +9,10 @@ import { getArt, type ArtSet, type CloudMood } from './pixels';
 import { BASE_SCALE, maskOf, type NodeId } from './tree';
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
-import { SaveState, formatDew, type HudModel, type SoakResult } from './state';
+import { SaveState, formatDew, walletDew, type HudModel, type SoakResult } from './state';
 
 function formatSplashDew(n: number): string {
-  if (n < 10 && Math.abs(n - Math.round(n)) > 0.05) return formatDew(n);
-  return formatDew(Math.round(n));
+  return formatDew(walletDew(n));
 }
 import { bridge } from './bridge';
 

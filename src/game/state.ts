@@ -177,13 +177,17 @@ function sanitizeLoadedState(s: SaveState): void {
     const node = upgradeNode(id);
     s.ranks[id] = Math.max(0, Math.min(node.max, Math.floor(s.ranks[id] ?? 0)));
   }
-  const tiles = s.stats.tiles ?? 0;
-  const earned = s.stats.dewEarned ?? 0;
-  if (tiles === 0 && rankTotal(s.ranks) === 0 && earned < 0.01 && s.dew > 0) {
+  // Day one: no upgrades and no saved restoration means wallet stays empty.
+  if (rankTotal(s.ranks) === 0 && !s.hasLandProgress()) {
     s.dew = 0;
     s.achievements = [];
     s.stats = emptyStats();
   }
+}
+
+/** Whole dew only — micro-drips accrue internally but the wallet display and shop use integers. */
+export function walletDew(dew: number): number {
+  return Math.max(0, Math.floor(dew));
 }
 
 export class SaveState {
@@ -265,10 +269,10 @@ export class SaveState {
           s.importLands(data.lands);
         }
       }
-      sanitizeLoadedState(s);
       s.screen = 'play';
       s.phase = 'play';
       s.beginWorld(s.world, false);
+      sanitizeLoadedState(s);
       s.syncPhaseAfterLoad();
       s.lastSave = Date.now();
       return s;
@@ -419,6 +423,15 @@ export class SaveState {
     return out;
   }
 
+  hasLandProgress(): boolean {
+    for (const pack of this.lands.values()) {
+      for (let i = 0; i < pack.progress.length; i += 1) {
+        if ((pack.progress[i] ?? 0) > 0.001) return true;
+      }
+    }
+    return false;
+  }
+
   private importLands(rows: PersistedLand[]): void {
     this.lands.clear();
     for (const row of rows) {
@@ -546,7 +559,7 @@ export class SaveState {
     const level = this.ranks[id];
     if (level >= node.max) return false;
     const cost = nodeCost(id, level);
-    if (this.dew < cost) return false;
+    if (walletDew(this.dew) < cost) return false;
     this.dew -= cost;
     this.ranks[id] += 1;
     this.toast = node.kind === 'gate' ? `${node.name} unlocked.` : `${node.name} rank ${this.ranks[id]}.`;
@@ -708,7 +721,7 @@ export class SaveState {
       runReached: this.runReached,
       best: this.best[this.world] ?? 0,
       cleared: this.phase === 'clear',
-      tree: buildTree(this.ranks, this.dew),
+      tree: buildTree(this.ranks, this.dew, walletDew(this.dew)),
       worlds: [0, 1, 2, 3, 4].map((index) => ({
         index,
         name: worldDef(index).name,
@@ -1003,10 +1016,10 @@ function makeTiles(world: number): TileState[] {
 }
 
 export function formatDew(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 10_000) return `${(n / 1000).toFixed(1)}K`;
-  if (n < 100 && !Number.isInteger(n)) return n.toFixed(1).replace(/\.0$/, '');
-  return Math.floor(n).toLocaleString();
+  const whole = walletDew(n);
+  if (whole >= 1_000_000) return `${(whole / 1_000_000).toFixed(2)}M`;
+  if (whole >= 10_000) return `${(whole / 1000).toFixed(1)}K`;
+  return whole.toLocaleString();
 }
 
 export function formatLiters(n: number): string {
