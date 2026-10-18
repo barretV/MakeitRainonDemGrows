@@ -13,7 +13,8 @@
     "format": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --write",
     "format:check": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --check",
     "balance:sim": "python balance/sim.py",
-    "balance:feel": "python balance/feel.py"
+    "balance:feel": "python balance/feel.py",
+    "balance:diagnose": "python balance/diagnose.py"
   },
   "keywords": [
     "react",

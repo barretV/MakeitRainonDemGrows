@@ -43,7 +43,11 @@ function vinePath(x1: number, y1: number, x2: number, y2: number): string {
 
 export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }) {
   const puffLevel = model.tree.find((node) => node.id === 'puff')?.level ?? 0;
-  const shown = model.tree.filter((node) => node.visible || (node.ghost && puffLevel >= 1));
+  const totalRanks = model.tree.reduce((sum, node) => sum + node.level, 0);
+  const shown = model.tree.filter((node) => {
+    if (totalRanks === 0) return node.id === 'puff';
+    return node.visible || (node.ghost && puffLevel >= 1);
+  });
   const nextBuy = PRIORITY.map((id) => model.tree.find((node) => node.id === id)).find(
     (node) => node && !node.maxed && node.visible && !node.ghost && node.afford,
   );
@@ -208,6 +212,9 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
           )}
           <WorkshopStatus node={selected} />
           <div className="workshop-panel__title pixel">{selected.name}</div>
+          {totalRanks === 0 && (
+            <p className="workshop-panel__desc pixel">Rain first. Bloom a patch. Spend dew on Cloud Puff to grow.</p>
+          )}
           <p className="workshop-panel__desc">{selected.desc}</p>
           <p className="workshop-panel__effect">{selected.effect}</p>
           {!selected.maxed && !selected.ghost && (

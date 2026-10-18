@@ -103,7 +103,7 @@ export interface AchievementDef {
 }
 
 export const ACHIEVEMENTS: readonly AchievementDef[] = [
-  { id: 'first-drop', name: 'First Drop', desc: 'Bloom a tile with your own rain.', reward: 5 },
+  { id: 'first-drop', name: 'First Drop', desc: 'Bloom a tile with your own rain.', reward: 3 },
   { id: 'gardener', name: 'Soft Launch', desc: 'Bloom 80 tiles.', reward: 25 },
   { id: 'koi', name: 'Koi Season', desc: 'Fill a cracked pond.', reward: 120 },
   { id: 'money', name: 'Money Tree', desc: 'Wake a mega flora.', reward: 280 },

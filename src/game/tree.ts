@@ -74,15 +74,16 @@ export const NODE_IDS: readonly NodeId[] = [
 ];
 
 /** Greedy campaign order. A node is skipped until its parent rank is high enough and the player can afford the next rank. */
+/** Workshop “next up” order — interleave branches for ebb/flow (mirrors balance/game_constants.py). */
 export const PRIORITY: readonly NodeId[] = [
   'puff',
   'bottle',
-  'drizzle',
-  'reach',
-  'charm',
   'flask',
-  'specks',
+  'reach',
   'circle',
+  'drizzle',
+  'specks',
+  'charm',
   'dew',
   'soak',
   'reservoir',
@@ -112,7 +113,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Get bigger. A bigger cloud drinks a wider circle and the camera leans in.',
     max: 8,
     color: '#ffe56a',
-    costs: [6, 11, 26, 62, 145, 340, 780, 1750],
+    costs: [7, 20, 48, 110, 255, 590, 1350, 3000],
     effect: (level) => `Size ${cloudScale({ ...emptyRanks(), puff: level }).toFixed(2)}`,
   },
   {
@@ -124,7 +125,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the bottle petal. The next ranks hold more water.',
     max: 1,
     color: '#8fd4ff',
-    costs: [8],
+    costs: [12],
     effect: () => 'Bottle petal open',
   },
   {
@@ -136,7 +137,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'More liters in the next bottle. Nothing refills while you fly.',
     max: 5,
     color: '#8fd4ff',
-    costs: [12, 30, 72, 165, 380],
+    costs: [14, 34, 78, 178, 410],
     effect: (level) => `${Math.round(maxLiters({ ...emptyRanks(), bottle: 1, flask: level }))} L`,
   },
   {
@@ -148,7 +149,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A deeper bottle for the long passes.',
     max: 5,
     color: '#8fd4ff',
-    costs: [38, 95, 220, 500, 1150],
+    costs: [42, 100, 230, 530, 1220],
     effect: (level) => `Liters x${(1.26 ** level).toFixed(2)}`,
   },
   {
@@ -160,7 +161,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The bottle empties slower, so you can sit in a patch.',
     max: 5,
     color: '#8fd4ff',
-    costs: [48, 115, 265, 620, 1450],
+    costs: [52, 125, 290, 670, 1550],
     effect: (level) => `Drain /${(1.14 ** level).toFixed(2)}`,
   },
   {
@@ -172,7 +173,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The last sip lasts. Built for a whole land.',
     max: 4,
     color: '#8fd4ff',
-    costs: [180, 420, 980, 2200],
+    costs: [200, 460, 1050, 2400],
     effect: (level) => `Drain /${(1.12 ** level).toFixed(2)}`,
   },
   {
@@ -184,7 +185,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the rain petal. The first cloud only leaks.',
     max: 1,
     color: '#7eb6ff',
-    costs: [9],
+    costs: [14],
     effect: () => 'Drizzle petal open',
   },
   {
@@ -196,7 +197,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'More drops in the circle. Still patchy.',
     max: 5,
     color: '#7eb6ff',
-    costs: [14, 34, 82, 190, 440],
+    costs: [16, 38, 88, 200, 460],
     effect: (level) => `${Math.round(patchFraction({ ...emptyRanks(), drizzle: 1, specks: level }) * 100)}% of the circle`,
   },
   {
@@ -208,7 +209,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The dry holes in the circle close up.',
     max: 5,
     color: '#7eb6ff',
-    costs: [52, 125, 290, 670, 1550],
+    costs: [55, 132, 305, 700, 1620],
     effect: (level) => `Patches +${level}`,
   },
   {
@@ -220,7 +221,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Each drop sinks deeper. Patches fill instead of only darkening.',
     max: 5,
     color: '#7eb6ff',
-    costs: [18, 44, 105, 245, 560],
+    costs: [20, 48, 112, 260, 600],
     effect: (level) => `Soak x${(1.42 ** level).toFixed(2)}`,
   },
   {
@@ -232,7 +233,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The circle finally means it.',
     max: 4,
     color: '#7eb6ff',
-    costs: [4200, 10500, 24000, 52000],
+    costs: [4500, 11200, 25500, 55000],
     effect: (level) => `Soak x${(1.36 ** level).toFixed(2)}`,
   },
   {
@@ -244,7 +245,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the reach petal. The circle can grow past the puff.',
     max: 1,
     color: '#b6e86a',
-    costs: [10],
+    costs: [16],
     effect: () => 'Reach petal open',
   },
   {
@@ -256,7 +257,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A wider rain circle.',
     max: 5,
     color: '#b6e86a',
-    costs: [16, 40, 95, 220, 510],
+    costs: [18, 44, 102, 235, 540],
     effect: (level) => `Radius x${(1 + 0.32 * level).toFixed(2)}`,
   },
   {
@@ -268,7 +269,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The circle covers a meadow, not a puddle.',
     max: 5,
     color: '#b6e86a',
-    costs: [58, 140, 325, 7500, 18500],
+    costs: [62, 148, 340, 7800, 19200],
     effect: (level) => `Radius x${(1 + 0.28 * level).toFixed(2)}`,
   },
   {
@@ -280,7 +281,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Big enough to walk a whole land in one bottle.',
     max: 4,
     color: '#b6e86a',
-    costs: [13500, 30000, 58000, 100000],
+    costs: [14000, 31000, 60000, 105000],
     effect: (level) => `Radius x${(1 + 0.26 * level).toFixed(2)}`,
   },
   {
@@ -292,7 +293,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the charm petal. The cloud gets loud about it.',
     max: 1,
     color: '#ff9bb8',
-    costs: [11],
+    costs: [18],
     effect: () => 'Charm petal open',
   },
   {
@@ -304,7 +305,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Every finished patch pays more.',
     max: 5,
     color: '#ff9bb8',
-    costs: [15, 38, 90, 210, 480],
+    costs: [20, 48, 112, 260, 600],
     effect: (level) => `Dew x${(1.22 ** level).toFixed(2)}`,
   },
   {
@@ -316,7 +317,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The meadow tips extra.',
     max: 4,
     color: '#ff9bb8',
-    costs: [72, 180, 420, 960],
+    costs: [78, 188, 435, 1000],
     effect: (level) => `Dew x${(1.18 ** level).toFixed(2)}`,
   },
   {
@@ -328,7 +329,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Some patches bloom on contact and pay triple.',
     max: 4,
     color: '#ff9bb8',
-    costs: [78, 195, 450, 1050],
+    costs: [85, 205, 475, 1100],
     effect: (level) => `${Math.round(critChance({ ...emptyRanks(), crit: level }) * 100)}% crit`,
   },
   {
@@ -340,7 +341,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The cloud spins and paints a ring. Off until you buy it.',
     max: 1,
     color: '#ff9bb8',
-    costs: [18000],
+    costs: [19000],
     effect: () => 'Sprinkler unlocked',
   },
   {
@@ -352,7 +353,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The ring reaches further.',
     max: 3,
     color: '#ff9bb8',
-    costs: [24000, 52000, 110000],
+    costs: [25000, 54000, 115000],
     effect: (level) => `Ring +${level}`,
   },
   {
@@ -364,7 +365,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A bolt finishes a tight circle of patches.',
     max: 1,
     color: '#ffd56a',
-    costs: [40000],
+    costs: [42000],
     effect: () => 'Lightning unlocked',
   },
   {
@@ -376,7 +377,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The bolt covers more patches.',
     max: 3,
     color: '#ffd56a',
-    costs: [48000, 100000, 200000],
+    costs: [50000, 105000, 210000],
     effect: (level) => `Bolt +${level}`,
   },
   {
@@ -388,7 +389,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A twister walks ahead and greens what it touches.',
     max: 1,
     color: '#d7c4ff',
-    costs: [120000],
+    costs: [125000],
     effect: () => 'Tornado unlocked',
   },
   {
@@ -400,7 +401,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A fatter twister.',
     max: 3,
     color: '#d7c4ff',
-    costs: [140000, 260000, 480000],
+    costs: [145000, 270000, 500000],
     effect: (level) => `Twister +${level}`,
   },
 ];
@@ -523,7 +524,7 @@ export function isGhost(id: NodeId, ranks: Ranks): boolean {
 }
 
 export const BASE_SCALE = 0.48;
-const PUFF_STEP = 0.075;
+const PUFF_STEP = 0.085;
 
 export function cloudScale(ranks: Ranks): number {
   return BASE_SCALE + ranks.puff * PUFF_STEP;

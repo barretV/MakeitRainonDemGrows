@@ -12,46 +12,67 @@ WORLDS = [
 ]
 
 BASE_SCALE = 0.48
-PUFF_STEP = 0.075
-OVERHEAD_SEC = 8
+PUFF_STEP = 0.085
+OVERHEAD_SEC = 10
 
+# Costs tuned for ~1–2 workshop buys per run early (see balance/diagnose.py).
 COSTS = {
-    # Early ranks are cheap so almost every run buys something (see balance/feel.py).
-    "puff": [6, 11, 26, 62, 145, 340, 780, 1750],
-    "bottle": [8],
-    "flask": [12, 30, 72, 165, 380],
-    "reservoir": [38, 95, 220, 500, 1150],
-    "linger": [48, 115, 265, 620, 1450],
-    "glacier": [180, 420, 980, 2200],
-    "drizzle": [9],
-    "specks": [14, 34, 82, 190, 440],
-    "mist": [52, 125, 290, 670, 1550],
-    "soak": [18, 44, 105, 245, 560],
-    "downpour": [4200, 10500, 24000, 52000],
-    "reach": [10],
-    "circle": [16, 40, 95, 220, 510],
-    "wide": [58, 140, 325, 7500, 18500],
-    "horizon": [13500, 30000, 58000, 100000],
-    "charm": [11],
-    "dew": [15, 38, 90, 210, 480],
-    "bounty": [72, 180, 420, 960],
-    "crit": [78, 195, 450, 1050],
-    "sprinkler": [18000],
-    "spin": [24000, 52000, 110000],
-    "lightning": [40000],
-    "zap": [48000, 100000, 200000],
-    "tornado": [120000],
-    "twist": [140000, 260000, 480000],
+    "puff": [7, 20, 48, 110, 255, 590, 1350, 3000],
+    "bottle": [12],
+    "flask": [14, 34, 78, 178, 410],
+    "reservoir": [42, 100, 230, 530, 1220],
+    "linger": [52, 125, 290, 670, 1550],
+    "glacier": [200, 460, 1050, 2400],
+    "drizzle": [14],
+    "specks": [16, 38, 88, 200, 460],
+    "mist": [55, 132, 305, 700, 1620],
+    "soak": [20, 48, 112, 260, 600],
+    "downpour": [4500, 11200, 25500, 55000],
+    "reach": [16],
+    "circle": [18, 44, 102, 235, 540],
+    "wide": [62, 148, 340, 7800, 19200],
+    "horizon": [14000, 31000, 60000, 105000],
+    "charm": [18],
+    "dew": [20, 48, 112, 260, 600],
+    "bounty": [78, 188, 435, 1000],
+    "crit": [85, 205, 475, 1100],
+    "sprinkler": [19000],
+    "spin": [25000, 54000, 115000],
+    "lightning": [42000],
+    "zap": [50000, 105000, 210000],
+    "tornado": [125000],
+    "twist": [145000, 270000, 500000],
 }
 
 MAXED = {key: len(costs) for key, costs in COSTS.items()}
 
-PRIORITY = [
-    "puff", "bottle", "drizzle", "reach", "charm",
-    "flask", "specks", "circle", "dew", "soak",
-    "reservoir", "mist", "wide", "bounty", "linger",
-    "crit", "downpour", "horizon", "glacier",
-    "sprinkler", "spin", "lightning", "zap", "tornado", "twist",
+# Greedy shop: first affordable in this order (interleaved branches).
+PRIORITY_UNIQUE = [
+    "puff",
+    "bottle",
+    "flask",
+    "reach",
+    "circle",
+    "drizzle",
+    "specks",
+    "charm",
+    "dew",
+    "soak",
+    "reservoir",
+    "mist",
+    "wide",
+    "bounty",
+    "linger",
+    "crit",
+    "downpour",
+    "horizon",
+    "glacier",
+    "sprinkler",
+    "spin",
+    "lightning",
+    "zap",
+    "tornado",
+    "twist",
 ]
 
 
@@ -59,8 +80,14 @@ def prereq(node, state):
     puff = state["puff"]
     if node == "puff":
         return True
-    if node in ("bottle", "drizzle", "reach", "charm"):
+    if node == "bottle":
         return puff >= 1
+    if node == "drizzle":
+        return state["bottle"] >= 1
+    if node == "reach":
+        return state["drizzle"] >= 1
+    if node == "charm":
+        return state["reach"] >= 1
     checks = {
         "flask": state["bottle"] >= 1,
         "reservoir": state["flask"] >= 1,

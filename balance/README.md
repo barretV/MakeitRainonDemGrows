@@ -5,8 +5,10 @@ Python constants in `game_constants.py` mirror `src/game/balance.ts` and `src/ga
 ## Commands
 
 ```bash
-python balance/feel.py   # Early-run purchase feel (world 0)
-python balance/sim.py    # Full campaign through all worlds
+python balance/feel.py      # Early-run purchases + power stats (1 buy/run)
+python balance/diagnose.py  # Restoration curve + dead zones
+python balance/sim.py       # Full campaign (greedy shop)
+python balance/sim.py --world 0 --one-buy   # Player-like single upgrade per bottle
 ```
 
 ## PASS criteria
@@ -16,4 +18,4 @@ python balance/sim.py    # Full campaign through all worlds
 
 ## Paint model
 
-`cells_per_run()` assumes each wet mask cell in the rain disc receives full `soak_per_tick` every 0.1s (same as `SaveState.paint()`). When a bottle does not reach `hp`, restoration and dew use partial progress; completion dew uses full `pay`, partial uses the 15% micro-drip factor.
+`cells_per_run()` assumes each wet mask cell in the rain disc receives full `soak_per_tick` every 0.1s (same as `SaveState.paint()`). Land **persists** between bottles (`filled_ratio` shrinks new cells as the island greens). When a bottle does not reach `hp`, partial progress uses the 22% micro-drip factor (matches `state.ts`).
