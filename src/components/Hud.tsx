@@ -37,6 +37,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
   const [gear, setGear] = useState(false);
   const pct = model.restored * 100;
   const playing = model.screen === 'play';
+  const plantTotal = model.stats.tiles;
 
   return (
     <div className="pointer-events-none absolute inset-0">
@@ -61,10 +62,10 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                   ariaLabel={`${formatDew(model.dew)} dew`}
                 />
                 <HudChip
-                  value={model.runTiles}
-                  display={String(model.runTiles)}
+                  value={plantTotal}
+                  display={String(plantTotal)}
                   icon={<HudPlantIcon />}
-                  ariaLabel={`${model.runTiles} plants this bottle`}
+                  ariaLabel={`${plantTotal} plants grown`}
                 />
               </div>
             </div>
