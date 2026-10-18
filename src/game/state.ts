@@ -515,11 +515,9 @@ export class SaveState {
     this.screen = 'play';
     this.mountWorld(this.world);
     this.refillBottle();
-    if (this.ratio() >= 1) {
-      this.phase = 'clear';
-      this.screen = 'results';
-    }
-    this.toast = worldDef(this.world).name;
+    this.phase = 'play';
+    this.toast =
+      this.ratio() >= 1 ? `${worldDef(this.world).name} · another bottle` : worldDef(this.world).name;
   }
 
   openWorkshop(): void {

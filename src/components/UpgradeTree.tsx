@@ -254,8 +254,8 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
                   ? `Unlock`
                   : `Rank up`}
           </button>
-          <button type="button" onClick={() => game.showResults()} className="workshop-back pixel">
-            Back to results
+          <button type="button" onClick={() => game.retry()} className="workshop-back pixel">
+            Back to rain
           </button>
         </aside>
       )}
