@@ -13,67 +13,14 @@ WORLDS = [
 
 BASE_SCALE = 0.48
 PUFF_STEP = 0.085
-OVERHEAD_SEC = 10
+OVERHEAD_SEC = 15
 
-# Costs tuned for ~1–2 workshop buys per run early (see balance/diagnose.py).
-COSTS = {
-    "puff": [4, 8, 22, 55, 130, 300, 690, 1550],
-    "bottle": [9],
-    "flask": [11, 26, 60, 138, 320],
-    "reservoir": [42, 100, 230, 530, 1220],
-    "linger": [52, 125, 290, 670, 1550],
-    "glacier": [200, 460, 1050, 2400],
-    "drizzle": [10],
-    "specks": [13, 32, 75, 172, 400],
-    "mist": [55, 132, 305, 700, 1620],
-    "soak": [20, 48, 112, 260, 600],
-    "downpour": [4500, 11200, 25500, 55000],
-    "reach": [12],
-    "circle": [14, 34, 78, 180, 415],
-    "wide": [62, 148, 340, 7800, 19200],
-    "horizon": [14000, 31000, 60000, 105000],
-    "charm": [13],
-    "dew": [15, 36, 84, 195, 450],
-    "bounty": [78, 188, 435, 1000],
-    "crit": [85, 205, 475, 1100],
-    "sprinkler": [19000],
-    "spin": [25000, 54000, 115000],
-    "lightning": [42000],
-    "zap": [50000, 105000, 210000],
-    "tornado": [125000],
-    "twist": [145000, 270000, 500000],
-}
+from upgrade_loader import build_costs, build_priority_unique
 
+# From balance/upgrades.json — run `npm run dump-upgrades` after editing src/game/tree.ts
+COSTS = build_costs()
 MAXED = {key: len(costs) for key, costs in COSTS.items()}
-
-# Greedy shop: first affordable in this order (interleaved branches).
-PRIORITY_UNIQUE = [
-    "puff",
-    "bottle",
-    "flask",
-    "reach",
-    "circle",
-    "drizzle",
-    "specks",
-    "charm",
-    "dew",
-    "soak",
-    "reservoir",
-    "mist",
-    "wide",
-    "bounty",
-    "linger",
-    "crit",
-    "downpour",
-    "horizon",
-    "glacier",
-    "sprinkler",
-    "spin",
-    "lightning",
-    "zap",
-    "tornado",
-    "twist",
-]
+PRIORITY_UNIQUE = build_priority_unique()
 
 
 def prereq(node, state):

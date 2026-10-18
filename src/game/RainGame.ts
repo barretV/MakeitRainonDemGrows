@@ -6,9 +6,10 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GLOBE_WORLD, TILE, gridOf, worldDef } from './balance';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
-import { BASE_SCALE, maskOf, type NodeId } from './tree';
+import { BASE_SCALE, maskOf, upgradeNode, type NodeId } from './tree';
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
+import type { PetalId } from './petal';
 import { SaveState, formatDew, walletDew, type HudModel, type SoakResult } from './state';
 
 function formatSplashDew(n: number): string {
@@ -213,6 +214,7 @@ export class RainGame {
   private faceZ = 0;
   private slosh = 0;
   private shake = 0;
+  private cloudPop = 1;
   private toastAge = 0;
   private lastToast = '';
   private spin = 0;
@@ -221,6 +223,9 @@ export class RainGame {
   private hoverY = 2;
   private camGroundY = 1;
   private camZoom = 1;
+  private camZoomPulse = 0;
+  private skyLift = 0;
+  private readonly skyBase = new THREE.Color();
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private pinchSpan0 = 0;
   private pinchZoom0 = 1;
@@ -379,7 +384,12 @@ export class RainGame {
         transparent: true,
         depthWrite: false,
         blending: THREE.NormalBlending,
-        uniforms: { uTime: { value: 0 }, uTop: { value: 0.45 }, uDensity: { value: 0.55 } },
+        uniforms: {
+          uTime: { value: 0 },
+          uTop: { value: 0.45 },
+          uDensity: { value: 0.55 },
+          uSilver: { value: 0 },
+        },
         vertexShader: /* glsl */ `
           varying vec2 vUv;
           void main() {
@@ -391,6 +401,7 @@ export class RainGame {
           uniform float uTime;
           uniform float uTop;
           uniform float uDensity;
+          uniform float uSilver;
           varying vec2 vUv;
           float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
           void main() {
@@ -406,7 +417,9 @@ export class RainGame {
             vec2 cell = floor(vec2((x * 0.5 + 0.5) * 22.0, vUv.y * 48.0 + uTime * 8.0));
             float spark = step(0.9, h(cell));
             float fade = smoothstep(0.0, 0.08, vUv.y) * smoothstep(1.0, 0.78, vUv.y);
-            vec3 col = mix(vec3(0.35, 0.82, 1.0), vec3(0.82, 0.98, 1.0), body);
+            vec3 cool = mix(vec3(0.35, 0.82, 1.0), vec3(0.82, 0.98, 1.0), body);
+            vec3 silver = mix(vec3(0.72, 0.88, 1.0), vec3(0.95, 0.98, 1.0), body);
+            vec3 col = mix(cool, silver, uSilver);
             col = mix(col, vec3(1.0), spark);
             float alpha = (0.42 * body + streak * 0.55 + spark * 0.85) * fade;
             gl_FragColor = vec4(col, alpha);
@@ -530,9 +543,27 @@ export class RainGame {
 
   buy(id: NodeId): void {
     if (!this.state) return;
+    const node = upgradeNode(id);
+    const gateUnlock = node.kind === 'gate' && this.state.ranks[id] === 0;
     if (!this.state.buy(id)) this.state.toast = 'Need more dew for that.';
     else {
       this.audio.coin();
+      this.cloudPop = id === 'puff' ? 1.28 : 1.18;
+      this.setCamZoom(this.camZoom * 0.93);
+      this.camZoomPulse = 0.45;
+      if (gateUnlock) this.shake = 0.3;
+      this.rebuild();
+      void this.saveNow();
+    }
+    this.pushHud(true);
+  }
+
+  buyPetal(id: PetalId): void {
+    if (!this.state) return;
+    if (!this.state.buyPetal(id)) this.state.toast = 'Need more blooms for that.';
+    else {
+      this.audio.chime();
+      this.cloudPop = 1.14;
       void this.saveNow();
     }
     this.pushHud(true);
@@ -689,8 +720,12 @@ export class RainGame {
       }
       this.lastPhase = state.phase;
     }
-    if (raining && !this.audio.muted) this.audio.rainStart();
-    else this.audio.rainStop();
+    if (raining && !this.audio.muted) {
+      this.audio.rainStart();
+      this.audio.setRainHum(state.petals.hum >= 1);
+    } else {
+      this.audio.rainStop();
+    }
 
     this.soakAcc += dt;
     let splashDew = 0;
@@ -765,6 +800,8 @@ export class RainGame {
     if (state.toast !== this.lastToast) {
       this.lastToast = state.toast;
       this.toastAge = 0;
+      const t = state.toast.toLowerCase();
+      if (t.includes('revival') || t.includes('whole again')) this.skyLift = 2.6;
     } else if (state.toast) {
       this.toastAge += dt;
       if (this.toastAge > 3.2) {
@@ -804,12 +841,21 @@ export class RainGame {
       mat.needsUpdate = true;
       this.mood = mood;
     }
-    mat.color.set(sleepy ? '#c5c9d4' : '#ffffff');
+    const bow = state.petals.bow >= 1;
+    mat.color.set(sleepy ? '#c5c9d4' : bow ? '#fff4fc' : '#ffffff');
     const grown = state.scale();
+    this.cloudPop += (1 - this.cloudPop) * Math.min(1, dt * 7);
     const speed = Math.hypot(vx, vz) / Math.max(dt, 0.016);
     const stretch = 1 + Math.min(0.2, speed * 0.012);
-    const cheek = raining ? 1 + Math.sin(t * 9) * 0.05 : 1 + Math.sin(t * 2.1) * 0.025;
-    this.cloud.scale.set((grown * cheek) / Math.sqrt(stretch), grown * cheek * stretch, grown * cheek);
+    const blush = state.petals.blush >= 1 ? 1.06 : 1;
+    const cheek =
+      (raining ? 1 + Math.sin(t * 9) * 0.05 : 1 + Math.sin(t * 2.1) * 0.025) * blush;
+    const pop = this.cloudPop;
+    this.cloud.scale.set(
+      (grown * cheek * pop) / Math.sqrt(stretch),
+      grown * cheek * stretch * pop,
+      grown * cheek * pop,
+    );
     const bob = Math.sin(t * 2.5) * 0.08;
     if (this.globe) {
       const hover = this.lonLatPoint(this.cloudX, this.cloudZ, 6.85 + 1.2 * grown);
@@ -831,6 +877,7 @@ export class RainGame {
 
     const curtainMat = this.curtain.material as THREE.ShaderMaterial;
     curtainMat.uniforms['uTime']!.value = t;
+    curtainMat.uniforms['uSilver']!.value = state.petals.trail >= 1 ? 1 : 0;
     this.curtain.visible = raining;
     this.puddle.visible = raining;
     if (raining) {
@@ -883,10 +930,23 @@ export class RainGame {
       }
     }
 
+    this.applySkyLift(dt);
     this.faceAll();
     this.syncProps(t);
     this.syncCritters(dt, t);
     this.stepFx(dt);
+  }
+
+  private applySkyLift(dt: number): void {
+    if (this.skyLift <= 0 || this.globe) return;
+    this.skyLift = Math.max(0, this.skyLift - dt);
+    const lift = (this.skyLift / 2.6) * 0.22;
+    const bg = this.scene.background as THREE.Color;
+    const fog = this.scene.fog as THREE.Fog | null;
+    bg.r = clamp(this.skyBase.r + lift, 0, 1);
+    bg.g = clamp(this.skyBase.g + lift * 0.9, 0, 1);
+    bg.b = clamp(this.skyBase.b + lift * 0.55, 0, 1);
+    if (fog) fog.color.copy(bg);
   }
 
   private rebuild(): void {
@@ -906,6 +966,7 @@ export class RainGame {
     this.camZoom = 1;
     const sky = this.globe ? '#24356e' : worldDef(world).skyMid;
     this.scene.background = this.globe ? new THREE.Color(sky) : (art.skies[world] ?? new THREE.Color(sky));
+    this.skyBase.copy(this.scene.background as THREE.Color);
     const dist = this.frameDist();
     this.scene.fog = this.globe ? new THREE.Fog(sky, 18, 48) : new THREE.Fog(sky, dist * 1.05, dist * 2.65);
     this.mountain.visible = false;
@@ -1117,6 +1178,7 @@ export class RainGame {
     const at = view ? { x: view.x, z: view.z } : this.tilePos(index);
     this.rippleAt(at.x, at.z, result.mega ? '#ffe56a' : result.pond ? '#7ec8f0' : '#ffd0e4');
     this.burst(at.x, 0.7, at.z, result.mega ? 22 : 14);
+    if (this.state && this.state.petals.sparkle >= 1) this.burst(at.x, 0.85, at.z, 8);
     if (result.dew > 0) {
       this.floatText(at.x, 1.35, result.crit ? `CRIT +${Math.floor(result.dew)}` : `+${Math.floor(result.dew)}`, result.crit);
     }
@@ -1449,6 +1511,10 @@ export class RainGame {
   }
 
   private placeCamera(dt: number): void {
+    if (this.camZoomPulse > 0 && dt > 0) {
+      this.camZoomPulse = Math.max(0, this.camZoomPulse - dt);
+      this.camZoom += (1 - this.camZoom) * Math.min(1, dt * 5.5);
+    }
     const k = dt <= 0 ? 1 : 1 - Math.exp(-dt * 3.2);
     this.camX += (this.cloudX - this.camX) * k;
     this.camZ += (this.cloudZ - this.camZ) * k;

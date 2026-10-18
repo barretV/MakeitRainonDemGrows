@@ -1,0 +1,348 @@
+{
+  "version": 1,
+  "nodeIds": [
+    "puff",
+    "bottle",
+    "flask",
+    "reservoir",
+    "linger",
+    "glacier",
+    "drizzle",
+    "specks",
+    "mist",
+    "soak",
+    "downpour",
+    "reach",
+    "circle",
+    "wide",
+    "horizon",
+    "charm",
+    "dew",
+    "bounty",
+    "crit",
+    "sprinkler",
+    "spin",
+    "lightning",
+    "zap",
+    "tornado",
+    "twist"
+  ],
+  "priority": [
+    "puff",
+    "bottle",
+    "flask",
+    "reach",
+    "circle",
+    "drizzle",
+    "specks",
+    "charm",
+    "dew",
+    "soak",
+    "reservoir",
+    "mist",
+    "wide",
+    "bounty",
+    "linger",
+    "crit",
+    "downpour",
+    "horizon",
+    "glacier",
+    "sprinkler",
+    "spin",
+    "lightning",
+    "zap",
+    "tornado",
+    "twist"
+  ],
+  "nodes": [
+    {
+      "id": "puff",
+      "parent": null,
+      "kind": "upgrade",
+      "max": 8,
+      "costs": [
+        4,
+        8,
+        22,
+        55,
+        130,
+        300,
+        690,
+        1550
+      ]
+    },
+    {
+      "id": "bottle",
+      "parent": "puff",
+      "kind": "gate",
+      "max": 1,
+      "costs": [
+        9
+      ]
+    },
+    {
+      "id": "flask",
+      "parent": "bottle",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        11,
+        26,
+        60,
+        138,
+        320
+      ]
+    },
+    {
+      "id": "reservoir",
+      "parent": "flask",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        42,
+        100,
+        230,
+        530,
+        1220
+      ]
+    },
+    {
+      "id": "linger",
+      "parent": "reservoir",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        52,
+        125,
+        290,
+        670,
+        1550
+      ]
+    },
+    {
+      "id": "glacier",
+      "parent": "linger",
+      "kind": "upgrade",
+      "max": 4,
+      "costs": [
+        200,
+        460,
+        1050,
+        2400
+      ]
+    },
+    {
+      "id": "drizzle",
+      "parent": "puff",
+      "kind": "gate",
+      "max": 1,
+      "costs": [
+        10
+      ]
+    },
+    {
+      "id": "specks",
+      "parent": "drizzle",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        13,
+        32,
+        75,
+        172,
+        400
+      ]
+    },
+    {
+      "id": "mist",
+      "parent": "specks",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        55,
+        132,
+        305,
+        700,
+        1620
+      ]
+    },
+    {
+      "id": "soak",
+      "parent": "mist",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        20,
+        48,
+        112,
+        260,
+        600
+      ]
+    },
+    {
+      "id": "downpour",
+      "parent": "soak",
+      "kind": "upgrade",
+      "max": 4,
+      "costs": [
+        4500,
+        11200,
+        25500,
+        55000
+      ]
+    },
+    {
+      "id": "reach",
+      "parent": "puff",
+      "kind": "gate",
+      "max": 1,
+      "costs": [
+        12
+      ]
+    },
+    {
+      "id": "circle",
+      "parent": "reach",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        14,
+        34,
+        78,
+        180,
+        415
+      ]
+    },
+    {
+      "id": "wide",
+      "parent": "circle",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        62,
+        148,
+        340,
+        7800,
+        19200
+      ]
+    },
+    {
+      "id": "horizon",
+      "parent": "wide",
+      "kind": "upgrade",
+      "max": 4,
+      "costs": [
+        14000,
+        31000,
+        60000,
+        105000
+      ]
+    },
+    {
+      "id": "charm",
+      "parent": "puff",
+      "kind": "gate",
+      "max": 1,
+      "costs": [
+        13
+      ]
+    },
+    {
+      "id": "dew",
+      "parent": "charm",
+      "kind": "upgrade",
+      "max": 5,
+      "costs": [
+        15,
+        36,
+        84,
+        195,
+        450
+      ]
+    },
+    {
+      "id": "bounty",
+      "parent": "dew",
+      "kind": "upgrade",
+      "max": 4,
+      "costs": [
+        78,
+        188,
+        435,
+        1000
+      ]
+    },
+    {
+      "id": "crit",
+      "parent": "bounty",
+      "kind": "upgrade",
+      "max": 4,
+      "costs": [
+        85,
+        205,
+        475,
+        1100
+      ]
+    },
+    {
+      "id": "sprinkler",
+      "parent": "crit",
+      "kind": "gate",
+      "max": 1,
+      "costs": [
+        19000
+      ]
+    },
+    {
+      "id": "spin",
+      "parent": "sprinkler",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        25000,
+        54000,
+        115000
+      ]
+    },
+    {
+      "id": "lightning",
+      "parent": "sprinkler",
+      "kind": "gate",
+      "max": 1,
+      "costs": [
+        42000
+      ]
+    },
+    {
+      "id": "zap",
+      "parent": "lightning",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        50000,
+        105000,
+        210000
+      ]
+    },
+    {
+      "id": "tornado",
+      "parent": "lightning",
+      "kind": "gate",
+      "max": 1,
+      "costs": [
+        125000
+      ]
+    },
+    {
+      "id": "twist",
+      "parent": "tornado",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        145000,
+        270000,
+        500000
+      ]
+    }
+  ]
+}

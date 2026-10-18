@@ -9,6 +9,16 @@ import {
   worldDef,
 } from './balance';
 import {
+  buildPetalTree,
+  emptyPetals,
+  petalCost,
+  petalNode,
+  spendableBlooms,
+  type PetalId,
+  type PetalNodeView,
+  type PetalRanks,
+} from './petal';
+import {
   abilityOn,
   boardSpan,
   bottleSeconds,
@@ -33,6 +43,8 @@ import {
   type Ranks,
   type TreeNodeView,
 } from './tree';
+
+const REVIVAL_MILESTONES = [10, 25, 50, 75, 100] as const;
 
 export interface TileState {
   hp: number;
@@ -103,6 +115,8 @@ export interface HudModel {
   worlds: WorldChip[];
   stats: Stats;
   achievements: Array<AchievementDef & { done: boolean }>;
+  spendableBlooms: number;
+  petalTree: PetalNodeView[];
 }
 
 interface PersistedLand {
@@ -110,6 +124,22 @@ interface PersistedLand {
   progress: number[];
   green: boolean[];
   tiles: TileState[];
+}
+
+interface PersistedV4 {
+  v: 4;
+  dew: number;
+  ranks: Partial<Ranks>;
+  petals: Partial<PetalRanks>;
+  world: number;
+  unlocked: number;
+  best: number[];
+  stats: Stats;
+  achievements: string[];
+  lands: PersistedLand[];
+  sfx: boolean;
+  music: boolean;
+  lastSave: number;
 }
 
 interface PersistedV3 {
@@ -199,6 +229,7 @@ export class SaveState {
   tiles: TileState[][] = [];
   stats: Stats = emptyStats();
   achievements: string[] = [];
+  petals: PetalRanks = emptyPetals();
   sfx = true;
   music = false;
   lastSave = Date.now();
@@ -222,6 +253,7 @@ export class SaveState {
   private justGreen: number[] = [];
   private ripples = 0;
   private lands = new Map<number, LandPack>();
+  private revivalMilestones = new Set<number>();
 
   static fresh(): SaveState {
     const s = new SaveState();
@@ -231,6 +263,7 @@ export class SaveState {
     s.unlocked = 0;
     s.stats = emptyStats();
     s.achievements = [];
+    s.petals = emptyPetals();
     s.best = [0, 0, 0, 0, 0];
     s.toast = 'A little cloud. A little drizzle.';
     s.lands.clear();
@@ -241,8 +274,8 @@ export class SaveState {
 
   static fromJSON(raw: string): SaveState | null {
     try {
-      const data = JSON.parse(raw) as PersistedV3 | PersistedV2 | PersistedV1;
-      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3)) return null;
+      const data = JSON.parse(raw) as PersistedV4 | PersistedV3 | PersistedV2 | PersistedV1;
+      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3 && data.v !== 4)) return null;
       const s = new SaveState();
       s.sfx = data.sfx !== false;
       s.music = data.music === true;
@@ -254,9 +287,10 @@ export class SaveState {
         s.stats = emptyStats();
         s.achievements = [];
         s.best = [0, 0, 0, 0, 0];
-      } else if (data.v === 2 || data.v === 3) {
+      } else if (data.v === 2 || data.v === 3 || data.v === 4) {
         s.dew = Number.isFinite(data.dew) ? Number(data.dew) : 0;
         s.ranks = { ...emptyRanks(), ...data.ranks };
+        s.petals = { ...emptyPetals(), ...(data.v === 4 ? data.petals : {}) };
         s.world = Math.max(0, Math.min(GLOBE_WORLD, data.world | 0));
         s.unlocked = Math.max(s.world, Math.max(0, Math.min(GLOBE_WORLD, data.unlocked | 0)));
         s.stats = { ...emptyStats(), ...data.stats };
@@ -265,7 +299,7 @@ export class SaveState {
           const n = data.best?.[i];
           return typeof n === 'number' && n >= 0 ? Math.min(1, n) : 0;
         });
-        if (data.v === 3 && Array.isArray(data.lands)) {
+        if ((data.v === 3 || data.v === 4) && Array.isArray(data.lands)) {
           s.importLands(data.lands);
         }
       }
@@ -282,10 +316,11 @@ export class SaveState {
   }
 
   toJSON(): string {
-    const data: PersistedV3 = {
-      v: 3,
+    const data: PersistedV4 = {
+      v: 4,
       dew: this.dew,
       ranks: this.ranks,
+      petals: this.petals,
       world: this.world,
       unlocked: this.unlocked,
       best: this.best,
@@ -565,6 +600,18 @@ export class SaveState {
     return true;
   }
 
+  buyPetal(id: PetalId): boolean {
+    if (this.screen !== 'workshop') return false;
+    const node = petalNode(id);
+    const level = this.petals[id];
+    if (level >= node.max) return false;
+    const cost = petalCost(id, level);
+    if (spendableBlooms(this.stats.tiles, this.petals) < cost) return false;
+    this.petals[id] += 1;
+    this.toast = `${node.name} unlocked.`;
+    return true;
+  }
+
   /**
    * Paint the circular patch under the cloud. Most of the circle stays dry until
    * Specks and Mist open more of it. Returns dew banked this splash.
@@ -653,7 +700,8 @@ export class SaveState {
   animalCount(): number {
     const ratio = this.ratio();
     if (ratio < 0.08) return 0;
-    return Math.min(6, Math.floor(ratio * 10));
+    const cap = 6 + (this.petals.buddy >= 1 ? 1 : 0);
+    return Math.min(cap, Math.floor(ratio * 10) + (this.petals.buddy >= 1 ? 1 : 0));
   }
 
   helperCount(): number {
@@ -729,7 +777,19 @@ export class SaveState {
       })),
       stats: { ...this.stats },
       achievements: ACHIEVEMENTS.map((a) => ({ ...a, done: this.achievements.includes(a.id) })),
+      spendableBlooms: spendableBlooms(this.stats.tiles, this.petals),
+      petalTree: buildPetalTree(this.stats.tiles, this.petals),
     };
+  }
+
+  private checkRevivalMilestones(): void {
+    const pct = Math.floor(this.ratio() * 100);
+    for (const m of REVIVAL_MILESTONES) {
+      if (pct >= m && !this.revivalMilestones.has(m)) {
+        this.revivalMilestones.add(m);
+        this.toast = m >= 100 ? 'The land is whole again!' : `World revival ${m}%!`;
+      }
+    }
   }
 
   private paint(
@@ -803,6 +863,7 @@ export class SaveState {
     for (const hill of hills) this.considerHill(hill);
     if (filled > 0) {
       this.claim();
+      this.checkRevivalMilestones();
       this.finishIfDone();
     }
     if (this.phase === 'play') this.captureRunPeak();

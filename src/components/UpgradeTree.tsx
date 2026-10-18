@@ -3,6 +3,7 @@ import type { RainGame } from '../game/RainGame';
 import { BRANCH_COLORS, PRIORITY, TREE_CANVAS, type NodeId, type TreeNodeView } from '../game/tree';
 import { formatDew, type HudModel } from '../game/state';
 import { DewWallet } from './DewWallet';
+import { PetalShop } from './PetalShop';
 import { TreeNodeCloud } from './TreeNodeCloud';
 
 const MIN_ZOOM = 0.42;
@@ -59,6 +60,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     (node) => node && !node.maxed && node.visible && !node.ghost && node.afford,
   );
   const [picked, setPicked] = useState<NodeId>('puff');
+  const [tab, setTab] = useState<'power' | 'petals'>('power');
   const selected = model.tree.find((node) => node.id === picked) ?? shown[0];
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -218,6 +220,26 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
 
       {selected && (
         <aside className="workshop-panel">
+          <div className="workshop-tabs pixel">
+            <button
+              type="button"
+              className={`workshop-tabs__btn${tab === 'power' ? ' workshop-tabs__btn--on' : ''}`}
+              onClick={() => setTab('power')}
+            >
+              Power
+            </button>
+            <button
+              type="button"
+              className={`workshop-tabs__btn${tab === 'petals' ? ' workshop-tabs__btn--on' : ''}`}
+              onClick={() => setTab('petals')}
+            >
+              Petals
+            </button>
+          </div>
+          {tab === 'petals' ? (
+            <PetalShop model={model} game={game} />
+          ) : (
+            <>
           {nextBuy && (
             <button
               type="button"
@@ -257,6 +279,8 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
           <button type="button" onClick={() => game.retry()} className="workshop-back pixel">
             Back to rain
           </button>
+            </>
+          )}
         </aside>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { RainGame } from '../game/RainGame';
 import { formatDew, walletDew, type HudModel } from '../game/state';
 import { Bottle } from './Bottle';
@@ -7,20 +7,20 @@ import { RevivalBar } from './RevivalBar';
 import { UpgradeTree } from './UpgradeTree';
 
 function HudChip({
-  value,
   display,
   icon,
   ariaLabel,
+  bump,
 }: {
-  value: number;
   display: string;
   icon: ReactNode;
   ariaLabel: string;
+  bump?: boolean;
 }) {
   return (
     <div className="hud-chip pixel" aria-label={ariaLabel}>
       <span className="hud-chip__icon" aria-hidden>{icon}</span>
-      <span key={value} className="hud-chip__amt tabular-nums">{display}</span>
+      <span className={`hud-chip__amt tabular-nums${bump ? ' hud-chip__amt--bump' : ''}`}>{display}</span>
     </div>
   );
 }
@@ -38,6 +38,11 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
   const pct = model.restored * 100;
   const playing = model.screen === 'play';
   const plantTotal = model.stats.tiles;
+  const dewNow = walletDew(model.dew);
+  const bumpRef = useRef({ dew: dewNow, plants: plantTotal });
+  const bumpDew = dewNow > bumpRef.current.dew;
+  const bumpPlants = plantTotal > bumpRef.current.plants;
+  bumpRef.current = { dew: dewNow, plants: plantTotal };
 
   return (
     <div className="pointer-events-none absolute inset-0">
@@ -56,16 +61,16 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
               </div>
               <div className="hud-currency-strip">
                 <HudChip
-                  value={walletDew(model.dew)}
                   display={formatDew(model.dew)}
                   icon={<HudDewIcon />}
                   ariaLabel={`${formatDew(model.dew)} dew`}
+                  bump={bumpDew}
                 />
                 <HudChip
-                  value={plantTotal}
                   display={String(plantTotal)}
                   icon={<HudPlantIcon />}
                   ariaLabel={`${plantTotal} plants grown`}
+                  bump={bumpPlants}
                 />
               </div>
             </div>
@@ -142,6 +147,18 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
           <Mini onClick={() => game.retry()}>Rain again</Mini>
           <Mini onClick={() => game.openWorkshop()}>Workshop</Mini>
           {model.cleared && <Mini onClick={() => game.openWorlds()}>Worlds</Mini>}
+        </div>
+        <div className="achievements-panel mt-4 text-left">
+          <div className="menu-card__title text-sm">Achievements</div>
+          <ul className="achievements-list">
+            {model.achievements.map((a) => (
+              <li key={a.id} className={a.done ? 'achievements-list__done' : ''}>
+                <span className="achievements-list__name">{a.name}</span>
+                <span className="achievements-list__desc">{a.desc}</span>
+                {a.done && <span className="achievements-list__check">Done</span>}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>

@@ -103,6 +103,10 @@ canvas {
   font-size: clamp(11px, 1.35vw, 16px);
   color: #ffe9a8;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  transition: transform 120ms ease-out;
+}
+
+.hud-chip__amt--bump {
   animation: hud-chip-bump 160ms ease-out;
 }
 
@@ -880,4 +884,136 @@ canvas {
 
 .menu-gear:active {
   transform: scale(0.95);
+}
+
+.workshop-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.workshop-tabs__btn {
+  flex: 1;
+  padding: 8px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(220, 230, 255, 0.75);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.workshop-tabs__btn--on {
+  color: #ffe56a;
+  border-color: rgba(255, 229, 106, 0.45);
+  background: rgba(255, 229, 106, 0.12);
+}
+
+.petal-shop__lead {
+  font-size: 11px;
+  color: rgba(200, 220, 255, 0.8);
+  margin-bottom: 10px;
+  line-height: 1.35;
+}
+
+.petal-shop__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+}
+
+.petal-shop__row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.petal-shop__row--owned {
+  opacity: 0.75;
+}
+
+.petal-shop__name {
+  font-size: 11px;
+  color: #ffe9a8;
+}
+
+.petal-shop__desc {
+  font-size: 11px;
+  color: rgba(200, 210, 230, 0.75);
+  margin-top: 2px;
+}
+
+.petal-shop__buy {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: none;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: #4a4658;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.petal-shop__buy--go {
+  background: #c9a0ff;
+  color: #1a1028;
+}
+
+.achievements-panel {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.achievements-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 11px;
+}
+
+.achievements-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  opacity: 0.55;
+}
+
+.achievements-list__done {
+  opacity: 1;
+}
+
+.achievements-list__name {
+  font-weight: 600;
+  color: #e8f0ff;
+}
+
+.achievements-list__desc {
+  grid-column: 1;
+  color: rgba(200, 210, 230, 0.7);
+}
+
+.achievements-list__check {
+  color: #9ee86a;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }

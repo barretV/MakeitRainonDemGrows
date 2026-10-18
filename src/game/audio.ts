@@ -8,6 +8,8 @@ export class AudioBus {
   private ctx: AudioContext | null = null;
   private rainGain: GainNode | null = null;
   private rainSrc: AudioBufferSourceNode | null = null;
+  private humOsc: OscillatorNode | null = null;
+  private humGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
   private musicTimer = 0;
   private custom: AudioBuffer | null = null;
@@ -66,6 +68,33 @@ export class AudioBus {
     this.rainGain?.disconnect();
     this.rainSrc = null;
     this.rainGain = null;
+    this.setRainHum(false);
+  }
+
+  /** Low drone layered on rain (petal shop). */
+  setRainHum(on: boolean): void {
+    if (this.muted) on = false;
+    if (on && this.humOsc) return;
+    if (!on) {
+      this.humOsc?.stop();
+      this.humOsc?.disconnect();
+      this.humGain?.disconnect();
+      this.humOsc = null;
+      this.humGain = null;
+      return;
+    }
+    const ctx = this.context();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 110;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.012;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    this.humOsc = osc;
+    this.humGain = gain;
   }
 
   zap(): void {

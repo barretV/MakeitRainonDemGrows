@@ -12,9 +12,12 @@
     "deploy": "npm run build && rundot deploy",
     "format": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --write",
     "format:check": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --check",
+    "dump-upgrades": "npx tsx scripts/dump-upgrades.mjs",
     "balance:sim": "python balance/sim.py",
     "balance:feel": "python balance/feel.py",
-    "balance:diagnose": "python balance/diagnose.py"
+    "balance:diagnose": "python balance/diagnose.py",
+    "balance:check": "python balance/check_balance.py",
+    "balance:petal": "python balance/petal_feel.py"
   },
   "keywords": [
     "react",
