@@ -861,3 +861,19 @@ export function getArt(): ArtSet {
   };
   return cached;
 }
+
+export type HudIconKind = 'dew' | 'plant';
+
+const hudIconUrls: Partial<Record<HudIconKind, string>> = {};
+
+/** Pixel HUD icons — same canvases as in-world `drop` and `seed` sprites. */
+export function hudIconDataUrl(kind: HudIconKind): string {
+  const hit = hudIconUrls[kind];
+  if (hit) return hit;
+  const art = getArt();
+  const tex = kind === 'dew' ? art.drop : art.seed;
+  const canvas = tex.image as HTMLCanvasElement;
+  const url = canvas.toDataURL();
+  hudIconUrls[kind] = url;
+  return url;
+}

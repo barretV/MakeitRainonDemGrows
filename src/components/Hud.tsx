@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { RainGame } from '../game/RainGame';
+import { hudIconDataUrl, type HudIconKind } from '../game/pixels';
 import { formatDew, type HudModel } from '../game/state';
 import { Bottle } from './Bottle';
 import { RevivalBar } from './RevivalBar';
@@ -24,33 +25,8 @@ function HudChip({
   );
 }
 
-function DewChipIcon() {
-  return (
-    <svg viewBox="0 0 32 40" className="hud-chip__svg">
-      <path
-        d="M16 2c-7 0-10 8-10 16 0 10 10 20 10 20s10-10 10-20C26 10 23 2 16 2z"
-        fill="#5ec8ff"
-        stroke="#1e3a5f"
-        strokeWidth="2"
-      />
-      <ellipse cx="12" cy="14" rx="4" ry="3" fill="rgba(255,255,255,0.55)" />
-    </svg>
-  );
-}
-
-function PlantChipIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="hud-chip__svg">
-      <path d="M12 21V11" stroke="#3d8a48" strokeWidth="2.2" strokeLinecap="round" />
-      <path
-        d="M12 11C12 11 6 10 5 6c4 0 7 2 7 5M12 11c0 0 6-1 7-5c-4 0-7 2-7 5"
-        fill="#6ecf5a"
-        stroke="#2d6a38"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+function HudPixelIcon({ kind }: { kind: HudIconKind }) {
+  return <img src={hudIconDataUrl(kind)} alt="" className="hud-chip__img" draggable={false} />;
 }
 
 function formatPct(ratio: number): string {
@@ -85,13 +61,13 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                 <HudChip
                   value={Math.floor(model.dew)}
                   display={formatDew(model.dew)}
-                  icon={<DewChipIcon />}
+                  icon={<HudPixelIcon kind="dew" />}
                   ariaLabel={`${formatDew(model.dew)} dew`}
                 />
                 <HudChip
                   value={model.runTiles}
                   display={String(model.runTiles)}
-                  icon={<PlantChipIcon />}
+                  icon={<HudPixelIcon kind="plant" />}
                   ariaLabel={`${model.runTiles} plants this bottle`}
                 />
               </div>
