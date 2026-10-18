@@ -6,7 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GLOBE_WORLD, TILE, gridOf, worldDef } from './balance';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
-import { maskOf, type NodeId } from './tree';
+import { BASE_SCALE, maskOf, type NodeId } from './tree';
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
 import { SaveState, type HudModel, type SoakResult } from './state';
@@ -820,6 +820,7 @@ export class RainGame {
     const art = this.art;
     const world = state.world;
     this.globe = world === GLOBE_WORLD;
+    this.camZoom = 1;
     const sky = this.globe ? '#24356e' : worldDef(world).skyMid;
     this.scene.background = this.globe ? new THREE.Color(sky) : (art.skies[world] ?? new THREE.Color(sky));
     const dist = this.frameDist();
@@ -849,15 +850,17 @@ export class RainGame {
     this.maskMats = [];
     this.terrain = null;
     let voxelMat: THREE.ShaderMaterial | null = null;
+    const terrain = new Terrain(world);
+    this.terrain = terrain;
+    const fog = this.scene.fog as THREE.Fog;
+    const ground = terrain.buildMesh(this.maskTex, maskSize, this.timeU, fog);
+    voxelMat = ground.material as THREE.ShaderMaterial;
+    this.maskMats.push(voxelMat);
+    this.track.add(ground);
     if (!this.globe) {
-      const terrain = new Terrain(world);
-      this.terrain = terrain;
-      const fog = this.scene.fog as THREE.Fog;
-      const ground = terrain.buildMesh(this.maskTex, maskSize, this.timeU, fog);
       const flora = terrain.buildFlora(art.flora, this.maskTex, maskSize, this.timeU, fog);
-      voxelMat = ground.material as THREE.ShaderMaterial;
-      this.maskMats.push(voxelMat, flora.material as THREE.ShaderMaterial);
-      this.track.add(ground, flora);
+      this.maskMats.push(flora.material as THREE.ShaderMaterial);
+      this.track.add(flora);
     }
     const tiles = state.current();
     for (let i = 0; i < tiles.length; i += 1) {
@@ -883,6 +886,12 @@ export class RainGame {
           ny: 1,
           nz: 0,
         };
+        if (this.globe) {
+          const len = Math.hypot(at.x, at.y, at.z) || 1;
+          view.nx = at.x / len;
+          view.ny = at.y / len;
+          view.nz = at.z / len;
+        }
         this.dressView(view, i, restored, world);
         continue;
       }
@@ -928,8 +937,6 @@ export class RainGame {
       };
       this.dressView(view, i, restored, world);
     }
-    if (this.globe) this.maskMats = this.views.map((view) => view.mat);
-
     const backX = -Math.sin(YAW);
     const backZ = -Math.cos(YAW);
     const rightX = Math.cos(YAW);
@@ -972,7 +979,8 @@ export class RainGame {
           ? null
           : this.propMesh(spec.decor, restored, world);
     if (view.prop) {
-      view.prop.visible = restored || wet > 0.14 || spec.kind === 'seed';
+      const offIsland = flat && this.terrain && this.terrain.shoreAt(view.x, view.z) > 0.06;
+      view.prop.visible = !offIsland && (restored || wet > 0.14 || spec.kind === 'seed');
       if (flat) {
         const jx = (((index * 37) % 11) / 11 - 0.5) * TILE * 0.5;
         const jz = (((index * 53) % 13) / 13 - 0.5) * TILE * 0.5;
@@ -1392,11 +1400,14 @@ export class RainGame {
 
   private frameDist(): number {
     const state = this.state;
-    const scale = Math.max(0.35, state?.scale() ?? 0.48);
-    if (this.globe) return 9 + 6 / scale;
-    const { cols, rows } = state ? gridOf(state.world) : { cols: 8, rows: 6 };
+    const scale = Math.max(BASE_SCALE, state?.scale() ?? BASE_SCALE);
+    const grown = scale / BASE_SCALE;
+    if (this.globe) return (9 + 6 / grown) * Math.pow(grown, 0.35);
+    const world = state?.world ?? 0;
+    const { cols, rows } = state ? gridOf(world) : { cols: 8, rows: 6 };
     const span = Math.max(cols * TILE, rows * TILE);
-    return clamp((span * 0.34) / scale, 7, 22);
+    const worldPad = 1 + world * 0.055;
+    return clamp(span * 0.35 * worldPad * Math.pow(grown, 0.62), 8, 34);
   }
 
   private dressSky(t: number): void {

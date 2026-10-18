@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TILE, gridOf, tileSpec } from './balance';
+import { GLOBE_WORLD, TILE, gridOf, tileSpec } from './balance';
 
 /** Two mask cells per voxel column on every flat world (mask cells are 0.32 world units). */
 export const VOX = 0.64;
@@ -60,20 +60,46 @@ export class Terrain {
   readonly width: number;
   readonly depth: number;
   readonly heights: Float32Array;
+  /** Negative = inside the flying island; positive = open sky. */
+  readonly shore: Float32Array;
+  readonly spherical: boolean;
 
   constructor(readonly world: number) {
+    this.spherical = world === GLOBE_WORLD;
     const grid = gridOf(world);
     this.width = grid.cols * TILE;
     this.depth = grid.rows * TILE;
     this.cols = Math.round(this.width / VOX);
     this.rows = Math.round(this.depth / VOX);
     this.heights = new Float32Array(this.cols * this.rows);
+    this.shore = new Float32Array(this.cols * this.rows);
     const seed = world * 13 + 5;
     const tileCount = grid.cols * grid.rows;
+    const centerX = this.originX + this.width * 0.5;
+    const centerZ = this.originZ + this.depth * 0.5;
     for (let r = 0; r < this.rows; r += 1) {
       for (let c = 0; c < this.cols; c += 1) {
         const x = this.originX + (c + 0.5) * VOX;
         const z = this.originZ + (r + 0.5) * VOX;
+        const idx = r * this.cols + c;
+        let shore = 1;
+        if (!this.spherical) {
+          const nx = (x - centerX) / (this.width * 0.43);
+          const nz = (z - centerZ) / (this.depth * 0.43);
+          const ang = Math.atan2(nz, nx);
+          const lobe =
+            1 +
+            0.22 * Math.sin(ang * 2.4 + seed * 0.61) +
+            0.15 * Math.sin(ang * 4.3 + seed * 1.17) +
+            0.09 * Math.cos(ang * 6.8 + seed * 0.33);
+          const warble = fbm(x * 0.12, z * 0.12, seed + 20) * 0.32;
+          const rx = nx / lobe;
+          const rz = nz / lobe;
+          shore = Math.hypot(rx, rz) - (0.9 + warble);
+        } else {
+          shore = -0.5;
+        }
+        this.shore[idx] = shore;
         const n = fbm(x * 0.07, z * 0.07, seed);
         const ridge = Math.abs(fbm(x * 0.04 + 9, z * 0.04 - 4, seed + 1) - 0.5) * 2;
         let h = 0.95 + Math.pow(n, 1.22) * 7.4 + (1 - ridge) * 2.35;
@@ -88,12 +114,37 @@ export class Terrain {
           const d = Math.hypot(x - cx, z - cz) / (TILE * 0.5);
           if (d < 1) h = h * Math.min(1, d * d) + 0.18 * (1 - Math.min(1, d * d));
         }
-        const edge = Math.min(c, r, this.cols - 1 - c, this.rows - 1 - r);
-        if (edge === 0) h -= 0.45;
-        else if (edge === 1) h -= 0.12;
-        this.heights[r * this.cols + c] = Math.max(0.2, Math.round(h / STEP) * STEP);
+        if (!this.spherical) {
+          if (shore > 0.14) {
+            h = 0;
+          } else if (shore > -0.28) {
+            h *= 1 - (shore + 0.28) / 0.42;
+          }
+        }
+        this.heights[idx] = Math.max(0, Math.round(h / STEP) * STEP);
       }
     }
+  }
+
+  shoreAt(x: number, z: number): number {
+    const c = Math.max(0, Math.min(this.cols - 1, Math.floor((x - this.originX) / VOX)));
+    const r = Math.max(0, Math.min(this.rows - 1, Math.floor((z - this.originZ) / VOX)));
+    return this.shore[r * this.cols + c] ?? 1;
+  }
+
+  private lonLatFromColumn(c: number, r: number): { lon: number; lat: number } {
+    const lon = ((c + 0.5) / this.cols) * Math.PI * 2;
+    const lat = ((r + 0.5) / Math.max(1, this.rows - 1) - 0.5) * Math.PI * 0.82;
+    return { lon, lat };
+  }
+
+  private spherePoint(lon: number, lat: number, radius: number): THREE.Vector3 {
+    return new THREE.Vector3(Math.cos(lat) * Math.sin(lon) * radius, Math.sin(lat) * radius, Math.cos(lat) * Math.cos(lon) * radius);
+  }
+
+  private isIcebergDrip(c: number, r: number, shore: number): boolean {
+    if (shore <= 0.06 || shore >= 0.34) return false;
+    return hash2(c, r, this.world * 3 + 9) > 0.52;
   }
 
   heightAt(x: number, z: number): number {
@@ -148,28 +199,61 @@ export class Terrain {
       vertexShader: VOXEL_VERT,
       fragmentShader: VOXEL_FRAG,
     });
-    const mesh = new THREE.InstancedMesh(geo, mat, this.cols * this.rows);
+    const matrices: THREE.Matrix4[] = [];
     const m = new THREE.Matrix4();
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
     const scl = new THREE.Vector3();
-    let i = 0;
+    const up = new THREE.Vector3(0, 1, 0);
+    const normal = new THREE.Vector3();
     for (let r = 0; r < this.rows; r += 1) {
       for (let c = 0; c < this.cols; c += 1) {
-        const top = this.heights[r * this.cols + c] ?? 1;
-        const edgeDist = Math.min(c, r, this.cols - 1 - c, this.rows - 1 - r);
-        const jag =
-          edgeDist <= 1
-            ? FLOOR + hash2(c, r, 2) * 2.1
-            : Math.min(top - 0.3, this.neighborFloor(c, r));
-        const bottom = Math.min(top - 0.2, jag);
-        pos.set(this.originX + (c + 0.5) * VOX, (top + bottom) / 2, this.originZ + (r + 0.5) * VOX);
-        scl.set(1, top - bottom, 1);
+        const idx = r * this.cols + c;
+        const shore = this.shore[idx] ?? 1;
+        const topFlat = this.heights[idx] ?? 0;
+        const drip = !this.spherical && this.isIcebergDrip(c, r, shore);
+        if (!this.spherical && shore > 0.14 && !drip) continue;
+        let top = topFlat;
+        let bottom: number;
+        if (drip) {
+          const hang = 2.2 + hash2(c, r, 4) * 5.5;
+          top = -0.35 - hash2(c, r, 5) * 1.2;
+          bottom = top - hang;
+        } else if (top < 0.12) {
+          continue;
+        } else {
+          const edgeDist = Math.min(c, r, this.cols - 1 - c, this.rows - 1 - r);
+          const jag =
+            edgeDist <= 1
+              ? FLOOR + hash2(c, r, 2) * 2.4
+              : Math.min(top - 0.3, this.neighborFloor(c, r));
+          bottom = Math.min(top - 0.2, jag);
+          if (!this.spherical && shore > -0.32) {
+            const hang = 3.5 + hash2(c, r, 6) * 7.5;
+            bottom = Math.min(bottom, top - hang);
+          }
+        }
+        const height = Math.max(0.18, top - bottom);
+        if (this.spherical) {
+          const { lon, lat } = this.lonLatFromColumn(c, r);
+          normal.copy(this.spherePoint(lon, lat, 1)).normalize();
+          const surfaceR = 6.38 + top * 0.14;
+          const coreR = 6.38 + bottom * 0.14;
+          const midR = (surfaceR + coreR) / 2;
+          pos.copy(this.spherePoint(lon, lat, midR));
+          quat.setFromUnitVectors(up, normal);
+          scl.set(1, Math.max(0.2, surfaceR - coreR), 1);
+        } else {
+          pos.set(this.originX + (c + 0.5) * VOX, (top + bottom) / 2, this.originZ + (r + 0.5) * VOX);
+          quat.identity();
+          scl.set(1, height, 1);
+        }
         m.compose(pos, quat, scl);
-        mesh.setMatrixAt(i, m);
-        i += 1;
+        matrices.push(m.clone());
       }
     }
+    const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, matrices.length));
+    matrices.forEach((mat4, i) => mesh.setMatrixAt(i, mat4));
     mesh.instanceMatrix.needsUpdate = true;
     mesh.frustumCulled = false;
     return mesh;
@@ -194,11 +278,13 @@ export class Terrain {
     const seed = this.world * 7 + 1;
     for (let r = 1; r < this.rows - 1; r += 1) {
       for (let c = 1; c < this.cols - 1; c += 1) {
+        if ((this.shore[r * this.cols + c] ?? 1) > 0.02) continue;
         for (let k = 0; k < 2; k += 1) {
           const roll = hash2(c + k * 31, r, seed);
           if (roll > 0.42) continue;
           const x = this.originX + (c + 0.15 + hash2(c, r + k * 17, seed + 1) * 0.7) * VOX;
           const z = this.originZ + (r + 0.15 + hash2(c + k * 5, r, seed + 2) * 0.7) * VOX;
+          if (this.shoreAt(x, z) > 0.02) continue;
           const y = this.heightAt(x, z);
           const deadFrame = roll < 0.12 ? Math.floor(hash2(c, r, seed + 3) * 3) : 3;
           const liveFrame = 4 + Math.floor(hash2(c, r + k, seed + 4) * 4);
