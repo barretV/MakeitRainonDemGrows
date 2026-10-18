@@ -1,0 +1,33 @@
+---
+description: Commit and push to origin after every completed task so work is never lost
+alwaysApply: true
+---
+
+# Commit and push when done
+
+When you finish a task that changed the repo (code, config, assets, rules), **always** commit and push before ending your turn.
+
+## Workflow (end of every task)
+
+1. `git status` and `git diff` — confirm what changed.
+2. Stage only relevant files (never `.env`, keys, or local secrets).
+3. Commit with a short message focused on **why** (HEREDOC style per project git protocol).
+4. `git push` to `origin` on the current branch (use `-u` if the branch has no upstream).
+5. Run `git status` after push to confirm clean and synced.
+
+## When to skip
+
+- **No file changes** — nothing to commit.
+- **User explicitly says** not to commit or push for this task.
+- **Push blocked** — auth, hooks, or conflicts: fix if you can; otherwise report the exact error and leave changes committed locally.
+
+## Safety (non-negotiable)
+
+- Never `git push --force` to `main` / `master`.
+- Never skip hooks unless the user asks.
+- Never amend unless project git safety rules allow it.
+- Do not commit unrelated drive-by edits.
+
+## If the user only asked a question
+
+Answer-only turns with no repo edits do not need a commit.
