@@ -19,7 +19,7 @@ interface Palette {
 
 const PALETTES: Palette[] = [
   { deadA: '#9a938a', deadB: '#7a736c', rockA: '#8f877e', rockB: '#5c564f', liveA: '#7dce4a', liveB: '#5cb83a', dirtA: '#8a5a32', dirtB: '#5a3a22' },
-  { deadA: '#e4edf7', deadB: '#c6d6ea', rockA: '#b9cade', rockB: '#8ea5c0', liveA: '#9fe3a4', liveB: '#74cc8a', dirtA: '#8d7a68', dirtB: '#6a594a' },
+  { deadA: '#f7fbff', deadB: '#d5e6f6', rockA: '#6e96c8', rockB: '#35598f', liveA: '#b7f0c8', liveB: '#6ed4a0', dirtA: '#7f6a9a', dirtB: '#4d6f96' },
   { deadA: '#ecd6a6', deadB: '#d9be8a', rockA: '#d9b27e', rockB: '#ad8256', liveA: '#a8dc62', liveB: '#82c44c', dirtA: '#bc8a5c', dirtB: '#90643e' },
   { deadA: '#76824e', deadB: '#5e683e', rockA: '#6a5e4c', rockB: '#463d32', liveA: '#8cf0b4', liveB: '#5edab6', dirtA: '#7a5aa0', dirtB: '#56407a' },
 ];

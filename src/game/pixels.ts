@@ -220,36 +220,19 @@ function skyCanvas(top: string, mid: string, bot: string): THREE.CanvasTexture {
     ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
     ctx.fill();
   };
-  puff(90, 70, 80, 28, 0.55);
-  puff(160, 84, 54, 22, 0.4);
-  puff(300, 54, 96, 30, 0.48);
-  puff(420, 78, 70, 22, 0.36);
-  puff(520, 48, 50, 18, 0.3);
-  ctx.fillStyle = '#f7fbff';
+  puff(90, 70, 80, 28, 0.16);
+  puff(160, 84, 54, 22, 0.12);
+  puff(300, 54, 96, 30, 0.14);
+  puff(420, 78, 70, 22, 0.1);
+  puff(520, 48, 50, 18, 0.1);
+  ctx.fillStyle = 'rgba(255, 180, 210, 0.18)';
   ctx.beginPath();
-  ctx.moveTo(470, 40);
-  ctx.lineTo(610, 250);
-  ctx.lineTo(390, 250);
-  ctx.closePath();
+  ctx.ellipse(480, 90, 70, 22, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#d5e4f4';
+  ctx.fillStyle = 'rgba(120, 210, 255, 0.16)';
   ctx.beginPath();
-  ctx.moveTo(470, 40);
-  ctx.lineTo(610, 250);
-  ctx.lineTo(500, 250);
-  ctx.closePath();
+  ctx.ellipse(180, 120, 90, 26, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#c5d4e6';
-  ctx.beginPath();
-  ctx.ellipse(430, 230, 70, 28, 0, 0, Math.PI * 2);
-  ctx.fill();
-  for (let i = 0; i < 7; i += 1) {
-    const x = 40 + i * 28;
-    ctx.fillStyle = i < 3 ? '#6d625c' : '#ffb3d0';
-    ctx.beginPath();
-    ctx.ellipse(x, 250, 10, i < 3 ? 22 : 16, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
   return texOf(canvas, true);
 }
 

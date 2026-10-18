@@ -828,7 +828,7 @@ export class RainGame {
     this.mountain.visible = !this.globe;
     for (const peak of this.peaks) peak.visible = !this.globe;
     for (const tree of this.farTrees) tree.visible = !this.globe;
-    const tint = ['#ffffff', '#d9ecff', '#ffe7c2', '#e4d0ff'][world] ?? '#ffffff';
+    const tint = ['#e7b4cc', '#8eb4e0', '#e7c48a', '#b9a0d8'][world] ?? '#d7c4de';
     (this.mountain.material as THREE.MeshBasicMaterial).color.set(tint);
     for (const peak of this.peaks) (peak.material as THREE.MeshBasicMaterial).color.set(tint);
 
