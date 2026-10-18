@@ -392,13 +392,13 @@ const VOXEL_FRAG = /* glsl */ `
       damp += vec3(0.55, 0.85, 1.0) * glint;
       vec3 live = mix(uLiveA, uLiveB, step(0.55, n)) * (0.92 + 0.12 * h21(cell + 8.0));
       float fl = h21(cell + 3.0);
-      vec3 patch = mix(live * 0.55, live, grass);
+      vec3 turf = mix(live * 0.55, live, grass);
       if (bloom > 0.35 && fl > 0.94) {
-        patch = fl > 0.985 ? vec3(1.0, 0.92, 0.96) : fl > 0.968 ? vec3(1.0, 0.42, 0.58) : vec3(0.48, 0.78, 1.0);
+        turf = fl > 0.985 ? vec3(1.0, 0.92, 0.96) : fl > 0.968 ? vec3(1.0, 0.42, 0.58) : vec3(0.48, 0.78, 1.0);
       } else if (n2 > 0.9 && grass > 0.4) {
-        patch *= 1.12;
+        turf *= 1.12;
       }
-      col = mix(damp, patch, grass * 0.92 + bloom * 0.25);
+      col = mix(damp, turf, grass * 0.92 + bloom * 0.25);
       col = mix(col, live, grown);
       vec2 local = fract(vWorld.xz * 3.125) - 0.5;
       float ring = smoothstep(0.22, 0.0, abs(length(local) * 2.0 - (1.0 - rip) * 1.35)) * rip;
