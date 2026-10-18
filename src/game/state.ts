@@ -709,9 +709,9 @@ export class SaveState {
 
   animalCount(): number {
     const ratio = this.ratio();
-    if (ratio < 0.08) return 0;
-    const cap = 6 + (this.petals.buddy >= 1 ? 1 : 0);
-    return Math.min(cap, Math.floor(ratio * 10) + (this.petals.buddy >= 1 ? 1 : 0));
+    if (ratio < 0.03) return 0;
+    const cap = 8 + (this.petals.buddy >= 1 ? 2 : 0);
+    return Math.min(cap, 1 + Math.floor(ratio * 14) + (this.petals.buddy >= 1 ? 1 : 0));
   }
 
   helperCount(): number {
@@ -819,6 +819,7 @@ export class SaveState {
     let crits = 0;
     let used = 0;
     const hills = new Set<number>();
+    const spills: number[] = [];
     for (let r = bounds.minR; r <= bounds.maxR && used < limit; r += 1) {
       for (let c = bounds.minC; c <= bounds.maxC && used < limit; c += 1) {
         const at = this.cellCenter(c, r, cols, rows);
@@ -827,48 +828,25 @@ export class SaveState {
         const edge = 1 - this.gap(x, z, at.x, at.z) / Math.max(0.001, radius);
         if (respectPatches && this.ranks.specks >= 2 && hash01(c + 19, r + 3) > gate + edge * 0.28) continue;
         const index = r * cols + c;
-        if ((this.progress[index] ?? 0) >= hp) continue;
-        const was = this.progress[index] ?? 0;
-        let crit = false;
-        if (was <= 0 && Math.random() < critChance(this.ranks)) {
-          this.progress[index] = hp;
-          crit = true;
-          crits += 1;
-        } else {
-          // Full soak on every speck in the disc. The rim hash already keeps early rain to a few cells, and a bottle has to finish those cells or the run banks nothing.
-          this.progress[index] = Math.min(hp, was + amount);
+        if ((this.progress[index] ?? 0) >= hp) {
+          if (spills.length < 18) spills.push(index);
+          continue;
         }
-        const now = this.progress[index] ?? 0;
-        if (now > was) {
-          this.splashRipple(index);
-          this.bleedMask(c, r, cols, rows, (now - was) * 0.14, hp, respectPatches, gate);
-        }
-        const done = now >= hp;
-        const byte = done ? 255 : Math.min(254, Math.floor((now / hp) * 254));
-        const pixel = index * 4;
-        this.pixels[pixel] = byte;
-        if (now > was && !done) {
-          const pay = cellDew(this.world, this.ranks);
-          const drip = pay * ((now - was) / hp) * 0.22;
-          if (drip >= 0.001) {
-            const gain = this.addDew(drip);
-            dew += gain;
-          }
-        }
-        if (done) {
-          this.pixels[pixel + 1] = 255;
-          this.ripples += 1;
-          this.filled += 1;
-          filled += 1;
-          used += 1;
-          const gain = this.addDew(cellDew(this.world, this.ranks) * (crit ? 3 : 1));
-          dew += gain;
-          this.stats.tiles += 1;
-          this.runTiles += 1;
-          hills.add(this.hillIndex(c, r, cols, rows));
-        }
-        this.maskDirty = true;
+        const soaked = this.applySoak(index, c, r, cols, rows, amount, hp, respectPatches, gate);
+        dew += soaked.dew;
+        filled += soaked.filled;
+        crits += soaked.crits;
+        used += soaked.filled;
+        if (soaked.hill >= 0) hills.add(soaked.hill);
       }
+    }
+    for (const full of spills) {
+      const spilled = this.spillFrom(full, x, z, cols, rows, amount, hp, respectPatches, gate);
+      if (!spilled) continue;
+      dew += spilled.dew;
+      filled += spilled.filled;
+      crits += spilled.crits;
+      if (spilled.hill >= 0) hills.add(spilled.hill);
     }
     for (const hill of hills) this.considerHill(hill);
     if (filled > 0) {
@@ -878,6 +856,97 @@ export class SaveState {
     }
     if (this.phase === 'play') this.captureRunPeak();
     return { dew, filled, crits };
+  }
+
+  /** Rain that lands on a finished cell rolls outward to the nearest thirsty cell. */
+  private spillFrom(
+    fullIndex: number,
+    originX: number,
+    originZ: number,
+    cols: number,
+    rows: number,
+    amount: number,
+    hp: number,
+    respectPatches: boolean,
+    gate: number,
+  ): { dew: number; filled: number; crits: number; hill: number } | null {
+    const c0 = fullIndex % cols;
+    const r0 = Math.floor(fullIndex / cols);
+    let best = -1;
+    let bestAway = -1;
+    for (let rad = 1; rad <= 6; rad += 1) {
+      for (let dr = -rad; dr <= rad; dr += 1) {
+        for (let dc = -rad; dc <= rad; dc += 1) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad) continue;
+          const nc = c0 + dc;
+          const nr = r0 + dr;
+          if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+          const ni = nr * cols + nc;
+          if ((this.progress[ni] ?? 0) >= hp) continue;
+          const at = this.cellCenter(nc, nr, cols, rows);
+          const away = this.gap(originX, originZ, at.x, at.z);
+          if (away > bestAway) {
+            bestAway = away;
+            best = ni;
+          }
+        }
+      }
+      if (best >= 0) break;
+    }
+    if (best < 0) return null;
+    const nc = best % cols;
+    const nr = Math.floor(best / cols);
+    return this.applySoak(best, nc, nr, cols, rows, amount, hp, respectPatches, gate);
+  }
+
+  private applySoak(
+    index: number,
+    c: number,
+    r: number,
+    cols: number,
+    rows: number,
+    amount: number,
+    hp: number,
+    respectPatches: boolean,
+    gate: number,
+  ): { dew: number; filled: number; crits: number; hill: number } {
+    const was = this.progress[index] ?? 0;
+    if (was >= hp) return { dew: 0, filled: 0, crits: 0, hill: -1 };
+    let crit = false;
+    if (was <= 0 && Math.random() < critChance(this.ranks)) {
+      this.progress[index] = hp;
+      crit = true;
+    } else {
+      this.progress[index] = Math.min(hp, was + amount);
+    }
+    const now = this.progress[index] ?? 0;
+    if (now > was) {
+      this.splashRipple(index);
+      this.bleedMask(c, r, cols, rows, (now - was) * 0.14, hp, respectPatches, gate);
+    }
+    const done = now >= hp;
+    const byte = done ? 255 : Math.min(254, Math.floor((now / hp) * 254));
+    const pixel = index * 4;
+    this.pixels[pixel] = byte;
+    let dew = 0;
+    let filled = 0;
+    let hill = -1;
+    if (now > was && !done) {
+      const drip = cellDew(this.world, this.ranks) * ((now - was) / hp) * 0.22;
+      if (drip >= 0.001) dew += this.addDew(drip);
+    }
+    if (done) {
+      this.pixels[pixel + 1] = 255;
+      this.ripples += 1;
+      this.filled += 1;
+      filled = 1;
+      dew += this.addDew(cellDew(this.world, this.ranks) * (crit ? 3 : 1));
+      this.stats.tiles += 1;
+      this.runTiles += 1;
+      hill = this.hillIndex(c, r, cols, rows);
+    }
+    this.maskDirty = true;
+    return { dew, filled, crits: crit ? 1 : 0, hill };
   }
 
   private cellBounds(x: number, z: number, radius: number, cols: number, rows: number): { minC: number; maxC: number; minR: number; maxR: number } {

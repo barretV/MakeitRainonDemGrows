@@ -1269,9 +1269,12 @@ export class RainGame {
     const view = this.views[index];
     if (view && !view.dressed) this.dressTile(index);
     const at = view ? { x: view.x, z: view.z } : this.tilePos(index);
-    this.rippleAt(at.x, at.z, result.mega ? '#ffe56a' : result.pond ? '#7ec8f0' : '#ffd0e4');
-    this.burst(at.x, 0.7, at.z, result.mega ? 22 : 14);
-    if (this.state && this.state.petals.sparkle >= 1) this.burst(at.x, 0.85, at.z, 8);
+    this.rippleAt(at.x, at.z, result.mega ? '#ffe56a' : '#b6f27a');
+    this.burst(at.x, 1.1, at.z, result.mega ? 28 : 20);
+    this.burst(at.x, 1.6, at.z, 10);
+    this.shake = Math.max(this.shake, 0.28);
+    this.grin = 0.7;
+    this.floatText(at.x, 1.8, result.pond ? 'Pond!' : 'Life takes root', false);
     if (result.dew > 0) {
       this.floatText(at.x, 1.35, result.crit ? `CRIT +${Math.floor(result.dew)}` : `+${Math.floor(result.dew)}`, result.crit);
     }
