@@ -126,6 +126,21 @@ canvas {
   color: rgba(200, 220, 255, 0.75);
 }
 
+.workshop-next--buy {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px solid rgba(255, 229, 106, 0.35);
+  border-radius: 4px;
+  background: rgba(255, 229, 106, 0.08);
+  cursor: pointer;
+}
+
+.workshop-next--buy:active {
+  transform: scale(0.98);
+}
+
 .workshop-next span {
   color: #ffe56a;
 }
@@ -480,11 +495,20 @@ canvas {
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  border: none;
+  font: inherit;
 }
 
 .workshop-status--buy {
   color: #1a2810;
   background: #9ee86a;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.workshop-status--buy:active {
+  transform: scale(0.98);
 }
 
 .workshop-status--owned {

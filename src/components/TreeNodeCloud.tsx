@@ -229,10 +229,12 @@ export function TreeNodeCloud({
   node,
   picked,
   onPick,
+  onBuy,
 }: {
   node: TreeNodeView;
   picked: boolean;
   onPick: () => void;
+  onBuy: () => void;
 }) {
   const state = nodeVisual(node);
   const shape = nodeShape(node.branch);
@@ -248,6 +250,12 @@ export function TreeNodeCloud({
       type="button"
       onClick={(e) => {
         e.stopPropagation();
+        const chip = (e.target as HTMLElement).closest('.tree-node__badge');
+        const canBuy = node.afford && !node.maxed && !node.ghost;
+        if (canBuy && (chip || state === 'ready')) {
+          onBuy();
+          return;
+        }
         onPick();
       }}
       className={`tree-node tree-node--${state} tree-node--${shape}${picked ? ' tree-node--picked' : ''}${node.id === 'puff' ? ' tree-node--center' : ''}`}

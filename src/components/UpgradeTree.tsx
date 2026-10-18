@@ -8,7 +8,7 @@ import { TreeNodeCloud } from './TreeNodeCloud';
 const MIN_ZOOM = 0.42;
 const MAX_ZOOM = 1.35;
 
-function WorkshopStatus({ node }: { node: TreeNodeView }) {
+function WorkshopStatus({ node, onBuy }: { node: TreeNodeView; onBuy: () => void }) {
   let kind = 'owned';
   let text = 'Owned';
   if (node.ghost) {
@@ -22,10 +22,17 @@ function WorkshopStatus({ node }: { node: TreeNodeView }) {
     text = 'Maxed';
   } else if (node.afford) {
     kind = 'buy';
-    text = 'Ready to purchase';
+    text = 'Tap to buy';
   } else if (node.level === 0) {
     kind = 'lock';
     text = 'Need more dew';
+  }
+  if (node.afford && !node.maxed && !node.ghost) {
+    return (
+      <button type="button" className={`workshop-status workshop-status--${kind} pixel`} onClick={onBuy}>
+        {text}
+      </button>
+    );
   }
   return <div className={`workshop-status workshop-status--${kind} pixel`}>{text}</div>;
 }
@@ -140,6 +147,11 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
 
   const nodesById = new Map(model.tree.map((n) => [n.id, n]));
 
+  const purchase = (id: NodeId) => {
+    game.buy(id);
+    setPicked(id);
+  };
+
   return (
     <div className="workshop pointer-events-auto absolute inset-0 flex text-[#e8f0ff]">
       <div
@@ -197,6 +209,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
                 node={node}
                 picked={picked === node.id}
                 onPick={() => setPicked(node.id)}
+                onBuy={() => purchase(node.id)}
               />
             ))}
           </div>
@@ -205,12 +218,17 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
 
       {selected && (
         <aside className="workshop-panel">
-          {nextBuy && nextBuy.id !== selected.id && (
-            <p className="workshop-next pixel">
-              Next up: <span>{nextBuy.name}</span> · {formatDew(nextBuy.cost)} dew
-            </p>
+          {nextBuy && (
+            <button
+              type="button"
+              className="workshop-next workshop-next--buy pixel"
+              onClick={() => purchase(nextBuy.id)}
+            >
+              {nextBuy.id === selected.id ? 'Buy now' : 'Next up'}: <span>{nextBuy.name}</span> ·{' '}
+              {formatDew(nextBuy.cost)} dew
+            </button>
           )}
-          <WorkshopStatus node={selected} />
+          <WorkshopStatus node={selected} onBuy={() => purchase(selected.id)} />
           <div className="workshop-panel__title pixel">{selected.name}</div>
           {totalRanks === 0 && (
             <p className="workshop-panel__desc pixel">Rain first. Bloom a patch. Spend dew on Cloud Puff to grow.</p>
@@ -225,7 +243,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
           <button
             type="button"
             disabled={!selected.afford}
-            onClick={() => game.buy(selected.id)}
+            onClick={() => purchase(selected.id)}
             className={`workshop-buy pixel${selected.afford ? ' workshop-buy--go' : ''}`}
           >
             {selected.maxed
