@@ -45,7 +45,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
 
       {playing && (
         <button
-          className="pointer-events-auto absolute top-[3%] right-[2%] grid h-11 w-11 place-items-center rounded-full border-4 border-[#2a1730] bg-[#fff6fb] text-[20px] text-[#3a2444] shadow"
+          className="menu-gear pointer-events-auto absolute top-[3%] right-[2%]"
           onClick={() => setGear((v) => !v)}
           aria-label="Settings"
         >
@@ -54,11 +54,9 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
       )}
 
       {gear && playing && (
-        <div className="pointer-events-auto absolute top-[12%] right-[2%] w-[240px] rounded-[18px] border-4 border-[#2a1730] bg-[#fff7fb] p-3 text-[#3a2444] shadow-xl">
-          <div className="pixel text-[18px]">Settings</div>
-          <p className="mt-2 text-[13px] leading-snug">
-            WASD or arrows to fly. Space or click to rain. Drag anywhere on touch.
-          </p>
+        <div className="menu-card menu-card--pop pointer-events-auto absolute top-[12%] right-[2%] w-[260px] text-left">
+          <div className="menu-card__title">Settings</div>
+          <p className="menu-card__sub">WASD or arrows to fly. Space or click to rain. Drag anywhere on touch.</p>
           <div className="mt-3 flex gap-2">
             <Mini onClick={() => game.toggleSfx()}>{model.sfx ? 'SFX on' : 'SFX off'}</Mini>
             <Mini onClick={() => game.toggleMusic()}>{model.music ? 'Music on' : 'Music off'}</Mini>
@@ -78,14 +76,13 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
   const pct = formatPct(reached);
   const best = formatPct(Math.max(model.best, reached));
   return (
-    <div className="pointer-events-auto absolute inset-0 grid place-items-center bg-[#1a1028]/55 p-4">
-      <div className="w-[min(440px,92%)] rounded-[18px] border-[6px] border-[#2a1730] bg-[#fff6fb] p-4 text-center text-[#3a2444] shadow-[0_8px_0_#2a1730]">
-        <div className="pixel text-[32px] leading-none text-[#ff7aa2] [-webkit-text-stroke:4px_#2a1730]">
-          {model.cleared ? 'Land restored' : 'Bottle empty'}
-        </div>
-        <p className="mt-2 text-[15px]">{model.worldName}</p>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-[13px]">
-          <Stat label="This run" value={`${formatDew(model.runDew)} dew`} />
+    <div className="menu-veil pointer-events-auto">
+      <div className="menu-card menu-card--pop w-[min(460px,92%)] text-center">
+        <div className="menu-card__title">{model.cleared ? 'Land restored' : 'Bottle empty'}</div>
+        <p className="menu-card__sub">{model.worldName}</p>
+        <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <Stat label="This bottle" value={`${formatDew(model.runDew)} dew`} />
           <Stat label="Reached" value={pct} />
           <Stat label="Best" value={best} />
         </div>
@@ -101,23 +98,23 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
 
 function Worlds({ model, game }: { model: HudModel; game: RainGame }) {
   return (
-    <div className="pointer-events-auto absolute inset-0 grid place-items-center bg-[#1a1028]/60 p-4">
-      <div className="w-[min(480px,94%)] rounded-[18px] border-[6px] border-[#2a1730] bg-[#fff6fb] p-4 text-[#3a2444]">
-        <div className="pixel text-center text-[28px] text-[#ff7aa2]">Worlds</div>
-        <p className="mt-1 text-center text-[13px]">A new land starts dead. You stay the size you earned.</p>
+    <div className="menu-veil pointer-events-auto">
+      <div className="menu-card menu-card--pop w-[min(480px,94%)]">
+        <div className="menu-card__title text-center">Worlds</div>
+        <p className="menu-card__sub text-center">A new land starts dead. You stay the size you earned.</p>
         <div className="mt-3 grid gap-2">
           {model.worlds.map((world) => (
             <button
               key={world.index}
               disabled={world.locked}
               onClick={() => game.goto(world.index)}
-              className="flex items-center justify-between rounded-2xl border-4 border-[#2a1730] bg-white px-3 py-2 text-left disabled:opacity-40"
+              className="menu-row"
             >
               <span>
                 {world.name}
                 {world.current ? ' · here' : ''}
               </span>
-              <span className="text-[12px]">{world.locked ? 'Locked' : `${Math.round(world.best * 100)}% best`}</span>
+              <span>{world.locked ? 'Locked' : `${Math.round(world.best * 100)}% best`}</span>
             </button>
           ))}
         </div>
@@ -131,19 +128,16 @@ function Worlds({ model, game }: { model: HudModel; game: RainGame }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border-[3px] border-[#2a1730] bg-white px-2 py-2">
-      <div className="text-[11px] uppercase tracking-wide text-[#a05a86]">{label}</div>
-      <div className="pixel text-[16px]">{value}</div>
+    <div className="menu-stat">
+      <div className="menu-stat__label">{label}</div>
+      <div className="menu-stat__value pixel">{value}</div>
     </div>
   );
 }
 
 function Mini({ children, onClick }: { children: string; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className="pixel rounded-full border-4 border-[#2a1730] bg-[#ffe56a] px-3 py-1 text-[14px] text-[#3a2444] active:scale-95"
-    >
+    <button onClick={onClick} className="menu-btn pixel">
       {children}
     </button>
   );
@@ -153,7 +147,7 @@ function GearIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
       <path
-        fill="#3a2444"
+        fill="#f2cf78"
         d="M9.2 1.5h3.6l.4 2.2a7 7 0 0 1 1.6.7l2-1 2.5 2.5-1 2a7 7 0 0 1 .7 1.6l2.2.4v3.6l-2.2.4a7 7 0 0 1-.7 1.6l1 2-2.5 2.5-2-1a7 7 0 0 1-1.6.7l-.4 2.2H9.2l-.4-2.2a7 7 0 0 1-1.6-.7l-2 1-2.5-2.5 1-2a7 7 0 0 1-.7-1.6l-2.2-.4V8.4l2.2-.4a7 7 0 0 1 .7-1.6l-1-2L5.2 2.4l2 1a7 7 0 0 1 1.6-.7l.4-2.2Zm1.8 6a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"
       />
     </svg>

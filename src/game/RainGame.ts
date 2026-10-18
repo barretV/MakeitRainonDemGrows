@@ -744,7 +744,7 @@ export class RainGame {
     }
     this.spin = Math.max(0, this.spin - dt);
     const twirl = this.spin > 0 ? (1 - this.spin / 0.48) * Math.PI * 2 : 0;
-    this.cloud.rotation.z = clamp(lean * 0.7, -0.28, 0.28) + twirl;
+    this.cloud.userData['roll'] = clamp(lean * 0.7, -0.28, 0.28) + twirl;
 
     const curtainMat = this.curtain.material as THREE.ShaderMaterial;
     curtainMat.uniforms['uTime']!.value = t;
@@ -1355,13 +1355,13 @@ export class RainGame {
     if (this.terrain) {
       const boardX = this.terrain.originX + this.terrain.width * 0.5;
       const boardZ = this.terrain.originZ + this.terrain.depth * 0.5;
-      const panX = (this.camX - boardX) * 0.72;
-      const panZ = (this.camZ - boardZ) * 0.72;
-      const base = this.frameDist();
-      const lift = (6.8 + base * 0.22) * this.camZoom;
-      const back = (11.5 + base * 0.35) * this.camZoom;
-      this.camera.position.set(boardX + panX + jx, gy + lift + jy, boardZ + panZ + back);
-      this.camera.lookAt(boardX + panX + jx * 0.2, gy + 1.15, boardZ + panZ - 0.45);
+      const span = Math.min(this.terrain.width, this.terrain.depth);
+      const panX = (this.camX - boardX) * 0.35;
+      const panZ = (this.camZ - boardZ) * 0.35;
+      const lift = span * 0.72 * this.camZoom;
+      const back = span * 0.78 * this.camZoom;
+      this.camera.position.set(boardX + panX + jx, 2.2 + lift + jy, boardZ + panZ + back);
+      this.camera.lookAt(boardX + panX * 0.4, 1.6, boardZ + panZ * 0.2);
       return;
     }
     this.camera.position.set(
@@ -1424,10 +1424,10 @@ export class RainGame {
   private faceAll(): void {
     this.scene.traverse((obj) => {
       if (!obj.userData['bb']) return;
-      if (this.globe) {
-        obj.lookAt(this.camera.position);
-        obj.rotateY(Math.PI);
-      } else obj.rotation.y = YAW;
+      const roll = obj === this.cloud ? Number(obj.userData['roll']) || 0 : 0;
+      obj.lookAt(this.camera.position);
+      obj.rotateY(Math.PI);
+      if (roll) obj.rotateZ(roll);
     });
   }
 

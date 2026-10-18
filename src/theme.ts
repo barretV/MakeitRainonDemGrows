@@ -1,6 +1,6 @@
 export const theme = {
   background: '#241528',
-  surface: '#fff6fb',
+  surface: '#17233f',
   primary: '#ff8fb8',
   secondary: '#7ec8f0',
   text: '#ffffff',

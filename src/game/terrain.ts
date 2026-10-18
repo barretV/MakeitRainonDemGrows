@@ -84,27 +84,24 @@ export class Terrain {
         const idx = r * this.cols + c;
         let shore = 1;
         if (!this.spherical) {
-          const nx = (x - centerX) / (this.width * 0.43);
-          const nz = (z - centerZ) / (this.depth * 0.43);
-          const ang = Math.atan2(nz, nx);
+          const radius = Math.min(this.width, this.depth) * 0.42;
+          const dx = x - centerX;
+          const dz = z - centerZ;
+          const ang = Math.atan2(dz, dx);
           const lobe =
             1 +
-            0.22 * Math.sin(ang * 2.4 + seed * 0.61) +
-            0.15 * Math.sin(ang * 4.3 + seed * 1.17) +
-            0.09 * Math.cos(ang * 6.8 + seed * 0.33);
-          const warble = fbm(x * 0.12, z * 0.12, seed + 20) * 0.32;
-          const rx = nx / lobe;
-          const rz = nz / lobe;
-          shore = Math.hypot(rx, rz) - (0.9 + warble);
+            0.14 * Math.sin(ang * 3 + seed * 0.7) +
+            0.08 * Math.sin(ang * 5 + seed * 1.4) +
+            0.05 * Math.cos(ang * 2 + seed * 0.3);
+          const warble = (fbm(x * 0.16, z * 0.16, seed + 20) - 0.5) * 0.16;
+          shore = Math.hypot(dx, dz) / (radius * lobe) - 1 + warble;
         } else {
           shore = -0.5;
         }
         this.shore[idx] = shore;
         const n = fbm(x * 0.07, z * 0.07, seed);
         const ridge = Math.abs(fbm(x * 0.04 + 9, z * 0.04 - 4, seed + 1) - 0.5) * 2;
-        let h = 0.95 + Math.pow(n, 1.22) * 7.4 + (1 - ridge) * 2.35;
-        const nz = (z - this.originZ) / this.depth;
-        if (nz > 0.74) h = 0.42 + n * 0.62;
+        let h = 1.1 + Math.pow(n, 1.15) * 4.6 + (1 - ridge) * 1.4;
         const tc = Math.max(0, Math.min(grid.cols - 1, Math.floor((x - this.originX) / TILE)));
         const tr = Math.max(0, Math.min(grid.rows - 1, Math.floor((z - this.originZ) / TILE)));
         const spec = tileSpec(world, tr * grid.cols + tc, tileCount);
@@ -369,9 +366,9 @@ const VOXEL_FRAG = /* glsl */ `
       vec4 m = maskAt(vWorld.xz);
       float wet = m.r;
       float rip = m.g;
-      float soak = smoothstep(0.03, 0.2, wet);
-      float moss = smoothstep(0.18, 0.42, wet);
-      float grass = smoothstep(0.38, 0.65, wet);
+      float soak = smoothstep(0.004, 0.06, wet);
+      float moss = smoothstep(0.06, 0.22, wet);
+      float grass = smoothstep(0.18, 0.48, wet);
       float bloom = smoothstep(0.58, 0.9, wet);
       float grown = smoothstep(0.82, 0.98, wet);
       vec2 slab = vWorld.xz * 1.7;
@@ -385,8 +382,8 @@ const VOXEL_FRAG = /* glsl */ `
       dead = mix(dead * 0.52, dead, smoothstep(0.0, 0.07, crack));
       if (n2 > 0.93) dead *= 0.78;
       vec3 mud = mix(uDirtA, uDirtB, step(0.45, n));
-      vec3 wetCol = mix(dead * vec3(0.42, 0.58, 0.95), vec3(0.28, 0.52, 0.82), soak);
-      vec3 damp = mix(dead, wetCol, soak);
+      vec3 wetCol = vec3(0.22, 0.62, 1.0);
+      vec3 damp = mix(dead, wetCol, soak * 0.92);
       damp = mix(damp, mud * vec3(0.9, 1.05, 0.82), moss * 0.85);
       float glint = step(0.965, fract(n * 7.0 + uTime * 0.45)) * wet * (1.0 - grass);
       damp += vec3(0.55, 0.85, 1.0) * glint;
