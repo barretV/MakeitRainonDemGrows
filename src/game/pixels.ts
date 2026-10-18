@@ -236,6 +236,15 @@ function skyCanvas(top: string, mid: string, bot: string): THREE.CanvasTexture {
   return texOf(canvas, true);
 }
 
+function drawBird(): THREE.CanvasTexture {
+  return bake((p) => {
+    p.line(4, 8, 12, 4, '#2b3344');
+    p.line(12, 4, 20, 8, '#2b3344');
+    p.line(10, 6, 14, 6, '#4a5568');
+    p.set(13, 5, '#fff');
+  }, 24, 14, true);
+}
+
 function drawMountain(): THREE.CanvasTexture {
   return bake((p) => {
     const peak = 118;
@@ -763,6 +772,7 @@ export interface ArtSet {
   heart: THREE.CanvasTexture;
   tornado: THREE.CanvasTexture;
   butterfly: THREE.CanvasTexture;
+  bird: THREE.CanvasTexture;
   barrel: THREE.CanvasTexture;
   flora: THREE.CanvasTexture;
 }
@@ -845,6 +855,7 @@ export function getArt(): ArtSet {
     heart: bit('heart'),
     tornado: tornadoSprite(),
     butterfly: butterfly(),
+    bird: drawBird(),
     barrel: barrel(),
     flora: floraAtlas(),
   };

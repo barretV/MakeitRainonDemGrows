@@ -41,7 +41,7 @@ const TiltShiftShader = {
     uniform vec2 uTexel;
     varying vec2 vUv;
     void main() {
-      float amt = smoothstep(0.72, 0.98, vUv.y);
+      float amt = smoothstep(0.84, 0.99, vUv.y);
       vec4 col = vec4(0.0);
       float wsum = 0.0;
       for (int i = -4; i <= 4; i++) {
@@ -149,6 +149,18 @@ interface Critter {
   tile: number;
   cool: number;
   phase: number;
+  x: number;
+  z: number;
+  tx: number;
+  tz: number;
+}
+
+interface SkyBird {
+  mesh: THREE.Mesh;
+  phase: number;
+  radius: number;
+  height: number;
+  speed: number;
 }
 
 interface Stick {
@@ -219,7 +231,11 @@ export class RainGame {
   private puddle: THREE.Mesh;
   private mountain: THREE.Mesh;
   private peaks: THREE.Mesh[] = [];
+  private hillsBackdrop: THREE.Mesh;
+  private shafts: THREE.Mesh[] = [];
   private puffs: THREE.Mesh[] = [];
+  private puffDrift: number[] = [];
+  private birds: SkyBird[] = [];
   private farTrees: THREE.Mesh[] = [];
   private animals: Critter[] = [];
   private helpers: THREE.Mesh[] = [];
@@ -282,11 +298,63 @@ export class RainGame {
     puffTex.colorSpace = THREE.SRGBColorSpace;
     puffTex.magFilter = THREE.LinearFilter;
     puffTex.minFilter = THREE.LinearFilter;
-    for (let i = 0; i < 4; i += 1) {
-      const mesh = this.billboard(puffTex, 6.4, 2.8, 0.04);
-      (mesh.material as THREE.MeshBasicMaterial).depthWrite = false;
+    for (let i = 0; i < 8; i += 1) {
+      const mesh = this.billboard(puffTex, 5.6 + (i % 3) * 0.8, 2.4 + (i % 2) * 0.35, 0.04);
+      const puffMat = mesh.material as THREE.MeshBasicMaterial;
+      puffMat.depthWrite = false;
+      puffMat.fog = false;
+      puffMat.opacity = 0.82 + (i % 3) * 0.06;
+      puffMat.transparent = true;
       this.puffs.push(mesh);
+      this.puffDrift.push(i * 1.7);
       this.scene.add(mesh);
+    }
+
+    const shaftTex = this.glowTexture('shaft');
+    for (let i = 0; i < 4; i += 1) {
+      const shaft = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.2 + i * 0.5, 16),
+        new THREE.MeshBasicMaterial({
+          map: shaftTex,
+          color: 0xfff0c8,
+          transparent: true,
+          opacity: 0.1,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          fog: false,
+          toneMapped: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      shaft.renderOrder = 2;
+      shaft.userData['bb'] = 1;
+      shaft.userData['shaftBase'] = 0.08;
+      shaft.userData['shaftAmp'] = 0.05;
+      this.shafts.push(shaft);
+      this.scene.add(shaft);
+    }
+
+    this.hillsBackdrop = this.billboard(this.art.hills[0]!, 44, 12, 0.06);
+    const hillMat = this.hillsBackdrop.material as THREE.MeshBasicMaterial;
+    hillMat.fog = true;
+    hillMat.transparent = true;
+    this.hillsBackdrop.userData['bb'] = 1;
+    this.scene.add(this.hillsBackdrop);
+
+    for (let i = 0; i < 4; i += 1) {
+      const mesh = this.billboard(this.art.bird, 0.55, 0.32, 0.12);
+      const birdMat = mesh.material as THREE.MeshBasicMaterial;
+      birdMat.fog = false;
+      mesh.renderOrder = 8;
+      mesh.userData['bb'] = 1;
+      this.scene.add(mesh);
+      this.birds.push({
+        mesh,
+        phase: i * 1.6,
+        radius: 14 + i * 3.5,
+        height: 11 + i * 1.2,
+        speed: 0.22 + i * 0.04,
+      });
     }
 
     for (let i = 0; i < 8; i += 1) {
@@ -296,6 +364,10 @@ export class RainGame {
     }
 
     this.cloud = this.billboard(this.art.cloud.idle, 4.6, 3.0, 0.12);
+    const cloudMat = this.cloud.material as THREE.MeshBasicMaterial;
+    cloudMat.fog = false;
+    cloudMat.toneMapped = false;
+    this.cloud.renderOrder = 25;
     this.scene.add(this.cloud);
     this.curtain = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
@@ -825,12 +897,14 @@ export class RainGame {
     this.scene.background = this.globe ? new THREE.Color(sky) : (art.skies[world] ?? new THREE.Color(sky));
     const dist = this.frameDist();
     this.scene.fog = this.globe ? new THREE.Fog(sky, 18, 48) : new THREE.Fog(sky, dist * 1.05, dist * 2.65);
-    this.mountain.visible = !this.globe;
-    for (const peak of this.peaks) peak.visible = !this.globe;
+    this.mountain.visible = false;
+    for (const peak of this.peaks) peak.visible = false;
+    this.hillsBackdrop.visible = !this.globe;
     for (const tree of this.farTrees) tree.visible = !this.globe;
-    const tint = ['#e7b4cc', '#8eb4e0', '#e7c48a', '#b9a0d8'][world] ?? '#d7c4de';
-    (this.mountain.material as THREE.MeshBasicMaterial).color.set(tint);
-    for (const peak of this.peaks) (peak.material as THREE.MeshBasicMaterial).color.set(tint);
+    const hillTex = this.art.hills[world] ?? this.art.hills[0]!;
+    (this.hillsBackdrop.material as THREE.MeshBasicMaterial).map = hillTex;
+    const tint = ['#f0d0e0', '#d8ecff', '#f5e6c8', '#e0d4f0'][world] ?? '#e8dce8';
+    (this.hillsBackdrop.material as THREE.MeshBasicMaterial).color.set(tint);
 
     const { cols, rows } = gridOf(world);
     const spanX = (cols - 1) * TILE;
@@ -941,15 +1015,17 @@ export class RainGame {
     const backZ = -Math.cos(YAW);
     const rightX = Math.cos(YAW);
     const rightZ = -Math.sin(YAW);
-    this.mountain.position.set(spanX / 2 + backX * 15 + rightX * 3.5, 4.2, spanZ / 2 + backZ * 15 + rightZ * 3.5);
-    this.peaks[0]?.position.set(spanX / 2 + backX * 9 - rightX * 5, 2.2, spanZ / 2 + backZ * 9 - rightZ * 5);
-    this.peaks[1]?.position.set(spanX / 2 + backX * 8 + rightX * 7, 1.8, spanZ / 2 + backZ * 8 + rightZ * 7);
+    const boardX = spanX / 2;
+    const boardZ = spanZ / 2;
+    const span = Math.max(spanX, spanZ);
+    this.hillsBackdrop.position.set(boardX + backX * span * 0.62, 0.35, boardZ + backZ * span * 0.62);
+    this.hillsBackdrop.scale.set(span * 1.05, span * 0.32, 1);
     this.farTrees.forEach((tree, i) => {
-      const along = (i - 3.5) * 2.3;
-      const liveTree = i % 2 === 0;
+      const along = (i - 3.5) * 2.8;
+      const liveTree = state.ratio() > 0.12 && i % 2 === 0;
       const map = liveTree ? (art.liveTree[world] ?? art.liveTree[0]) : (art.deadTree[world] ?? art.deadTree[0]);
       (tree.material as THREE.MeshBasicMaterial).map = map ?? null;
-      tree.position.set(spanX / 2 + backX * 16 + rightX * along, 5.4, spanZ / 2 + backZ * 16 + rightZ * along);
+      tree.position.set(boardX + backX * span * 0.58 + rightX * along, 0.55, boardZ + backZ * span * 0.58 + rightZ * along);
     });
 
     this.syncBoxes(true);
@@ -1114,22 +1190,49 @@ export class RainGame {
         mesh.userData['pet'] = i;
         const spot = spots[i % Math.max(1, spots.length)] ?? 0;
         const view = this.views[spot];
-        mesh.position.set(
-          (view?.x ?? 0) + (view?.nx ?? 0) * 0.4,
-          (view?.y ?? 0) + (view?.ny ?? 1) * 0.4,
-          (view?.z ?? 0) + (view?.nz ?? 0) * 0.4,
-        );
+        const sx = view?.x ?? 0;
+        const sz = view?.z ?? 0;
         this.track.add(mesh);
-        this.animals.push({ mesh, tile: spot, cool: 0, phase: Math.random() * 6 });
+        this.animals.push({
+          mesh,
+          tile: spot,
+          cool: 0,
+          phase: Math.random() * 6,
+          x: sx,
+          z: sz,
+          tx: sx,
+          tz: sz,
+        });
       }
     }
+    const spots = this.restoredSpots();
+    const ratio = state.ratio();
     for (const animal of this.animals) {
       animal.cool = Math.max(0, animal.cool - dt);
-      const view = this.views[animal.tile];
-      const hop = 0.35 + Math.abs(Math.sin(t * 5 + animal.phase)) * 0.1;
-      if (view) {
-        animal.mesh.position.set(view.x + view.nx * hop, view.y + view.ny * hop, view.z + view.nz * hop);
+      if (ratio < 0.06) {
+        const view = this.views[animal.tile];
+        const hop = 0.35 + Math.abs(Math.sin(t * 5 + animal.phase)) * 0.1;
+        if (view) {
+          animal.mesh.position.set(view.x + view.nx * hop, view.y + view.ny * hop, view.z + view.nz * hop);
+        }
+        continue;
       }
+      if (Math.hypot(animal.x - animal.tx, animal.z - animal.tz) < 0.35 || animal.cool <= 0) {
+        const next = spots[Math.floor(Math.random() * Math.max(1, spots.length))] ?? animal.tile;
+        const view = this.views[next];
+        if (view) {
+          animal.tx = view.x;
+          animal.tz = view.z;
+          animal.tile = next;
+          animal.cool = 1.8 + Math.random() * 2.4;
+        }
+      }
+      const step = (0.85 + ratio * 1.4) * dt;
+      animal.x += (animal.tx - animal.x) * Math.min(1, step);
+      animal.z += (animal.tz - animal.z) * Math.min(1, step);
+      const gy = this.groundY(animal.x, animal.z);
+      const hop = Math.abs(Math.sin(t * 6 + animal.phase)) * 0.12;
+      animal.mesh.position.set(animal.x, gy + 0.35 + hop, animal.z);
     }
 
     const helpers = state.helperCount();
@@ -1142,7 +1245,6 @@ export class RainGame {
         this.helpers.push(mesh);
       }
     }
-    const spots = this.restoredSpots();
     this.helpers.forEach((mesh, i) => {
       const spot = spots[(i * 3) % Math.max(1, spots.length)] ?? 0;
       const view = this.views[spot];
@@ -1411,14 +1513,57 @@ export class RainGame {
   }
 
   private dressSky(t: number): void {
+    const state = this.state;
     const backX = -Math.sin(YAW);
     const backZ = -Math.cos(YAW);
     const rightX = Math.cos(YAW);
     const rightZ = -Math.sin(YAW);
+    let anchorX = this.camX;
+    let anchorZ = this.camZ;
+    let span = 22;
+    if (this.terrain && state && !this.globe) {
+      anchorX = this.terrain.originX + this.terrain.width * 0.5;
+      anchorZ = this.terrain.originZ + this.terrain.depth * 0.5;
+      span = Math.max(this.terrain.width, this.terrain.depth);
+      this.hillsBackdrop.position.set(
+        anchorX + backX * span * 0.62,
+        0.35 + Math.sin(t * 0.25) * 0.04,
+        anchorZ + backZ * span * 0.62,
+      );
+      this.hillsBackdrop.scale.set(span * 1.05, span * 0.32, 1);
+    }
     this.puffs.forEach((mesh, i) => {
-      const spread = (i - 1.5) * 5.2;
-      mesh.position.set(this.camX + backX * 12 + rightX * spread, 6.4 + Math.sin(t * 0.6 + i) * 0.15, this.camZ + backZ * 12 + rightZ * spread);
+      const drift = this.puffDrift[i] ?? 0;
+      const spread = (i - 3.5) * 4.6 + Math.sin(t * 0.15 + drift) * 1.2;
+      const depth = 14 + (i % 4) * 3.5;
+      const y = 8.5 + (i % 3) * 1.8 + Math.sin(t * 0.45 + drift) * 0.35;
+      const slide = Math.sin(t * 0.08 + drift) * 2.4;
+      mesh.position.set(
+        anchorX + backX * depth + rightX * (spread + slide),
+        y,
+        anchorZ + backZ * depth + rightZ * (spread * 0.35),
+      );
     });
+    this.shafts.forEach((shaft, i) => {
+      const sm = shaft.material as THREE.MeshBasicMaterial;
+      const base = Number(shaft.userData['shaftBase']) || 0.08;
+      const amp = Number(shaft.userData['shaftAmp']) || 0.05;
+      sm.opacity = base + Math.sin(t * 0.55 + i * 1.4) * amp;
+      shaft.position.set(anchorX - 5 + i * 2.8, 5.5, anchorZ + backZ * span * 0.35 + i * 0.6);
+      shaft.rotation.z = 0.42 + i * 0.08;
+    });
+    for (const bird of this.birds) {
+      const ang = t * bird.speed + bird.phase;
+      const flap = Math.sin(t * 9 + bird.phase) > 0 ? 1 : 0.82;
+      bird.mesh.position.set(
+        anchorX + Math.cos(ang) * bird.radius,
+        bird.height + Math.sin(t * 1.2 + bird.phase) * 0.35,
+        anchorZ + Math.sin(ang) * bird.radius * 0.65,
+      );
+      bird.mesh.scale.set(flap, 1, 1);
+      const visible = (state?.ratio() ?? 0) > 0.04 || (state?.world ?? 0) > 0;
+      bird.mesh.visible = visible;
+    }
   }
 
   private faceAll(): void {
@@ -1699,6 +1844,33 @@ export class RainGame {
       return restored ? art.rockMoss : art.rock;
     }
     return restored ? art.flowers : art.twig;
+  }
+
+  private glowTexture(kind: 'shaft' | 'soft'): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const g = ctx.createLinearGradient(0, 0, 0, 256);
+      if (kind === 'shaft') {
+        g.addColorStop(0, 'rgba(255, 248, 220, 0)');
+        g.addColorStop(0.35, 'rgba(255, 240, 200, 0.55)');
+        g.addColorStop(0.7, 'rgba(255, 230, 180, 0.2)');
+        g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      } else {
+        g.addColorStop(0, 'rgba(255,255,255,0)');
+        g.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+      }
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 64, 256);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    return tex;
   }
 
   private billboard(map: THREE.Texture, w: number, h: number, alphaTest: number): THREE.Mesh {

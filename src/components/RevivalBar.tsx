@@ -3,20 +3,6 @@ import type { ReactNode } from 'react';
 const CLOUD =
   'M18 36c-5 0-9-4-9-9 0-4 2-7 6-8-1-6 5-10 11-10 3 0 6 1 8 4 2-1 4-2 6-2 6 0 11 4 11 10 0 1 0 2-1 3 4 2 7 6 7 11 0 7-6 12-13 12H22c-7 0-13-5-13-11z';
 
-const PUFF =
-  'M10 16c-3 0-5-2-5-5 0-2 1-4 3-4-1-3 3-5 6-5 2 0 3 1 4 2 1-1 2-1 4-1 3 0 6 2 6 5 0 1 0 2 0 3 2 1 4 3 4 3 0 5-4 5-9H12c-4 0-7-3-7-6z';
-
-const SIDE_PUFFS: Array<{ side: 'left' | 'right'; offset: string; scale: number }> = [
-  { side: 'left', offset: '4%', scale: 0.72 },
-  { side: 'right', offset: '12%', scale: 0.9 },
-  { side: 'left', offset: '24%', scale: 1 },
-  { side: 'right', offset: '36%', scale: 0.78 },
-  { side: 'left', offset: '48%', scale: 0.88 },
-  { side: 'right', offset: '60%', scale: 1.05 },
-  { side: 'left', offset: '72%', scale: 0.82 },
-  { side: 'right', offset: '84%', scale: 0.7 },
-];
-
 function formatPct(ratio: number): string {
   const pct = ratio * 100;
   if (pct <= 0) return '0%';
@@ -36,20 +22,6 @@ function CloudShell({ children, wide }: { children: ReactNode; wide?: boolean })
       </svg>
       <div className="revival-cloud__label pixel">{children}</div>
     </div>
-  );
-}
-
-function SidePuff({ side, offset, scale }: { side: 'left' | 'right'; offset: string; scale: number }) {
-  return (
-    <svg
-      className={`revival-side-puff revival-side-puff--${side}`}
-      style={{ top: offset, transform: `scale(${scale})` }}
-      viewBox="0 0 40 24"
-      aria-hidden
-    >
-      <path d={PUFF} fill="#fff" />
-      <path d={PUFF} fill="none" stroke="rgba(42,23,48,0.08)" strokeWidth="0.6" />
-    </svg>
   );
 }
 
@@ -81,16 +53,10 @@ export function RevivalBar({ pct }: { pct: number }) {
   return (
     <div className="revival-bar select-none">
       <CloudShell>
-        World
-        <br />
-        Revival
+        <span className="revival-cloud__title">World revival</span>
       </CloudShell>
 
       <div className="revival-bar__column">
-        {SIDE_PUFFS.map((p, i) => (
-          <SidePuff key={i} side={p.side} offset={p.offset} scale={p.scale} />
-        ))}
-
         <div className="revival-bar__track">
           <div className="revival-bar__sky" />
           <TrackMist />
