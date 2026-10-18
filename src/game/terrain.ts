@@ -76,9 +76,9 @@ export class Terrain {
         const z = this.originZ + (r + 0.5) * VOX;
         const n = fbm(x * 0.07, z * 0.07, seed);
         const ridge = Math.abs(fbm(x * 0.04 + 9, z * 0.04 - 4, seed + 1) - 0.5) * 2;
-        let h = 0.55 + Math.pow(n, 1.35) * 5.4 + (1 - ridge) * 1.6;
+        let h = 0.95 + Math.pow(n, 1.22) * 7.4 + (1 - ridge) * 2.35;
         const nz = (z - this.originZ) / this.depth;
-        if (nz > 0.62) h = 0.28 + n * 0.45;
+        if (nz > 0.74) h = 0.42 + n * 0.62;
         const tc = Math.max(0, Math.min(grid.cols - 1, Math.floor((x - this.originX) / TILE)));
         const tr = Math.max(0, Math.min(grid.rows - 1, Math.floor((z - this.originZ) / TILE)));
         const spec = tileSpec(world, tr * grid.cols + tc, tileCount);
@@ -89,7 +89,8 @@ export class Terrain {
           if (d < 1) h = h * Math.min(1, d * d) + 0.18 * (1 - Math.min(1, d * d));
         }
         const edge = Math.min(c, r, this.cols - 1 - c, this.rows - 1 - r);
-        if (edge === 0) h -= 0.25;
+        if (edge === 0) h -= 0.45;
+        else if (edge === 1) h -= 0.12;
         this.heights[r * this.cols + c] = Math.max(0.2, Math.round(h / STEP) * STEP);
       }
     }
@@ -156,8 +157,11 @@ export class Terrain {
     for (let r = 0; r < this.rows; r += 1) {
       for (let c = 0; c < this.cols; c += 1) {
         const top = this.heights[r * this.cols + c] ?? 1;
-        const edge = c === 0 || r === 0 || c === this.cols - 1 || r === this.rows - 1;
-        const jag = edge ? FLOOR + hash2(c, r, 2) * 1.4 : Math.min(top - 0.3, this.neighborFloor(c, r));
+        const edgeDist = Math.min(c, r, this.cols - 1 - c, this.rows - 1 - r);
+        const jag =
+          edgeDist <= 1
+            ? FLOOR + hash2(c, r, 2) * 2.1
+            : Math.min(top - 0.3, this.neighborFloor(c, r));
         const bottom = Math.min(top - 0.2, jag);
         pos.set(this.originX + (c + 0.5) * VOX, (top + bottom) / 2, this.originZ + (r + 0.5) * VOX);
         scl.set(1, top - bottom, 1);
@@ -334,8 +338,8 @@ const VOXEL_FRAG = /* glsl */ `
       float lipDepth = 0.1 + 0.08 * h21(vec2(floor(along * 12.5), 1.0)) + grown * 0.06;
       vec3 lipCol = mix(uDeadB * 0.95, uLiveB * 0.92, grown);
       col = mix(body, lipCol, step(below, lipDepth));
-      col *= abs(vN.z) > 0.5 ? (vN.z > 0.0 ? 0.74 : 0.5) : (vN.x < 0.0 ? 0.6 : 0.5);
-      col *= mix(0.7, 1.0, smoothstep(1.2, 0.0, below));
+      col *= abs(vN.z) > 0.5 ? (vN.z > 0.0 ? 0.9 : 0.72) : (vN.x < 0.0 ? 0.78 : 0.72);
+      col *= mix(0.82, 1.0, smoothstep(1.2, 0.0, below));
     }
     float f = smoothstep(uFogRange.x, uFogRange.y, vDepth);
     gl_FragColor = vec4(mix(col, uFog, f), 1.0);

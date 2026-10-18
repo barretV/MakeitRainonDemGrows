@@ -214,6 +214,7 @@ export class RainGame {
   private peaks: THREE.Mesh[] = [];
   private puffs: THREE.Mesh[] = [];
   private farTrees: THREE.Mesh[] = [];
+  private hillBand: THREE.Mesh | null = null;
   private animals: Critter[] = [];
   private helpers: THREE.Mesh[] = [];
   private boxes: THREE.Mesh[] = [];
@@ -814,7 +815,7 @@ export class RainGame {
     const sky = this.globe ? '#24356e' : worldDef(world).skyMid;
     this.scene.background = this.globe ? new THREE.Color(sky) : (art.skies[world] ?? new THREE.Color(sky));
     const dist = this.frameDist();
-    this.scene.fog = this.globe ? new THREE.Fog(sky, 18, 48) : new THREE.Fog(sky, dist * 2.4, dist * 6.5);
+    this.scene.fog = this.globe ? new THREE.Fog(sky, 18, 48) : new THREE.Fog(sky, dist * 0.92, dist * 2.45);
     this.mountain.visible = !this.globe;
     for (const peak of this.peaks) peak.visible = !this.globe;
     for (const tree of this.farTrees) tree.visible = !this.globe;
@@ -925,6 +926,16 @@ export class RainGame {
     const backZ = -Math.cos(YAW);
     const rightX = Math.cos(YAW);
     const rightZ = -Math.sin(YAW);
+    if (this.hillBand) {
+      this.scene.remove(this.hillBand);
+      this.hillBand = null;
+    }
+    if (!this.globe) {
+      const hillTex = art.hills[world] ?? art.hills[0]!;
+      this.hillBand = this.billboard(hillTex, spanX + 10, (spanX + 10) * 0.3, 0.04);
+      this.hillBand.position.set(spanX / 2 + backX * 7.5, 2.4, spanZ / 2 + backZ * 7.5);
+      this.scene.add(this.hillBand);
+    }
     this.mountain.position.set(spanX / 2 + backX * 11 + rightX * 3.5, 3.1, spanZ / 2 + backZ * 11 + rightZ * 3.5);
     this.peaks[0]?.position.set(spanX / 2 + backX * 9 - rightX * 5, 2.2, spanZ / 2 + backZ * 9 - rightZ * 5);
     this.peaks[1]?.position.set(spanX / 2 + backX * 8 + rightX * 7, 1.8, spanZ / 2 + backZ * 8 + rightZ * 7);
@@ -1340,7 +1351,7 @@ export class RainGame {
     const { cols, rows } = state ? gridOf(state.world) : { cols: 8, rows: 6 };
     const span = Math.max(cols, rows) * TILE;
     // Apparent size grows with scale squared and shrinks with the next board, so a new world feels modest without going back to day one.
-    return clamp((span * 0.52) / scale, 16, 80);
+    return clamp((span * 0.34) / scale, 8, 34);
   }
 
   private dressSky(t: number): void {
