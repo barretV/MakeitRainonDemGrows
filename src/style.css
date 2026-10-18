@@ -93,12 +93,10 @@ canvas {
   line-height: 0;
 }
 
-.hud-chip__img {
+.hud-chip__sprite {
   display: block;
   width: auto;
-  height: clamp(16px, 2vw, 22px);
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  height: clamp(18px, 2.2vw, 24px);
 }
 
 .hud-chip__amt {

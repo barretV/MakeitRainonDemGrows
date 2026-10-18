@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import type { RainGame } from '../game/RainGame';
-import { hudIconDataUrl, type HudIconKind } from '../game/pixels';
 import { formatDew, type HudModel } from '../game/state';
 import { Bottle } from './Bottle';
+import { HudDewIcon, HudPlantIcon } from './HudCurrencyIcons';
 import { RevivalBar } from './RevivalBar';
 import { UpgradeTree } from './UpgradeTree';
 
@@ -23,10 +23,6 @@ function HudChip({
       <span key={value} className="hud-chip__amt tabular-nums">{display}</span>
     </div>
   );
-}
-
-function HudPixelIcon({ kind }: { kind: HudIconKind }) {
-  return <img src={hudIconDataUrl(kind)} alt="" className="hud-chip__img" draggable={false} />;
 }
 
 function formatPct(ratio: number): string {
@@ -61,13 +57,13 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                 <HudChip
                   value={Math.floor(model.dew)}
                   display={formatDew(model.dew)}
-                  icon={<HudPixelIcon kind="dew" />}
+                  icon={<HudDewIcon />}
                   ariaLabel={`${formatDew(model.dew)} dew`}
                 />
                 <HudChip
                   value={model.runTiles}
                   display={String(model.runTiles)}
-                  icon={<HudPixelIcon kind="plant" />}
+                  icon={<HudPlantIcon />}
                   ariaLabel={`${model.runTiles} plants this bottle`}
                 />
               </div>
