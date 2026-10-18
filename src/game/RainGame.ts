@@ -27,6 +27,13 @@ const STEER = 0.042;
 const CAM_ZOOM_MIN = 1;
 const CAM_ZOOM_MAX = 1.85;
 
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
+
+function growPullForScale(scale: number): number {
+  return Math.pow(Math.max(BASE_SCALE, scale) / BASE_SCALE, 0.62);
+}
+
 const TiltShiftShader = {
   name: 'TiltShift',
   uniforms: {
@@ -226,6 +233,13 @@ export class RainGame {
   private camZoomPulse = 0;
   /** Smoothed follow distance multiplier as Cloud Puff grows (1 = day-one size). */
   private camGrowPull = 1;
+  private workshopSnap: { scale: number; reach: number } | null = null;
+  private introActive = false;
+  private introT = 0;
+  private introDuration = 0;
+  private introScaleFrom = 1;
+  private introPullFrom = 1;
+  private introPullTo = 1;
   private skyLift = 0;
   private readonly skyBase = new THREE.Color();
   private readonly pointers = new Map<number, { x: number; y: number }>();
@@ -525,12 +539,64 @@ export class RainGame {
     this.pushHud(true);
   }
 
+  /** Workshop → rain: cinematic grow + camera pull when power changed. */
+  returnFromWorkshop(): void {
+    if (!this.state) return;
+    const snap = this.workshopSnap;
+    const oldScale = snap?.scale ?? this.state.scale();
+    const oldReach = snap?.reach ?? this.state.reach();
+    this.state.retryRun();
+    this.rebuild();
+    this.dropCloud(this.spawnAt());
+    const newScale = this.state.scale();
+    const newReach = this.state.reach();
+    const puffGrew = newScale > oldScale * 1.008;
+    const reachGrew = newReach > oldReach * 1.04;
+    if (puffGrew || reachGrew) {
+      this.beginWorkshopIntro(oldScale, newScale, oldReach, newReach, puffGrew);
+    } else if (snap) {
+      this.beginWorkshopIntro(oldScale, newScale, oldReach, newReach, false);
+    }
+    this.workshopSnap = null;
+    this.pushHud(true);
+  }
+
+  private beginWorkshopIntro(
+    oldScale: number,
+    newScale: number,
+    oldReach: number,
+    newReach: number,
+    major: boolean,
+  ): void {
+    this.introActive = true;
+    this.introT = 0;
+    this.introDuration = major ? 1.45 : 0.85;
+    this.introScaleFrom = Math.min(1, oldScale / Math.max(newScale, 0.001));
+    this.introPullFrom = growPullForScale(oldScale);
+    this.introPullTo = growPullForScale(newScale);
+    if (newReach > oldReach * 1.02) {
+      this.introPullTo *= 1 + Math.min(0.12, (newReach - oldReach) / Math.max(oldReach, 0.5) * 0.08);
+    }
+    this.camGrowPull = this.introPullFrom;
+    this.cloudPop = major ? 0.62 : 0.88;
+    this.camZoom = 1;
+    this.shake = major ? 0.18 : 0.08;
+    this.grin = major ? 0.5 : 0.25;
+    this.audio.chime();
+    if (this.state) {
+      this.state.toast = major ? 'You grew!' : 'Power up!';
+    }
+  }
+
   advance(): void {
     if (!this.state || this.state.phase !== 'clear') return;
     this.goto(this.state.world + 1);
   }
 
   openWorkshop(): void {
+    if (this.state) {
+      this.workshopSnap = { scale: this.state.scale(), reach: this.state.reach() };
+    }
     this.state?.openWorkshop();
     this.pushHud(true);
   }
@@ -683,6 +749,10 @@ export class RainGame {
       this.audio.rainStop();
       return;
     }
+    if (this.introActive) {
+      this.audio.rainStop();
+      return;
+    }
     const { cols, rows } = gridOf(state.world);
     const minXZ = -TILE / 2 + 0.3;
     const maxX = cols * TILE - TILE / 2 - 0.3;
@@ -830,7 +900,7 @@ export class RainGame {
     const vz = this.cloudZ - this.cloud.position.z;
     const lean = -(vx * Math.cos(YAW) - vz * Math.sin(YAW));
     const sleepy = state.tank <= 0.01;
-    const raining = this.wantsRain() && !sleepy;
+    const raining = this.wantsRain() && !sleepy && !this.introActive;
     const blink = Math.sin(t * 0.65) > 0.965;
     const mood: CloudMood = sleepy
       ? 'sleep'
@@ -852,8 +922,22 @@ export class RainGame {
     }
     const bow = state.petals.bow >= 1;
     mat.color.set(sleepy ? '#c5c9d4' : bow ? '#fff4fc' : '#ffffff');
-    const grown = state.scale();
-    this.cloudPop += (1 - this.cloudPop) * Math.min(1, dt * 7);
+    let grown = state.scale();
+    if (this.introActive) {
+      this.introT += dt;
+      const raw = Math.min(1, this.introT / this.introDuration);
+      const scaleU = easeOutBack(raw);
+      grown *= this.introScaleFrom + (1 - this.introScaleFrom) * scaleU;
+      this.camGrowPull = this.introPullFrom + (this.introPullTo - this.introPullFrom) * easeOutCubic(raw);
+      this.cloudPop += (1.12 - this.cloudPop) * Math.min(1, dt * (raw < 0.85 ? 2.2 : 6));
+      if (raw >= 1) {
+        this.introActive = false;
+        this.camGrowPull = this.introPullTo;
+        this.cloudPop = 1.08;
+      }
+    } else {
+      this.cloudPop += (1 - this.cloudPop) * Math.min(1, dt * 7);
+    }
     const speed = Math.hypot(vx, vz) / Math.max(dt, 0.016);
     const stretch = 1 + Math.min(0.2, speed * 0.012);
     const blush = state.petals.blush >= 1 ? 1.06 : 1;
@@ -1589,8 +1673,9 @@ export class RainGame {
 
   /** Camera pull-back vs puff size; lerps so upgrades feel like stepping back. */
   private cameraGrowPull(dt: number): number {
+    if (this.introActive) return this.camGrowPull;
     const scale = Math.max(BASE_SCALE, this.state?.scale() ?? BASE_SCALE);
-    const target = Math.pow(scale / BASE_SCALE, 0.62);
+    const target = growPullForScale(scale);
     if (dt <= 0) {
       this.camGrowPull = target;
       return target;
