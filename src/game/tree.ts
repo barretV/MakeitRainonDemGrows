@@ -512,6 +512,7 @@ export function isVisible(id: NodeId, ranks: Ranks): boolean {
 }
 
 export function isGhost(id: NodeId, ranks: Ranks): boolean {
+  if (ranks.puff < 1) return false;
   if (isVisible(id, ranks)) return false;
   const parent = upgradeNode(id).parent;
   if (!parent) return false;

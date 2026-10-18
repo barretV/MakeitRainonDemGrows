@@ -39,23 +39,38 @@ def mask_count(world):
 
 
 def cells_per_run(state, world):
+    """One bottle: each wet mask cell gets full soak_per_tick every 0.1s (matches paint())."""
     cols, rows, mc, mr, hp, pay = WORLDS[world]
     cell_area = (cols * TILE / mc) * (rows * TILE / mr)
     radius = rain_radius(state)
     disc = 3.1415926535 * radius * radius / cell_area
     wet = max(1.0, disc * patch_fraction(state))
-    soak_per_sec = (soak_per_tick(state) / 0.1) * 0.68
     seconds = bottle_seconds(state)
-    fill_t = hp / max(0.01, soak_per_sec)
-    cells = min(mc * mr, wet * (seconds / fill_t))
+    ticks = seconds / 0.1
+    soak_on_cell = ticks * soak_per_tick(state)
+    mult = dew_multiplier(state)
+    crit = 1 + crit_chance(state) * 2
+    if soak_on_cell >= hp:
+        cells = min(mc * mr, wet)
+        dew = cells * pay * mult * crit
+    else:
+        frac = soak_on_cell / hp
+        cells = min(mc * mr, wet * frac)
+        # Partial soak: micro-dew drip only (matches paint() before completion).
+        dew = wet * frac * pay * mult * 0.15
     if state["sprinkler"] >= 1:
-        cells += (14 + state["spin"] * 8) * (seconds / 11)
+        bonus = (14 + state["spin"] * 8) * (seconds / 11)
+        cells += bonus
+        dew += bonus * pay * mult * crit
     if state["lightning"] >= 1:
-        cells += (18 + state["zap"] * 12) * (seconds / 16)
+        bonus = (18 + state["zap"] * 12) * (seconds / 16)
+        cells += bonus
+        dew += bonus * pay * mult * crit
     if state["tornado"] >= 1:
-        cells += (5 + state["twist"] * 3) * (3.4 / 0.12)
+        bonus = (5 + state["twist"] * 3) * (3.4 / 0.12)
+        cells += bonus
+        dew += bonus * pay * mult * crit
     cells = min(mc * mr, cells)
-    dew = cells * pay * dew_multiplier(state) * (1 + crit_chance(state) * 2)
     return cells, dew, seconds
 
 

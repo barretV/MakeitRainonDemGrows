@@ -22,7 +22,7 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 8,
     rows: 6,
     tiles: 48,
-    hp: 128,
+    hp: 72,
     pay: 3,
     skyTop: '#6a3d78',
     skyMid: '#c46a8a',
@@ -103,8 +103,8 @@ export interface AchievementDef {
 }
 
 export const ACHIEVEMENTS: readonly AchievementDef[] = [
-  { id: 'first-drop', name: 'First Drop', desc: 'Bloom a tile with your own rain.', reward: 30 },
-  { id: 'gardener', name: 'Soft Launch', desc: 'Bloom 30 tiles.', reward: 90 },
+  { id: 'first-drop', name: 'First Drop', desc: 'Bloom a tile with your own rain.', reward: 5 },
+  { id: 'gardener', name: 'Soft Launch', desc: 'Bloom 80 tiles.', reward: 25 },
   { id: 'koi', name: 'Koi Season', desc: 'Fill a cracked pond.', reward: 120 },
   { id: 'money', name: 'Money Tree', desc: 'Wake a mega flora.', reward: 280 },
   { id: 'friend', name: 'Friend of the Meadow', desc: 'Pet 10 happy animals.', reward: 140 },

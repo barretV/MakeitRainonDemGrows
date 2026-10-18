@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { RainGame } from '../game/RainGame';
-import { BRANCH_COLORS, TREE_CANVAS, type NodeId, type TreeNodeView } from '../game/tree';
+import { BRANCH_COLORS, PRIORITY, TREE_CANVAS, type NodeId, type TreeNodeView } from '../game/tree';
 import { formatDew, type HudModel } from '../game/state';
 import { DewWallet } from './DewWallet';
 import { TreeNodeCloud } from './TreeNodeCloud';
@@ -13,7 +13,10 @@ function WorkshopStatus({ node }: { node: TreeNodeView }) {
   let text = 'Owned';
   if (node.ghost) {
     kind = 'lock';
-    text = 'Locked · unlock parent first';
+    text =
+      node.parent === 'puff' && node.level === 0
+        ? 'Locked · buy Cloud Puff first'
+        : 'Locked · unlock parent first';
   } else if (node.maxed) {
     kind = 'max';
     text = 'Maxed';
@@ -39,7 +42,11 @@ function vinePath(x1: number, y1: number, x2: number, y2: number): string {
 }
 
 export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }) {
-  const shown = model.tree.filter((node) => node.visible || node.ghost);
+  const puffLevel = model.tree.find((node) => node.id === 'puff')?.level ?? 0;
+  const shown = model.tree.filter((node) => node.visible || (node.ghost && puffLevel >= 1));
+  const nextBuy = PRIORITY.map((id) => model.tree.find((node) => node.id === id)).find(
+    (node) => node && !node.maxed && node.visible && !node.ghost && node.afford,
+  );
   const [picked, setPicked] = useState<NodeId>('puff');
   const selected = model.tree.find((node) => node.id === picked) ?? shown[0];
 
@@ -194,6 +201,11 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
 
       {selected && (
         <aside className="workshop-panel">
+          {nextBuy && nextBuy.id !== selected.id && (
+            <p className="workshop-next pixel">
+              Next up: <span>{nextBuy.name}</span> · {formatDew(nextBuy.cost)} dew
+            </p>
+          )}
           <WorkshopStatus node={selected} />
           <div className="workshop-panel__title pixel">{selected.name}</div>
           <p className="workshop-panel__desc">{selected.desc}</p>

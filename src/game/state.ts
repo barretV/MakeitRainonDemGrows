@@ -92,6 +92,8 @@ export interface HudModel {
   phase: RunPhase;
   screen: Screen;
   runDew: number;
+  /** Mask cells completed this bottle. */
+  runTiles: number;
   /** Peak revival % this run (survives until Rain again). */
   runReached: number;
   best: number;
@@ -156,6 +158,7 @@ export class SaveState {
   phase: RunPhase = 'play';
   screen: Screen = 'play';
   runDew = 0;
+  runTiles = 0;
   runReached = 0;
   best: number[] = [0, 0, 0, 0, 0];
 
@@ -169,6 +172,13 @@ export class SaveState {
 
   static fresh(): SaveState {
     const s = new SaveState();
+    s.dew = 0;
+    s.ranks = emptyRanks();
+    s.world = 0;
+    s.unlocked = 0;
+    s.stats = emptyStats();
+    s.achievements = [];
+    s.best = [0, 0, 0, 0, 0];
     s.toast = 'A little cloud. A little drizzle.';
     s.resetLand();
     return s;
@@ -179,10 +189,18 @@ export class SaveState {
       const data = JSON.parse(raw) as PersistedV2 | PersistedV1;
       if (!data || (data.v !== 1 && data.v !== 2)) return null;
       const s = new SaveState();
-      s.dew = Number.isFinite(data.dew) ? Number(data.dew) : 0;
       s.sfx = data.sfx !== false;
       s.music = data.music === true;
-      if (data.v === 2) {
+      if (data.v === 1) {
+        s.dew = 0;
+        s.ranks = emptyRanks();
+        s.world = 0;
+        s.unlocked = 0;
+        s.stats = emptyStats();
+        s.achievements = [];
+        s.best = [0, 0, 0, 0, 0];
+      } else if (data.v === 2) {
+        s.dew = Number.isFinite(data.dew) ? Number(data.dew) : 0;
         s.ranks = { ...emptyRanks(), ...data.ranks };
         s.world = Math.max(0, Math.min(GLOBE_WORLD, data.world | 0));
         s.unlocked = Math.max(s.world, Math.max(0, Math.min(GLOBE_WORLD, data.unlocked | 0)));
@@ -290,6 +308,7 @@ export class SaveState {
 
   retryRun(): void {
     this.runDew = 0;
+    this.runTiles = 0;
     this.runReached = 0;
     this.screen = 'play';
     this.resetLand();
@@ -486,6 +505,7 @@ export class SaveState {
       phase: this.phase,
       screen: this.phase === 'play' ? 'play' : this.screen,
       runDew: this.runDew,
+      runTiles: this.runTiles,
       runReached: this.runReached,
       best: this.best[this.world] ?? 0,
       cleared: this.phase === 'clear',
@@ -547,6 +567,14 @@ export class SaveState {
         const byte = done ? 255 : Math.min(254, Math.floor((now / hp) * 254));
         const pixel = index * 4;
         this.pixels[pixel] = byte;
+        if (now > was && !done) {
+          const pay = cellDew(this.world, this.ranks);
+          const drip = pay * ((now - was) / hp) * 0.15;
+          if (drip >= 0.01) {
+            const gain = this.addDew(drip);
+            dew += gain;
+          }
+        }
         if (done) {
           this.pixels[pixel + 1] = 255;
           this.ripples += 1;
@@ -556,13 +584,17 @@ export class SaveState {
           const gain = this.addDew(cellDew(this.world, this.ranks) * (crit ? 3 : 1));
           dew += gain;
           this.stats.tiles += 1;
+          this.runTiles += 1;
           hills.add(this.hillIndex(c, r, cols, rows));
         }
         this.maskDirty = true;
       }
     }
     for (const hill of hills) this.considerHill(hill);
-    if (filled > 0) this.finishIfDone();
+    if (filled > 0) {
+      this.claim();
+      this.finishIfDone();
+    }
     if (this.phase === 'play') this.captureRunPeak();
     return { dew, filled, crits };
   }
@@ -733,7 +765,7 @@ export class SaveState {
   private meets(id: string): boolean {
     switch (id) {
       case 'first-drop':
-        return this.stats.tiles >= 1;
+        return this.stats.tiles >= 1 && this.runTiles >= 1;
       case 'gardener':
         return this.stats.tiles >= 80;
       case 'koi':

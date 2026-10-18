@@ -5,6 +5,17 @@ import { Bottle } from './Bottle';
 import { RevivalBar } from './RevivalBar';
 import { UpgradeTree } from './UpgradeTree';
 
+function HudCurrency({ label, value, display }: { label: string; value: number; display: string }) {
+  return (
+    <div className="hud-currency">
+      <span className="hud-currency__label pixel">{label}</span>
+      <span key={value} className="hud-currency__value pixel tabular-nums">
+        {display}
+      </span>
+    </div>
+  );
+}
+
 function formatPct(ratio: number): string {
   const pct = ratio * 100;
   if (pct <= 0) return '0%';
@@ -23,14 +34,20 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
       {playing && (
         <>
           <div className="hud-play-stack absolute top-[2%] left-[1.1%] z-10 select-none">
-            <div className="hud-play-jug">
-              <Bottle
-                tank={model.tank}
-                slosh={model.slosh}
-                raining={model.raining}
-                sleepy={model.sleepy}
-                liters={model.liters}
-              />
+            <div className="hud-play-top">
+              <div className="hud-play-jug">
+                <Bottle
+                  tank={model.tank}
+                  slosh={model.slosh}
+                  raining={model.raining}
+                  sleepy={model.sleepy}
+                  liters={model.liters}
+                />
+              </div>
+              <div className="hud-currency-strip">
+                <HudCurrency label="Dew" value={Math.floor(model.dew)} display={formatDew(model.dew)} />
+                <HudCurrency label="Plants" value={model.runTiles} display={String(model.runTiles)} />
+              </div>
             </div>
             <RevivalBar pct={pct} />
           </div>
@@ -61,6 +78,18 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             <Mini onClick={() => game.toggleSfx()}>{model.sfx ? 'SFX on' : 'SFX off'}</Mini>
             <Mini onClick={() => game.toggleMusic()}>{model.music ? 'Music on' : 'Music off'}</Mini>
           </div>
+          <p className="menu-card__sub mt-3">Full wipe needs Reset below (browser cache alone keeps saved dew).</p>
+          <button
+            type="button"
+            className="menu-row mt-2 w-full border-red-400/30 text-red-200"
+            onClick={() => {
+              if (!window.confirm('Reset all progress? Dew, upgrades, and worlds will be wiped.')) return;
+              void game.reset();
+              setGear(false);
+            }}
+          >
+            Reset all progress
+          </button>
         </div>
       )}
 
