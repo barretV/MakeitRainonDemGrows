@@ -41,13 +41,26 @@ canvas {
   touch-action: none;
 }
 
-/* Play HUD — revival column + pixel jug row (mockup) */
+/* Play HUD — mockup layout: jug top-left, revival bar below (same scale as 34% row) */
+.hud-play-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(10px, 1.4vh, 22px);
+  contain: layout style;
+  width: 34%;
+}
+
+.hud-play-jug {
+  width: 100%;
+}
 
 .revival-bar {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   width: min(72px, 18vw);
+  margin-left: 2px;
 }
 
 .revival-cloud {
@@ -56,7 +69,12 @@ canvas {
   place-items: center;
   width: 100%;
   min-height: 36px;
-  margin-bottom: 4px;
+  margin-bottom: -4px;
+  z-index: 3;
+}
+
+.revival-cloud__svg--back {
+  z-index: 0;
 }
 
 .revival-cloud--wide {
@@ -109,11 +127,46 @@ canvas {
   margin: 0 auto;
   width: 26px;
   height: min(32vh, 220px);
-  border-radius: 14px;
+  border-radius: 16px;
   border: 3px solid #fff;
-  background: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 0 0 2px rgba(42, 23, 48, 0.2);
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 0 0 2px rgba(42, 23, 48, 0.18),
+    inset 0 2px 6px rgba(255, 255, 255, 0.55),
+    inset 0 -3px 8px rgba(42, 23, 48, 0.08);
+  overflow: visible;
+}
+
+.revival-bar__sky {
+  position: absolute;
+  inset: 4px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(214, 232, 255, 0.35) 55%, rgba(255, 255, 255, 0.2) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.revival-bar__mist {
+  position: absolute;
+  inset: 4px 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 8px);
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 12px;
   overflow: hidden;
+}
+
+.revival-bar__shine {
+  position: absolute;
+  top: 6px;
+  left: 7px;
+  width: 6px;
+  height: 42%;
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0));
+  z-index: 2;
+  pointer-events: none;
 }
 
 .revival-bar__fill {
@@ -125,17 +178,33 @@ canvas {
   align-items: flex-end;
   justify-content: center;
   min-height: 28px;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 12px 12px;
+  z-index: 3;
   background: linear-gradient(
     to top,
     #b39ddb 0%,
-    #4fc3f7 22%,
-    #8be08a 44%,
-    #ffd54f 66%,
-    #ff9a76 82%,
+    #4fc3f7 18%,
+    #8be08a 38%,
+    #ffd54f 58%,
+    #ff9a76 78%,
     #f48fb1 100%
   );
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35);
   transition: height 280ms ease-out;
+  overflow: visible;
+}
+
+.revival-bar__fill-shimmer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.22) 48%,
+    transparent 56%
+  );
+  pointer-events: none;
 }
 
 .revival-bar__pct-anchor {
@@ -149,19 +218,22 @@ canvas {
 
 .revival-side-puff {
   position: absolute;
-  width: 28px;
-  height: 16px;
-  opacity: 0.95;
-  filter: drop-shadow(0 1px 0 rgba(42, 23, 48, 0.15));
+  width: 32px;
+  height: 18px;
+  opacity: 0.92;
+  filter: drop-shadow(0 1px 0 rgba(42, 23, 48, 0.12));
   pointer-events: none;
+  z-index: 4;
 }
 
 .revival-side-puff--left {
-  left: -22px;
+  left: -26px;
+  transform-origin: right center;
 }
 
 .revival-side-puff--right {
-  right: -22px;
+  right: -26px;
+  transform-origin: left center;
 }
 
 /* Workshop upgrade tree — pan/zoom canvas, no scrollbars */

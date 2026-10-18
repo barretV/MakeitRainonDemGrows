@@ -3,6 +3,20 @@ import type { ReactNode } from 'react';
 const CLOUD =
   'M18 36c-5 0-9-4-9-9 0-4 2-7 6-8-1-6 5-10 11-10 3 0 6 1 8 4 2-1 4-2 6-2 6 0 11 4 11 10 0 1 0 2-1 3 4 2 7 6 7 11 0 7-6 12-13 12H22c-7 0-13-5-13-11z';
 
+const PUFF =
+  'M10 16c-3 0-5-2-5-5 0-2 1-4 3-4-1-3 3-5 6-5 2 0 3 1 4 2 1-1 2-1 4-1 3 0 6 2 6 5 0 1 0 2 0 3 2 1 4 3 4 3 0 5-4 5-9H12c-4 0-7-3-7-6z';
+
+const SIDE_PUFFS: Array<{ side: 'left' | 'right'; offset: string; scale: number }> = [
+  { side: 'left', offset: '4%', scale: 0.72 },
+  { side: 'right', offset: '12%', scale: 0.9 },
+  { side: 'left', offset: '24%', scale: 1 },
+  { side: 'right', offset: '36%', scale: 0.78 },
+  { side: 'left', offset: '48%', scale: 0.88 },
+  { side: 'right', offset: '60%', scale: 1.05 },
+  { side: 'left', offset: '72%', scale: 0.82 },
+  { side: 'right', offset: '84%', scale: 0.7 },
+];
+
 function formatPct(ratio: number): string {
   const pct = ratio * 100;
   if (pct <= 0) return '0%';
@@ -14,6 +28,9 @@ function formatPct(ratio: number): string {
 function CloudShell({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className={`revival-cloud${wide ? ' revival-cloud--wide' : ''}`}>
+      <svg className="revival-cloud__svg revival-cloud__svg--back" viewBox="0 0 72 48" aria-hidden>
+        <path d={CLOUD} transform="translate(1,2)" opacity="0.35" />
+      </svg>
       <svg className="revival-cloud__svg" viewBox="0 0 72 48" aria-hidden>
         <path d={CLOUD} />
       </svg>
@@ -22,18 +39,37 @@ function CloudShell({ children, wide }: { children: ReactNode; wide?: boolean })
   );
 }
 
-function SidePuff({ side, offset }: { side: 'left' | 'right'; offset: string }) {
+function SidePuff({ side, offset, scale }: { side: 'left' | 'right'; offset: string; scale: number }) {
   return (
     <svg
       className={`revival-side-puff revival-side-puff--${side}`}
-      style={{ top: offset }}
+      style={{ top: offset, transform: `scale(${scale})` }}
       viewBox="0 0 40 24"
       aria-hidden
     >
-      <path
-        d="M10 16c-3 0-5-2-5-5 0-2 1-4 3-4-1-3 3-5 6-5 2 0 3 1 4 2 1-1 2-1 4-1 3 0 6 2 6 5 0 1 0 2 0 3 2 1 4 3 4 3 0 5-4 5-9H12c-4 0-7-3-7-6z"
-        fill="#fff"
-      />
+      <path d={PUFF} fill="#fff" />
+      <path d={PUFF} fill="none" stroke="rgba(42,23,48,0.08)" strokeWidth="0.6" />
+    </svg>
+  );
+}
+
+function TrackMist() {
+  return (
+    <svg className="revival-bar__mist" viewBox="0 0 32 200" preserveAspectRatio="none" aria-hidden>
+      <g fill="#fff" opacity="0.45">
+        <ellipse cx="10" cy="28" rx="9" ry="5" />
+        <ellipse cx="22" cy="52" rx="7" ry="4" />
+        <ellipse cx="8" cy="78" rx="8" ry="4.5" />
+        <ellipse cx="24" cy="104" rx="6" ry="3.5" />
+        <ellipse cx="12" cy="132" rx="9" ry="5" />
+        <ellipse cx="20" cy="162" rx="7" ry="4" />
+        <ellipse cx="9" cy="188" rx="8" ry="4" />
+      </g>
+      <g fill="#fff" opacity="0.22">
+        <ellipse cx="26" cy="38" rx="5" ry="3" />
+        <ellipse cx="6" cy="118" rx="5" ry="3" />
+        <ellipse cx="25" cy="178" rx="5" ry="3" />
+      </g>
     </svg>
   );
 }
@@ -51,14 +87,16 @@ export function RevivalBar({ pct }: { pct: number }) {
       </CloudShell>
 
       <div className="revival-bar__column">
-        <SidePuff side="left" offset="8%" />
-        <SidePuff side="right" offset="22%" />
-        <SidePuff side="left" offset="42%" />
-        <SidePuff side="right" offset="58%" />
-        <SidePuff side="left" offset="74%" />
+        {SIDE_PUFFS.map((p, i) => (
+          <SidePuff key={i} side={p.side} offset={p.offset} scale={p.scale} />
+        ))}
 
         <div className="revival-bar__track">
+          <div className="revival-bar__sky" />
+          <TrackMist />
+          <div className="revival-bar__shine" />
           <div className="revival-bar__fill" style={{ height: `${fill}%` }}>
+            <div className="revival-bar__fill-shimmer" />
             <div className="revival-bar__pct-anchor">
               <CloudShell wide>{label}</CloudShell>
             </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { RainGame } from '../game/RainGame';
 import { formatDew, type HudModel } from '../game/state';
 import { Bottle } from './Bottle';
+import { RevivalBar } from './RevivalBar';
 import { UpgradeTree } from './UpgradeTree';
 
 function formatPct(ratio: number): string {
@@ -21,9 +22,8 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
     <div className="pointer-events-none absolute inset-0">
       {playing && (
         <>
-          <div className="absolute top-[2%] left-[1.1%] z-10 flex w-[34%] items-start gap-[2%] select-none">
-            <Revival pct={pct} />
-            <div className="min-w-0 flex-1">
+          <div className="hud-play-stack absolute top-[2%] left-[1.1%] z-10 select-none">
+            <div className="hud-play-jug">
               <Bottle
                 tank={model.tank}
                 slosh={model.slosh}
@@ -32,6 +32,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                 liters={model.liters}
               />
             </div>
+            <RevivalBar pct={pct} />
           </div>
           <div
             className="pixel absolute bottom-[2.4%] left-[1.4%] select-none text-white"
@@ -135,57 +136,6 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="pixel text-[16px]">{value}</div>
     </div>
   );
-}
-
-function Revival({ pct }: { pct: number }) {
-  return (
-    <div className="relative flex w-[18%] shrink-0 flex-col items-center">
-      <div
-        className="pixel mb-[4%] rounded-full bg-white/90 px-[8%] py-[10%] text-center leading-none text-[#5a6ad4]"
-        style={{ fontSize: 'clamp(7px, 0.7vw, 13px)' }}
-      >
-        World
-        <br />
-        Revival
-      </div>
-      <div className="relative h-[32vh] w-[42%]">
-        <div className="absolute inset-0 rounded-full border-[3px] border-white bg-white/40 shadow-[0_0_0_2px_rgba(42,23,48,0.25)]" />
-        <div
-          className="absolute inset-x-[3px] bottom-[3px] rounded-full"
-          style={{
-            height: `${Math.max(8, Math.min(100, pct))}%`,
-            background: 'linear-gradient(#f48fb1, #ffd54f, #8be08a, #4fc3f7, #b39ddb)',
-          }}
-        />
-        <CloudPuff className="absolute top-[22%] -left-[70%] h-5 w-8" />
-        <CloudPuff className="absolute bottom-[18%] -left-[70%] h-5 w-8" />
-      </div>
-      <div
-        className="pixel mt-[8%] text-white"
-        style={{ fontSize: 'clamp(11px, 1.2vw, 22px)', textShadow: '1px 1px 0 #2a1730, -1px -1px 0 #2a1730' }}
-      >
-        {formatPct(pct / 100)}
-      </div>
-    </div>
-  );
-}
-
-function CloudPuff({ className }: { className: string }) {
-  const paint = (canvas: HTMLCanvasElement | null) => {
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    canvas.width = 28;
-    canvas.height = 18;
-    ctx.clearRect(0, 0, 28, 18);
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.ellipse(14, 11, 12, 6, 0, 0, Math.PI * 2);
-    ctx.ellipse(8, 12, 6, 4, 0, 0, Math.PI * 2);
-    ctx.ellipse(20, 11, 6, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  return <canvas ref={paint} className={`${className} [image-rendering:pixelated]`} />;
 }
 
 function Mini({ children, onClick }: { children: string; onClick: () => void }) {
