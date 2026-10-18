@@ -1,0 +1,15 @@
+{
+  "gameId": "1e7lES0SLoMIDcHE4HNm",
+  "relativePathToDistFolder": "dist",
+  "usesPreloader": false,
+  "fullscreenEnabled": true,
+  "maxDpr": 1.5,
+  "orientation": "landscape",
+  "platformFit": "both",
+  "keywords": [
+    "cozy",
+    "incremental",
+    "pixel"
+  ],
+  "kitId": null
+}
