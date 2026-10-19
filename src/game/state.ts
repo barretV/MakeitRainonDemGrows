@@ -18,6 +18,14 @@ import {
   type PetalNodeView,
   type PetalRanks,
 } from './petal';
+import { abilityCooldown, pickAutoAbility, type AbilityId, ABILITIES } from './abilities';
+import {
+  growthStage,
+  type GrowthPulseEvent,
+  type RestorationWave,
+  WAVE_SPEED,
+  WAVE_THICK,
+} from './growth';
 import {
   abilityOn,
   boardSpan,
@@ -117,6 +125,9 @@ export interface HudModel {
   achievements: Array<AchievementDef & { done: boolean }>;
   spendableBlooms: number;
   petalTree: PetalNodeView[];
+  nextAbility: string;
+  abilityCdNorm: number;
+  revivalGlow: number;
 }
 
 interface PersistedLand {
@@ -124,6 +135,23 @@ interface PersistedLand {
   progress: number[];
   green: boolean[];
   tiles: TileState[];
+  waterPool?: number[];
+}
+
+interface PersistedV5 {
+  v: 5;
+  dew: number;
+  ranks: Partial<Ranks>;
+  petals: Partial<PetalRanks>;
+  world: number;
+  unlocked: number;
+  best: number[];
+  stats: Stats;
+  achievements: string[];
+  lands: PersistedLand[];
+  sfx: boolean;
+  music: boolean;
+  lastSave: number;
 }
 
 interface PersistedV4 {
@@ -181,6 +209,8 @@ interface PersistedV1 {
 interface LandPack {
   progress: Float32Array;
   pixels: Uint8Array;
+  pulse: Uint8Array;
+  waterPool: Float32Array;
   green: boolean[];
   tiles: TileState[];
 }
@@ -247,11 +277,20 @@ export class SaveState {
 
   progress: Float32Array = new Float32Array(0);
   pixels: Uint8Array = new Uint8Array(0);
+  pulse: Uint8Array = new Uint8Array(0);
+  waterPool: Float32Array = new Float32Array(0);
   maskDirty = false;
+  pulseDirty = false;
+  abilityCds: Record<string, number> = {};
+  nextAbilityId: AbilityId | '' = '';
+  lifeStormPulse = false;
+  revivalGlow = 0;
   private filled = 0;
   private green: boolean[] = [];
   private justGreen: number[] = [];
   private ripples = 0;
+  private waves: RestorationWave[] = [];
+  private growthPulses: GrowthPulseEvent[] = [];
   private lands = new Map<number, LandPack>();
   private revivalMilestones = new Set<number>();
 
@@ -274,8 +313,8 @@ export class SaveState {
 
   static fromJSON(raw: string): SaveState | null {
     try {
-      const data = JSON.parse(raw) as PersistedV4 | PersistedV3 | PersistedV2 | PersistedV1;
-      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3 && data.v !== 4)) return null;
+      const data = JSON.parse(raw) as PersistedV5 | PersistedV4 | PersistedV3 | PersistedV2 | PersistedV1;
+      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3 && data.v !== 4 && data.v !== 5)) return null;
       const s = new SaveState();
       s.sfx = data.sfx !== false;
       s.music = data.music === true;
@@ -287,10 +326,10 @@ export class SaveState {
         s.stats = emptyStats();
         s.achievements = [];
         s.best = [0, 0, 0, 0, 0];
-      } else if (data.v === 2 || data.v === 3 || data.v === 4) {
+      } else if (data.v === 2 || data.v === 3 || data.v === 4 || data.v === 5) {
         s.dew = Number.isFinite(data.dew) ? Number(data.dew) : 0;
         s.ranks = { ...emptyRanks(), ...data.ranks };
-        s.petals = { ...emptyPetals(), ...(data.v === 4 ? data.petals : {}) };
+        s.petals = { ...emptyPetals(), ...(data.v === 4 || data.v === 5 ? data.petals : {}) };
         s.world = Math.max(0, Math.min(GLOBE_WORLD, data.world | 0));
         s.unlocked = Math.max(s.world, Math.max(0, Math.min(GLOBE_WORLD, data.unlocked | 0)));
         s.stats = { ...emptyStats(), ...data.stats };
@@ -299,7 +338,7 @@ export class SaveState {
           const n = data.best?.[i];
           return typeof n === 'number' && n >= 0 ? Math.min(1, n) : 0;
         });
-        if ((data.v === 3 || data.v === 4) && Array.isArray(data.lands)) {
+        if ((data.v === 3 || data.v === 4 || data.v === 5) && Array.isArray(data.lands)) {
           s.importLands(data.lands);
         }
       }
@@ -316,8 +355,8 @@ export class SaveState {
   }
 
   toJSON(): string {
-    const data: PersistedV4 = {
-      v: 4,
+    const data: PersistedV5 = {
+      v: 5,
       dew: this.dew,
       ranks: this.ranks,
       petals: this.petals,
@@ -367,9 +406,8 @@ export class SaveState {
     void mode.moving;
     if (this.phase !== 'play') return;
     this.stats.playSeconds += dt;
-    if (abilityOn(this.ranks, 'lightning')) this.lightningCd = Math.max(0, this.lightningCd - dt);
-    if (abilityOn(this.ranks, 'tornado')) this.tornadoCd = Math.max(0, this.tornadoCd - dt);
-    if (abilityOn(this.ranks, 'sprinkler')) this.spinCd = Math.max(0, this.spinCd - dt);
+    this.tickAbilityCooldowns(dt);
+    if (this.revivalGlow > 0) this.revivalGlow = Math.max(0, this.revivalGlow - dt * 0.35);
     if (mode.raining && this.tank > 0) {
       const max = this.maxLiters();
       this.tank = Math.max(0, this.tank - (drainPerSec(this.ranks) / max) * dt);
@@ -403,8 +441,12 @@ export class SaveState {
       pack = this.createLandPack(world);
       this.lands.set(world, pack);
     }
+    if (!pack.pulse || pack.pulse.length !== cells) pack.pulse = new Uint8Array(cells);
+    if (!pack.waterPool || pack.waterPool.length !== cells) pack.waterPool = new Float32Array(cells);
     this.progress = pack.progress;
     this.pixels = pack.pixels;
+    this.pulse = pack.pulse;
+    this.waterPool = pack.waterPool;
     this.green = pack.green;
     this.tiles[world] = pack.tiles;
     this.filled = 0;
@@ -422,6 +464,8 @@ export class SaveState {
     return {
       progress: new Float32Array(cells),
       pixels: new Uint8Array(cells * 4),
+      pulse: new Uint8Array(cells),
+      waterPool: new Float32Array(cells),
       green: tiles.map(() => false),
       tiles,
     };
@@ -429,6 +473,7 @@ export class SaveState {
 
   private refillBottle(): void {
     this.tank = 1;
+    this.resetAbilityCooldowns(true);
     this.lightningCd = abilityOn(this.ranks, 'lightning') ? 6 : LIGHTNING_CD;
     this.tornadoCd = abilityOn(this.ranks, 'tornado') ? 10 : TORNADO_CD;
     this.spinCd = abilityOn(this.ranks, 'sprinkler') ? 4 : SPIN_CD;
@@ -453,6 +498,7 @@ export class SaveState {
         progress: [...pack.progress],
         green: [...pack.green],
         tiles: pack.tiles.map((t) => ({ ...t })),
+        waterPool: [...pack.waterPool],
       });
     }
     return out;
@@ -483,7 +529,14 @@ export class SaveState {
         progress[i] = typeof v === 'number' && v >= 0 ? v : 0;
       }
       const pixels = new Uint8Array(cells * 4);
-      this.lands.set(row.world, { progress, pixels, green, tiles });
+      const pulse = new Uint8Array(cells);
+      const waterPool = new Float32Array(cells);
+      const poolSrc = row.waterPool ?? [];
+      for (let i = 0; i < cells; i += 1) {
+        const p = poolSrc[i];
+        waterPool[i] = typeof p === 'number' && p > 0 ? p : 0;
+      }
+      this.lands.set(row.world, { progress, pixels, pulse, waterPool, green, tiles });
     }
   }
 
@@ -639,6 +692,332 @@ export class SaveState {
     return { dew: hit.dew, filled: hit.filled };
   }
 
+  soakAmount(): number {
+    return soakPerTick(this.ranks);
+  }
+
+  paintPatch(x: number, z: number, radius: number, amount: number, respectPatches: boolean): void {
+    if (this.phase !== 'play') return;
+    this.paint(x, z, radius, amount, respectPatches);
+  }
+
+  chainSpill(x: number, z: number, hops: number): void {
+    const { cols, rows } = maskOf(this.world);
+    const hp = cellHp(this.world);
+    const gate = 1 - patchFraction(this.ranks);
+    for (let h = 0; h < hops; h += 1) {
+      let best = -1;
+      let bestD = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < this.progress.length; i += 1) {
+        if ((this.progress[i] ?? 0) < hp) continue;
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        const at = this.cellCenter(c, r, cols, rows);
+        const d = this.gap(x, z, at.x, at.z);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      if (best < 0) break;
+      const spilled = this.spillFrom(best, x, z, cols, rows, soakPerTick(this.ranks) * 1.4, hp, false, gate);
+      if (!spilled) break;
+    }
+  }
+
+  stampWaveAt(x: number, z: number, strength = 1): void {
+    const { cols, rows } = maskOf(this.world);
+    const at = this.maskPos(x, z, cols, rows);
+    const c = Math.max(0, Math.min(cols - 1, Math.floor(at.c)));
+    const r = Math.max(0, Math.min(rows - 1, Math.floor(at.r)));
+    const maxR = 6 * strength;
+    this.waves.push({ c, r, radius: 0, maxRadius: maxR, speed: WAVE_SPEED * strength });
+    this.maskDirty = true;
+  }
+
+  boostMossBand(x: number, z: number, radius: number, amount: number): void {
+    const hp = cellHp(this.world);
+    const bounds = this.cellBounds(x, z, radius, maskOf(this.world).cols, maskOf(this.world).rows);
+    const { cols, rows } = maskOf(this.world);
+    for (let r = bounds.minR; r <= bounds.maxR; r += 1) {
+      for (let c = bounds.minC; c <= bounds.maxC; c += 1) {
+        const at = this.cellCenter(c, r, cols, rows);
+        if (this.gap(x, z, at.x, at.z) > radius) continue;
+        const i = r * cols + c;
+        const was = this.progress[i] ?? 0;
+        if (was >= hp) continue;
+        const wet = was / hp;
+        if (wet < 0.12 || wet > 0.55) continue;
+        this.applySoak(i, c, r, cols, rows, hp * amount, hp, false, 0);
+      }
+    }
+  }
+
+  boostStageInRadius(x: number, z: number, radius: number, stages: number): void {
+    const hp = cellHp(this.world);
+    const { cols, rows } = maskOf(this.world);
+    const bounds = this.cellBounds(x, z, radius, cols, rows);
+    const bump = (hp / 5) * stages;
+    for (let r = bounds.minR; r <= bounds.maxR; r += 1) {
+      for (let c = bounds.minC; c <= bounds.maxC; c += 1) {
+        const at = this.cellCenter(c, r, cols, rows);
+        if (this.gap(x, z, at.x, at.z) > radius) continue;
+        const i = r * cols + c;
+        const was = this.progress[i] ?? 0;
+        if (was >= hp) continue;
+        this.applySoak(i, c, r, cols, rows, bump, hp, false, 0);
+      }
+    }
+  }
+
+  pushPoolWave(x: number, z: number, radius: number): void {
+    const { cols, rows } = maskOf(this.world);
+    const bounds = this.cellBounds(x, z, radius, cols, rows);
+    const add = soakPerTick(this.ranks) * 0.9;
+    for (let r = bounds.minR; r <= bounds.maxR; r += 1) {
+      for (let c = bounds.minC; c <= bounds.maxC; c += 1) {
+        const at = this.cellCenter(c, r, cols, rows);
+        if (this.gap(x, z, at.x, at.z) > radius) continue;
+        const i = r * cols + c;
+        this.waterPool[i] = (this.waterPool[i] ?? 0) + add;
+      }
+    }
+    this.syncPoolPixels();
+    this.maskDirty = true;
+  }
+
+  siphonPoolToCenter(x: number, z: number, radius: number): void {
+    const { cols, rows } = maskOf(this.world);
+    const at = this.maskPos(x, z, cols, rows);
+    const cc = Math.max(0, Math.min(cols - 1, Math.floor(at.c)));
+    const cr = Math.max(0, Math.min(rows - 1, Math.floor(at.r)));
+    const center = cr * cols + cc;
+    let gathered = 0;
+    const bounds = this.cellBounds(x, z, radius, cols, rows);
+    for (let r = bounds.minR; r <= bounds.maxR; r += 1) {
+      for (let c = bounds.minC; c <= bounds.maxC; c += 1) {
+        const pos = this.cellCenter(c, r, cols, rows);
+        if (this.gap(x, z, pos.x, pos.z) > radius) continue;
+        if (c === cc && r === cr) continue;
+        const i = r * cols + c;
+        const pool = this.waterPool[i] ?? 0;
+        if (pool <= 0.001) continue;
+        const take = pool * 0.55;
+        this.waterPool[i] = pool - take;
+        gathered += take;
+      }
+    }
+    if (gathered > 0) {
+      this.waterPool[center] = (this.waterPool[center] ?? 0) + gathered;
+      const hp = cellHp(this.world);
+      const was = this.progress[center] ?? 0;
+      if (was < hp) {
+        this.progress[center] = Math.min(hp, was + gathered * 0.9);
+        this.applySoak(center, cc, cr, cols, rows, 0, hp, false, 0);
+      }
+    }
+    this.syncPoolPixels();
+  }
+
+  monsoonBand(rank: number): void {
+    const { cols, rows } = maskOf(this.world);
+    const hp = cellHp(this.world);
+    const latBand = Math.floor(rows * (0.35 + rank * 0.04));
+    const thick = 4 + rank;
+    for (let r = Math.max(0, latBand - thick); r < Math.min(rows, latBand + thick); r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        const i = r * cols + c;
+        if ((this.progress[i] ?? 0) >= hp) continue;
+        this.applySoak(i, c, r, cols, rows, hp * 0.08, hp, false, 0);
+      }
+    }
+  }
+
+  flagLifeStorm(): void {
+    this.lifeStormPulse = true;
+  }
+
+  consumeLifeStorm(): boolean {
+    if (!this.lifeStormPulse) return false;
+    this.lifeStormPulse = false;
+    return true;
+  }
+
+  tickAbilityCooldowns(dt: number): void {
+    for (const key of Object.keys(this.abilityCds)) {
+      this.abilityCds[key] = Math.max(0, (this.abilityCds[key] ?? 0) - dt);
+    }
+    this.lightningCd = Math.max(0, this.lightningCd - dt);
+    this.tornadoCd = Math.max(0, this.tornadoCd - dt);
+    this.spinCd = Math.max(0, this.spinCd - dt);
+    const next = pickAutoAbility(this, this.abilityCds);
+    this.nextAbilityId = next ?? '';
+    if (next) {
+      const cd = abilityCooldown(next, this.ranks);
+      const left = this.abilityCds[next] ?? 0;
+      this.nextAbilityId = next;
+      void cd;
+      void left;
+    }
+  }
+
+  abilityTelegraph(): { id: string; cdNorm: number } {
+    const id = this.nextAbilityId;
+    if (!id) return { id: '', cdNorm: 0 };
+    const cd = abilityCooldown(id, this.ranks);
+    const left = this.abilityCds[id] ?? 0;
+    return { id: ABILITIES[id].label, cdNorm: cd > 0 ? 1 - left / cd : 0 };
+  }
+
+  resetAbilityCooldowns(short = false): void {
+    for (const id of Object.keys(ABILITIES) as AbilityId[]) {
+      const def = ABILITIES[id];
+      if (!def.enabled(this.ranks, this.world)) continue;
+      const cd = abilityCooldown(id, this.ranks);
+      this.abilityCds[id] = short ? Math.min(6, cd * 0.28) : cd;
+    }
+  }
+
+  tryCastAbility(ctx: import('./abilities').AbilityContext): AbilityId | null {
+    if (this.phase !== 'play' || this.tank < 0.08) return null;
+    const id = pickAutoAbility(this, this.abilityCds);
+    if (!id) return null;
+    const cd = abilityCooldown(id, this.ranks);
+    if ((this.abilityCds[id] ?? 0) > 0) return null;
+    this.abilityCds[id] = cd;
+    if (id === 'sprinkler') this.spinCd = SPIN_CD;
+    if (id === 'lightning') this.lightningCd = LIGHTNING_CD;
+    if (id === 'tornado') this.tornadoCd = TORNADO_CD;
+    ABILITIES[id].execute(this, ctx);
+    return id;
+  }
+
+  takeGrowthPulses(): GrowthPulseEvent[] {
+    const out = this.growthPulses;
+    this.growthPulses = [];
+    return out;
+  }
+
+  tickRestorationWaves(dt: number): void {
+    if (this.waves.length === 0) return;
+    const { cols, rows } = maskOf(this.world);
+    const next: RestorationWave[] = [];
+    for (const w of this.waves) {
+      w.radius += w.speed * dt;
+      const rad = w.radius;
+      const inner = rad - WAVE_THICK;
+      for (let dr = -Math.ceil(rad + 2); dr <= Math.ceil(rad + 2); dr += 1) {
+        for (let dc = -Math.ceil(rad + 2); dc <= Math.ceil(rad + 2); dc += 1) {
+          const nc = w.c + dc;
+          const nr = w.r + dr;
+          if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+          const dist = Math.hypot(dc, dr);
+          if (dist > rad || dist < inner) continue;
+          const i = nr * cols + nc;
+          const pixel = i * 4 + 2;
+          this.pixels[pixel] = Math.max(this.pixels[pixel] ?? 0, 235);
+          this.pulse[i] = Math.max(this.pulse[i] ?? 0, 210);
+        }
+      }
+      if (w.radius < w.maxRadius) next.push(w);
+    }
+    this.waves = next;
+    this.maskDirty = true;
+    this.pulseDirty = true;
+  }
+
+  decayPulse(dt: number): void {
+    const step = Math.max(1, Math.floor(255 * dt / 0.55));
+    let any = false;
+    for (let i = 0; i < this.pulse.length; i += 1) {
+      const v = this.pulse[i] ?? 0;
+      if (v <= 0) continue;
+      const n = Math.max(0, v - step);
+      this.pulse[i] = n;
+      if (n > 0) any = true;
+    }
+    if (any) this.pulseDirty = true;
+    const waveStep = Math.max(1, Math.floor(255 * dt / 0.85));
+    for (let i = 2; i < this.pixels.length; i += 4) {
+      const b = this.pixels[i] ?? 0;
+      if (b <= 0) continue;
+      this.pixels[i] = Math.max(0, b - waveStep);
+      this.maskDirty = true;
+    }
+  }
+
+  flowWaterStep(): void {
+    const { cols, rows } = maskOf(this.world);
+    const hp = cellHp(this.world);
+    const eps = 0.02;
+    const transfers: Array<{ from: number; to: number; amt: number }> = [];
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        const i = r * cols + c;
+        const pool = this.waterPool[i] ?? 0;
+        if (pool <= eps) continue;
+        const prog = this.progress[i] ?? 0;
+        const neighbors = [
+          [c - 1, r],
+          [c + 1, r],
+          [c, r - 1],
+          [c, r + 1],
+        ];
+        let best = -1;
+        let bestScore = prog - pool * 0.01;
+        for (const pair of neighbors) {
+          const nc = pair[0];
+          const nr = pair[1];
+          if (nc === undefined || nr === undefined) continue;
+          if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+          const ni = nr * cols + nc;
+          const nProg = this.progress[ni] ?? 0;
+          const nPool = this.waterPool[ni] ?? 0;
+          const score = nProg + nPool * 0.02;
+          if (score < bestScore) {
+            bestScore = score;
+            best = ni;
+          }
+        }
+        if (best < 0) continue;
+        const move = Math.min(pool * 0.42, 0.35);
+        if (move <= eps) continue;
+        transfers.push({ from: i, to: best, amt: move });
+      }
+    }
+    for (const t of transfers) {
+      this.waterPool[t.from] = (this.waterPool[t.from] ?? 0) - t.amt;
+      this.waterPool[t.to] = (this.waterPool[t.to] ?? 0) + t.amt;
+      const nProg = this.progress[t.to] ?? 0;
+      if (nProg < hp) {
+        const bc = t.to % cols;
+        const br = Math.floor(t.to / cols);
+        this.applySoak(t.to, bc, br, cols, rows, t.amt * 0.9, hp, false, 0);
+      }
+    }
+    this.syncPoolPixels();
+  }
+
+  syncPoolPixels(): void {
+    const cap = cellHp(this.world) * 0.35;
+    for (let i = 0; i < this.waterPool.length; i += 1) {
+      const pool = this.waterPool[i] ?? 0;
+      const a = cap > 0 ? Math.min(255, Math.floor((pool / cap) * 255)) : 0;
+      this.pixels[i * 4 + 3] = a;
+    }
+    this.maskDirty = true;
+  }
+
+  depositPool(index: number, amount: number): void {
+    if (amount <= 0) return;
+    this.waterPool[index] = (this.waterPool[index] ?? 0) + amount;
+    const pixel = index * 4 + 3;
+    const cap = cellHp(this.world) * 0.35;
+    const pool = this.waterPool[index] ?? 0;
+    this.pixels[pixel] = cap > 0 ? Math.min(255, Math.floor((pool / cap) * 255)) : 0;
+    this.maskDirty = true;
+  }
+
   fadeRipples(dt: number): void {
     if (this.ripples <= 0) return;
     const step = Math.max(1, Math.floor(255 * dt / 0.65));
@@ -707,11 +1086,38 @@ export class SaveState {
     return this.tiles[this.world] ?? [];
   }
 
+  hillBloomLevel(index: number): number {
+    const { cols, rows } = gridOf(this.world);
+    const { cols: maskCols, rows: maskRows } = maskOf(this.world);
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const c0 = Math.floor((col / cols) * maskCols);
+    const c1 = Math.floor(((col + 1) / cols) * maskCols);
+    const r0 = Math.floor((row / rows) * maskRows);
+    const r1 = Math.floor(((row + 1) / rows) * maskRows);
+    const hp = cellHp(this.world);
+    let sum = 0;
+    let seen = 0;
+    for (let r = r0; r < r1; r += 1) {
+      for (let c = c0; c < c1; c += 1) {
+        seen += 1;
+        sum += growthStage(this.progress[r * maskCols + c] ?? 0, hp);
+      }
+    }
+    return seen > 0 ? sum / seen : 0;
+  }
+
   animalCount(): number {
     const ratio = this.ratio();
     if (ratio < 0.03) return 0;
+    const { cols, rows } = gridOf(this.world);
+    let lush = 0;
+    for (let i = 0; i < cols * rows; i += 1) {
+      if (this.green[i] || this.hillBloomLevel(i) >= 3.6) lush += 1;
+    }
     const cap = 8 + (this.petals.buddy >= 1 ? 2 : 0);
-    return Math.min(cap, 1 + Math.floor(ratio * 14) + (this.petals.buddy >= 1 ? 1 : 0));
+    const fromTiles = Math.floor(lush * 0.45);
+    return Math.min(cap, Math.max(0, fromTiles) + (this.petals.buddy >= 1 ? 1 : 0));
   }
 
   helperCount(): number {
@@ -789,6 +1195,9 @@ export class SaveState {
       achievements: ACHIEVEMENTS.map((a) => ({ ...a, done: this.achievements.includes(a.id) })),
       spendableBlooms: spendableBlooms(this.stats.tiles, this.petals),
       petalTree: buildPetalTree(this.stats.tiles, this.petals),
+      nextAbility: this.abilityTelegraph().id,
+      abilityCdNorm: this.abilityTelegraph().cdNorm,
+      revivalGlow: this.revivalGlow,
     };
   }
 
@@ -797,6 +1206,7 @@ export class SaveState {
     for (const m of REVIVAL_MILESTONES) {
       if (pct >= m && !this.revivalMilestones.has(m)) {
         this.revivalMilestones.add(m);
+        this.revivalGlow = 1.35;
         this.toast = m >= 100 ? 'The land is whole again!' : `World revival ${m}%!`;
       }
     }
@@ -829,6 +1239,7 @@ export class SaveState {
         if (respectPatches && this.ranks.specks >= 2 && hash01(c + 19, r + 3) > gate + edge * 0.28) continue;
         const index = r * cols + c;
         if ((this.progress[index] ?? 0) >= hp) {
+          this.depositPool(index, amount * 0.72);
           if (spills.length < 18) spills.push(index);
           continue;
         }
@@ -921,6 +1332,14 @@ export class SaveState {
     }
     const now = this.progress[index] ?? 0;
     if (now > was) {
+      const st0 = growthStage(was, hp);
+      const st1 = growthStage(now, hp);
+      if (st1 > st0) {
+        this.pulse[index] = 255;
+        const at = this.cellCenter(c, r, cols, rows);
+        this.growthPulses.push({ x: at.x, z: at.z, stage: st1 });
+        this.pulseDirty = true;
+      }
       this.splashRipple(index);
       this.bleedMask(c, r, cols, rows, (now - was) * 0.14, hp, respectPatches, gate);
     }
@@ -1071,6 +1490,25 @@ export class SaveState {
       tile.cracked = true;
     }
     this.justGreen.push(index);
+    this.spawnHillWave(index);
+  }
+
+  private spawnHillWave(tileIndex: number): void {
+    const { cols, rows } = gridOf(this.world);
+    const { cols: mc, rows: mr } = maskOf(this.world);
+    const col = tileIndex % cols;
+    const row = Math.floor(tileIndex / cols);
+    const c = Math.floor(((col + 0.5) / cols) * mc);
+    const r = Math.floor(((row + 0.5) / rows) * mr);
+    this.waves.push({
+      c,
+      r,
+      radius: 0,
+      maxRadius: Math.max(mc, mr) * 0.42,
+      speed: WAVE_SPEED * 1.15,
+    });
+    this.maskDirty = true;
+    this.pulseDirty = true;
   }
 
   private addDew(amount: number): number {

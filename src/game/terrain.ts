@@ -173,12 +173,19 @@ export class Terrain {
   }
 
   /** One instanced draw for every column. Tops read the restore mask so green creeps in pixel by pixel. */
-  buildMesh(mask: THREE.Texture, maskSize: { cols: number; rows: number }, time: { value: number }, fog: THREE.Fog): THREE.InstancedMesh {
+  buildMesh(
+    mask: THREE.Texture,
+    pulse: THREE.Texture,
+    maskSize: { cols: number; rows: number },
+    time: { value: number },
+    fog: THREE.Fog,
+  ): THREE.InstancedMesh {
     const pal = PALETTES[this.world] ?? PALETTES[0]!;
     const geo = new THREE.BoxGeometry(VOX, 1, VOX);
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uMask: { value: mask },
+        uPulse: { value: pulse },
         uMaskSize: { value: new THREE.Vector2(maskSize.cols, maskSize.rows) },
         uBoard: { value: new THREE.Vector4(this.originX, this.originZ, this.width, this.depth) },
         uTime: time,
@@ -267,7 +274,14 @@ export class Terrain {
   }
 
   /** Little sprites scattered on the column tops: twigs and pebbles while dead, flowers and tufts once their pixel is green. */
-  buildFlora(atlas: THREE.Texture, mask: THREE.Texture, maskSize: { cols: number; rows: number }, time: { value: number }, fog: THREE.Fog): THREE.InstancedMesh {
+  buildFlora(
+    atlas: THREE.Texture,
+    mask: THREE.Texture,
+    pulse: THREE.Texture,
+    maskSize: { cols: number; rows: number },
+    time: { value: number },
+    fog: THREE.Fog,
+  ): THREE.InstancedMesh {
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.translate(0, 0.5, 0);
     const spots: number[] = [];
@@ -299,6 +313,7 @@ export class Terrain {
       uniforms: {
         uAtlas: { value: atlas },
         uMask: { value: mask },
+        uPulse: { value: pulse },
         uMaskSize: { value: new THREE.Vector2(maskSize.cols, maskSize.rows) },
         uBoard: { value: new THREE.Vector4(this.originX, this.originZ, this.width, this.depth) },
         uTime: time,
@@ -334,6 +349,7 @@ const VOXEL_VERT = /* glsl */ `
 
 const VOXEL_FRAG = /* glsl */ `
   uniform sampler2D uMask;
+  uniform sampler2D uPulse;
   uniform vec2 uMaskSize;
   uniform vec4 uBoard;
   uniform float uTime;
@@ -360,17 +376,26 @@ const VOXEL_FRAG = /* glsl */ `
     return texture2D(uMask, (cell + 0.5) / uMaskSize);
   }
 
+  float pulseAt(vec2 xz) {
+    vec2 uv = clamp((xz - uBoard.xy) / uBoard.zw, 0.0, 0.9999);
+    return texture2D(uPulse, uv).r;
+  }
+
   void main() {
     vec3 col;
     if (vN.y > 0.5) {
       vec4 m = maskAt(vWorld.xz);
       float wet = m.r;
       float rip = m.g;
-      float soak = smoothstep(0.004, 0.06, wet);
-      float moss = smoothstep(0.05, 0.18, wet);
-      float grass = smoothstep(0.16, 0.42, wet);
-      float bloom = smoothstep(0.48, 0.78, wet);
-      float grown = smoothstep(0.72, 0.96, wet);
+      float waveInk = m.b;
+      float pool = m.a;
+      float pop = pulseAt(vWorld.xz);
+      float stage = floor(wet * 5.0 + 0.001);
+      float soak = smoothstep(0.01, 0.19, wet);
+      float moss = smoothstep(0.18, 0.38, wet);
+      float grass = smoothstep(0.36, 0.62, wet);
+      float bloom = smoothstep(0.58, 0.86, wet);
+      float grown = smoothstep(0.82, 0.995, wet);
       vec2 slab = vWorld.xz * 2.4;
       vec2 cell = floor(slab);
       vec2 f = fract(slab);
@@ -384,7 +409,7 @@ const VOXEL_FRAG = /* glsl */ `
       mud = mix(mud, vec3(0.28, 0.42, 0.18), moss * 0.65);
       vec3 water = vec3(0.28, 0.62, 0.92);
       float ripple = sin(vWorld.x * 14.0 + uTime * 2.4) * sin(vWorld.z * 11.0 - uTime * 1.8);
-      float sheen = pow(max(0.0, ripple), 6.0) * soak * (1.0 - grass * 0.7);
+      float sheen = pow(max(0.0, ripple), 6.0) * (soak + pool * 0.85) * (1.0 - grass * 0.7);
       vec3 damp = mix(dead, mix(mud, water, 0.55 + sheen * 0.4), soak);
       damp += vec3(0.65, 0.9, 1.0) * sheen * 0.55;
       float sway = sin(uTime * 1.6 + vWorld.x * 6.0 + vWorld.z * 4.0);
@@ -405,6 +430,11 @@ const VOXEL_FRAG = /* glsl */ `
       vec2 local = fract(vWorld.xz * 3.125) - 0.5;
       float ring = smoothstep(0.22, 0.0, abs(length(local) * 2.0 - (1.0 - rip) * 1.35)) * rip;
       col += vec3(0.85, 1.0, 0.7) * ring * 0.5;
+      float ink = smoothstep(0.15, 0.0, abs(length(local) * 2.0 - waveInk * 1.2)) * waveInk;
+      col += vec3(0.95, 1.0, 0.55) * ink * 0.65;
+      float popRing = smoothstep(0.35, 0.0, abs(length(local) * 2.0 - 0.2)) * pop;
+      col += vec3(1.0, 0.98, 0.72) * popRing * (0.35 + 0.25 * sin(uTime * 9.0));
+      col *= 1.0 + pop * 0.12 * (0.5 + 0.5 * sin(uTime * 12.0 + stage));
       vec2 vf = fract((vWorld.xz - uBoard.xy) / ${VOX.toFixed(2)});
       float seam = step(vf.x, 0.035) + step(vf.y, 0.035);
       col *= 1.0 - min(seam, 1.0) * 0.05;
@@ -436,6 +466,7 @@ const FLORA_VERT = /* glsl */ `
   attribute vec4 aSpot;
   attribute vec2 aFrame;
   uniform sampler2D uMask;
+  uniform sampler2D uPulse;
   uniform vec2 uMaskSize;
   uniform vec4 uBoard;
   uniform float uTime;
@@ -446,12 +477,12 @@ const FLORA_VERT = /* glsl */ `
     vec4 m = texture2D(uMask, (floor(muv * uMaskSize) + 0.5) / uMaskSize);
     float wet = m.r;
     float sprout = smoothstep(0.08, 0.28, wet);
-    float grass = smoothstep(0.28, 0.62, wet);
-    float grove = smoothstep(0.62, 0.92, wet);
+    float grass = smoothstep(0.32, 0.58, wet);
+    float grove = smoothstep(0.58, 0.9, wet);
     float grown = max(grass, grove);
-    float frame = mix(aFrame.x, aFrame.y, step(0.45, wet));
+    float frame = mix(aFrame.x, aFrame.y, step(0.42, wet));
     float hidden = step(2.5, frame) * step(frame, 3.5) * (1.0 - sprout);
-    float pop = 1.0 + m.g * 1.15;
+    float pop = 1.0 + m.g * 1.15 + texture2D(uPulse, muv).r * 1.35;
     float tier = mix(0.22, 0.7, sprout);
     tier = mix(tier, 1.15, grass);
     tier = mix(tier, 1.55, grove);

@@ -217,6 +217,14 @@ function NodeSymbol({
         <path d="M7 7c-10-4-10-14 0-18" fill="none" />
       </>
     ),
+    geyser: <path d="M0 8V-6M-4 0h8M0 -6l-3 4h6z" fill="none" />,
+    spore: <circle cx={0} cy={0} r={6} fill="none" />,
+    rainbow: <path d="M-8 4a8 8 0 0 1 16 0" fill="none" />,
+    hail: <path d="M-4 -6l4 8 4-8M0 2v6" fill="none" />,
+    mirage: <path d="M-9 0h18M-6 3h12" fill="none" />,
+    waterbomb: <circle cx={0} cy={0} r={5} fill="none" />,
+    purify: <path d="M0 7C-7-2-7-8 0-4c7-4 7 2 0 11z" fill="none" />,
+    monsoon: <path d="M-10 0h20M-6 -4h12M-6 4h12" fill="none" />,
   };
 
   return (

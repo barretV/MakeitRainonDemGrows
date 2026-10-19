@@ -90,6 +90,21 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
         </>
       )}
 
+      {playing && model.nextAbility && (
+        <div
+          className="hud-ability-telegraph pointer-events-none absolute top-[11%] right-[2%] select-none"
+          aria-hidden
+        >
+          <div
+            className="hud-ability-telegraph__ring"
+            style={{
+              background: `conic-gradient(var(--color-primary) ${model.abilityCdNorm * 360}deg, rgba(0,0,0,0.45) 0deg)`,
+            }}
+          />
+          <span className="hud-ability-telegraph__label">{model.nextAbility}</span>
+        </div>
+      )}
+
       {playing && (
         <button
           className="menu-gear pointer-events-auto absolute top-[3%] right-[2%]"

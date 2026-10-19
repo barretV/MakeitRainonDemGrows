@@ -166,6 +166,38 @@ canvas {
   color: #ffe56a;
 }
 
+.hud-ability-telegraph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  contain: content;
+}
+
+.hud-ability-telegraph__ring {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  mask: radial-gradient(circle at center, transparent 52%, #000 54%);
+  -webkit-mask: radial-gradient(circle at center, transparent 52%, #000 54%);
+}
+
+.hud-ability-telegraph__label {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  max-width: 72px;
+  text-align: center;
+  line-height: 1.15;
+}
+
 .revival-bar {
   display: flex;
   flex-direction: column;

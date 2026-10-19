@@ -26,7 +26,15 @@ export type NodeId =
   | 'lightning'
   | 'zap'
   | 'tornado'
-  | 'twist';
+  | 'twist'
+  | 'geyser'
+  | 'spore'
+  | 'rainbow'
+  | 'hail'
+  | 'mirage'
+  | 'waterbomb'
+  | 'purify'
+  | 'monsoon';
 
 export type Branch = 'core' | 'bottle' | 'drizzle' | 'reach' | 'charm';
 
@@ -54,16 +62,24 @@ export const NODE_IDS: readonly NodeId[] = [
   'glacier',
   'drizzle',
   'specks',
+  'spore',
   'mist',
+  'hail',
   'soak',
   'downpour',
+  'geyser',
+  'monsoon',
   'reach',
   'circle',
+  'waterbomb',
   'wide',
+  'mirage',
   'horizon',
   'charm',
+  'rainbow',
   'dew',
   'bounty',
+  'purify',
   'crit',
   'sprinkler',
   'spin',
@@ -236,6 +252,30 @@ const NODES: readonly UpgradeNode[] = [
     effect: (level) => `Soak x${(1.36 ** level).toFixed(2)}`,
   },
   {
+    id: 'geyser',
+    parent: 'soak',
+    branch: 'drizzle',
+    kind: 'upgrade',
+    name: 'Geyser Burst',
+    desc: 'Auto geysers punch through dry ground when you pour.',
+    max: 4,
+    color: '#5ec8ff',
+    costs: [180, 420, 980, 2200],
+    effect: (level) => `Geyser rank ${level}`,
+  },
+  {
+    id: 'spore',
+    parent: 'specks',
+    branch: 'drizzle',
+    kind: 'upgrade',
+    name: 'Spore Drizzle',
+    desc: 'Green spores wake moss in a wide arc.',
+    max: 3,
+    color: '#7ddf6a',
+    costs: [95, 240, 580],
+    effect: (level) => `Spore +${level}`,
+  },
+  {
     id: 'reach',
     parent: 'puff',
     branch: 'reach',
@@ -284,6 +324,30 @@ const NODES: readonly UpgradeNode[] = [
     effect: (level) => `Radius x${(1 + 0.26 * level).toFixed(2)}`,
   },
   {
+    id: 'mirage',
+    parent: 'wide',
+    branch: 'reach',
+    kind: 'upgrade',
+    name: 'Mirage Wave',
+    desc: 'Rolling heat-waves carry water across the dunes.',
+    max: 3,
+    color: '#f5d27a',
+    costs: [2200, 5200, 12000],
+    effect: (level) => `Wave +${level}`,
+  },
+  {
+    id: 'waterbomb',
+    parent: 'circle',
+    branch: 'reach',
+    kind: 'upgrade',
+    name: 'Water Bomb',
+    desc: 'Lobs a soaking splash ahead of the cloud.',
+    max: 3,
+    color: '#7ec8f0',
+    costs: [1800, 4200, 9800],
+    effect: (level) => `Bomb +${level}`,
+  },
+  {
     id: 'charm',
     parent: 'puff',
     branch: 'charm',
@@ -306,6 +370,54 @@ const NODES: readonly UpgradeNode[] = [
     color: '#ff9bb8',
     costs: [15, 36, 84, 195, 450],
     effect: (level) => `Dew x${(1.22 ** level).toFixed(2)}`,
+  },
+  {
+    id: 'rainbow',
+    parent: 'charm',
+    branch: 'charm',
+    kind: 'upgrade',
+    name: 'Rainbow Arc',
+    desc: 'A shimmering arc paints frost into bloom.',
+    max: 3,
+    color: '#ffb4e8',
+    costs: [650, 1500, 3400],
+    effect: (level) => `Arc +${level}`,
+  },
+  {
+    id: 'hail',
+    parent: 'mist',
+    branch: 'drizzle',
+    kind: 'upgrade',
+    name: 'Hail Melt',
+    desc: 'Ice shatters into instant growth.',
+    max: 3,
+    color: '#d8f4ff',
+    costs: [520, 1200, 2800],
+    effect: (level) => `Melt +${level}`,
+  },
+  {
+    id: 'purify',
+    parent: 'bounty',
+    branch: 'charm',
+    kind: 'upgrade',
+    name: 'Purify Rain',
+    desc: 'Toxic crust melts under a green wash.',
+    max: 3,
+    color: '#b8ff9a',
+    costs: [2400, 5600, 13000],
+    effect: (level) => `Purify +${level}`,
+  },
+  {
+    id: 'monsoon',
+    parent: 'downpour',
+    branch: 'drizzle',
+    kind: 'upgrade',
+    name: 'Monsoon Band',
+    desc: 'A latitude belt of rain wraps the globe.',
+    max: 2,
+    color: '#6ec8ff',
+    costs: [18000, 42000],
+    effect: (level) => `Band +${level}`,
   },
   {
     id: 'bounty',
@@ -444,6 +556,14 @@ export function emptyRanks(): Ranks {
     zap: 0,
     tornado: 0,
     twist: 0,
+    geyser: 0,
+    spore: 0,
+    rainbow: 0,
+    hail: 0,
+    mirage: 0,
+    waterbomb: 0,
+    purify: 0,
+    monsoon: 0,
   };
 }
 
@@ -505,6 +625,22 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
       return ranks.lightning >= 1 && ranks.zap >= 2;
     case 'twist':
       return ranks.tornado >= 1;
+    case 'geyser':
+      return ranks.soak >= 1;
+    case 'spore':
+      return ranks.specks >= 1;
+    case 'rainbow':
+      return ranks.charm >= 1;
+    case 'hail':
+      return ranks.mist >= 1;
+    case 'mirage':
+      return ranks.wide >= 1;
+    case 'waterbomb':
+      return ranks.circle >= 1;
+    case 'purify':
+      return ranks.bounty >= 1;
+    case 'monsoon':
+      return ranks.downpour >= 1;
     default:
       return false;
   }
@@ -610,9 +746,26 @@ export function layoutTree(): TreePoint[] {
   const points: TreePoint[] = [{ id: 'puff', x: center.x, y: center.y }];
   const petals: Array<{ angle: number; ids: NodeId[]; step: number }> = [
     { angle: -Math.PI / 2, ids: ['bottle', 'flask', 'reservoir', 'linger', 'glacier'], step: 68 },
-    { angle: 0.05, ids: ['drizzle', 'specks', 'mist', 'soak', 'downpour'], step: 68 },
-    { angle: Math.PI / 2, ids: ['reach', 'circle', 'wide', 'horizon'], step: 72 },
-    { angle: Math.PI, ids: ['charm', 'dew', 'bounty', 'crit', 'sprinkler', 'spin', 'lightning', 'zap', 'tornado', 'twist'], step: 0 },
+    { angle: 0.05, ids: ['drizzle', 'specks', 'spore', 'mist', 'hail', 'soak', 'downpour', 'geyser', 'monsoon'], step: 58 },
+    { angle: Math.PI / 2, ids: ['reach', 'circle', 'waterbomb', 'wide', 'mirage', 'horizon'], step: 64 },
+    {
+      angle: Math.PI,
+      ids: [
+        'charm',
+        'rainbow',
+        'dew',
+        'bounty',
+        'purify',
+        'crit',
+        'sprinkler',
+        'spin',
+        'lightning',
+        'zap',
+        'tornado',
+        'twist',
+      ],
+      step: 0,
+    },
   ];
   for (const petal of petals) {
     if (petal.step === 0) {

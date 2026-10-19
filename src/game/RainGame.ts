@@ -6,6 +6,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GLOBE_WORLD, TILE, gridOf, worldDef } from './balance';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
+import { ABILITIES, type AbilityId } from './abilities';
+import { AbilityVfx } from './abilityVfx';
 import { BASE_SCALE, maskOf, upgradeNode, type NodeId, type Ranks } from './tree';
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
@@ -127,6 +129,8 @@ interface TileView {
   ripple: number;
   dressed: boolean;
   anim: number;
+  growT: number;
+  growStart: number;
   x: number;
   y: number;
   z: number;
@@ -153,6 +157,8 @@ interface Drop {
   mesh: THREE.Mesh;
   y: number;
   vy: number;
+  vx: number;
+  vz: number;
   alive: boolean;
 }
 
@@ -246,8 +252,10 @@ export class RainGame {
   private pinchSpan0 = 0;
   private pinchZoom0 = 1;
   private maskTex: THREE.DataTexture | null = null;
+  private pulseTex: THREE.DataTexture | null = null;
   private terrain: Terrain | null = null;
   private maskMats: THREE.ShaderMaterial[] = [];
+  private abilityVfx: AbilityVfx;
   private globe = false;
   private track = new THREE.Group();
   private views: TileView[] = [];
@@ -297,6 +305,7 @@ export class RainGame {
     this.scene.fog = new THREE.Fog('#f7c6df', 24, 52);
     this.scene.add(this.track);
     this.scene.add(this.camera);
+    this.abilityVfx = new AbilityVfx(this.track);
 
     this.mountain = this.billboard(this.art.mountain, 15, 9.2, 0.12);
     this.scene.add(this.mountain);
@@ -644,6 +653,21 @@ export class RainGame {
     this.pushHud(true);
   }
 
+  private fireAbility(cast: AbilityId, state: SaveState): void {
+    this.abilityVfx.play(cast, this.cloudX, this.hoverY, this.cloudZ, state.reach());
+    if (cast === 'lightning') {
+      this.audio.zap();
+      this.shake = 0.4;
+      this.flashBolt(this.nearestTile());
+    }
+    if (cast === 'sprinkler' || cast === 'whirlpool') {
+      this.spin = 0.48;
+      this.burst(this.cloudX, 1.3, this.cloudZ, 10);
+    }
+    if (cast === 'waterbomb' || cast === 'geyser') this.shake = Math.max(this.shake, 0.32);
+    this.grin = Math.max(this.grin, 0.38);
+  }
+
   cast(which: 'lightning' | 'tornado'): void {
     if (!this.state) return;
     if (which === 'lightning') {
@@ -654,7 +678,7 @@ export class RainGame {
       this.flashBolt(this.nearestTile());
       if (hit.filled > 0) this.grin = 0.6;
     } else if (this.state.startTornado()) {
-      this.spawnTornado();
+      this.spawnTornado(false);
       this.audio.zap();
     }
     this.pushHud(true);
@@ -716,6 +740,7 @@ export class RainGame {
     this.rebuild();
     this.dropCloud(this.spawnAt());
     this.pushHud(true);
+    this.keyRain = true;
     this.frame = requestAnimationFrame(this.loop);
   }
 
@@ -813,9 +838,19 @@ export class RainGame {
       this.soakAcc -= 0.1;
       if (!raining) continue;
       const hit = state.drizzle(this.cloudX, this.cloudZ);
+      state.flowWaterStep();
       splashDew += hit.dew;
       splashCrits += hit.crits;
       if (hit.filled > 0) this.grin = 0.75;
+      const cast = state.tryCastAbility({
+        cloudX: this.cloudX,
+        cloudZ: this.cloudZ,
+        faceX: this.faceX,
+        faceZ: this.faceZ,
+        velX: this.cloudX - this.prevX,
+        velZ: this.cloudZ - this.prevZ,
+      });
+      if (cast) this.fireAbility(cast, state);
     }
     if (splashDew >= 0.05) {
       const label =
@@ -825,23 +860,15 @@ export class RainGame {
       this.floatText(this.cloud.position.x, this.cloud.position.y + 0.45, label, splashCrits > 0);
     }
 
-    if (raining && state.armLightning()) {
-      const hit = state.burst(this.cloudX, this.cloudZ, state.reach() * 0.62, 18 + state.ranks.zap * 12);
+    if (
+      raining &&
+      !this.tornado &&
+      state.tornadoCd <= 0 &&
+      ABILITIES.tornado.enabled(state.ranks, state.world) &&
+      state.startTornado()
+    ) {
+      this.spawnTornado(state.consumeLifeStorm());
       this.audio.zap();
-      this.shake = 0.4;
-      this.flashBolt(this.nearestTile());
-      if (hit.filled > 0) this.grin = 0.6;
-    }
-    if (raining && !this.tornado && state.tornadoCd <= 0 && state.startTornado()) {
-      this.spawnTornado();
-      this.audio.zap();
-    }
-
-    if (raining && state.trySpin()) {
-      this.spin = 0.48;
-      state.burst(this.cloudX, this.cloudZ, state.reach() * (1.05 + state.ranks.spin * 0.22), 14 + state.ranks.spin * 8);
-      this.burst(this.cloudX, 1.3, this.cloudZ, 10);
-      this.grin = 0.4;
     }
 
     this.babyAcc -= dt;
@@ -867,6 +894,7 @@ export class RainGame {
       if (this.tornado.acc >= 0.12) {
         this.tornado.acc = 0;
         const spun = state.burst(this.tornado.x, this.tornado.z, 0.85 + state.ranks.twist * 0.28, 5 + state.ranks.twist * 3);
+        state.stampWaveAt(this.tornado.x, this.tornado.z, 1.1);
         if (spun.filled > 0) this.grin = 0.35;
       }
       const outside = this.tornado.x < -2 || this.tornado.z < -2 || this.tornado.x > maxX + 2 || this.tornado.z > maxZ + 2;
@@ -982,6 +1010,7 @@ export class RainGame {
       const mat = this.curtain.material as THREE.ShaderMaterial;
       mat.uniforms['uTop']!.value = Math.min(1, (2.0 * grown) / wide);
       mat.uniforms['uDensity']!.value = Math.min(0.75, state.patch() + 0.15);
+      console.log('RAIN', 'reach', state.reach(), 'grown', grown, 'wide', wide, 'tall', tall, 'ground', ground);
       this.curtain.scale.set(wide, tall, 1);
       this.curtain.position.set(this.cloud.position.x, ground + tall / 2, this.cloud.position.z);
       this.puddle.position.set(this.cloud.position.x, ground + 0.04, this.cloud.position.z);
@@ -1000,13 +1029,24 @@ export class RainGame {
     for (const drop of this.drops) {
       if (!drop.alive) continue;
       drop.y -= drop.vy * dt;
+      drop.mesh.position.x += drop.vx * dt;
+      drop.mesh.position.z += drop.vz * dt;
+      drop.vx *= 1 - dt * 2.2;
+      drop.vz *= 1 - dt * 2.2;
       drop.mesh.position.y = drop.y;
       const floor = this.globe ? 0.2 : this.groundY(drop.mesh.position.x, drop.mesh.position.z) + 0.05;
       if (drop.y < floor) drop.alive = drop.mesh.visible = false;
     }
 
     state.fadeRipples(dt);
+    state.decayPulse(dt);
+    state.tickRestorationWaves(dt);
     if (state.maskDirty || !this.maskTex || (this.wantsRain() && state.phase === 'play' && state.tank > 0.01)) this.syncMask();
+    if (state.pulseDirty || !this.pulseTex) this.syncPulse();
+    this.abilityVfx.update(dt);
+    for (const pulse of state.takeGrowthPulses()) {
+      this.burst(pulse.x, 1.05, pulse.z, 6 + pulse.stage * 2);
+    }
     for (const index of state.takeGreen()) {
       this.onBloom(index, { dew: 0, bloomed: true, crit: false, pond: state.spec(index).kind === 'pond', mega: state.spec(index).kind === 'seed', filling: null });
     }
@@ -1058,7 +1098,7 @@ export class RainGame {
     this.globe = world === GLOBE_WORLD;
     this.camZoom = 1;
     const sky = this.globe ? '#24356e' : worldDef(world).skyMid;
-    this.scene.background = this.globe ? new THREE.Color(sky) : (art.skies[world] ?? new THREE.Color(sky));
+    this.scene.background = new THREE.Color(sky);
     this.skyBase.copy(this.scene.background as THREE.Color);
     const dist = this.frameDist(0);
     this.scene.fog = this.globe ? new THREE.Fog(sky, 18, 48) : new THREE.Fog(sky, dist * 1.05, dist * 2.65);
@@ -1086,18 +1126,19 @@ export class RainGame {
     const live = art.liveTop[world] ?? art.liveTop[0]!;
     const maskSize = maskOf(world);
     this.maskTex = this.makeMask(state.pixels, maskSize.cols, maskSize.rows);
+    this.pulseTex = this.makePulse(state.pulse, maskSize.cols, maskSize.rows);
     this.maskMats = [];
     this.terrain = null;
     let voxelMat: THREE.ShaderMaterial | null = null;
     const terrain = new Terrain(world);
     this.terrain = terrain;
     const fog = this.scene.fog as THREE.Fog;
-    const ground = terrain.buildMesh(this.maskTex, maskSize, this.timeU, fog);
+    const ground = terrain.buildMesh(this.maskTex, this.pulseTex, maskSize, this.timeU, fog);
     voxelMat = ground.material as THREE.ShaderMaterial;
     this.maskMats.push(voxelMat);
     this.track.add(ground);
     if (!this.globe) {
-      const flora = terrain.buildFlora(art.flora, this.maskTex, maskSize, this.timeU, fog);
+      const flora = terrain.buildFlora(art.flora, this.maskTex, this.pulseTex, maskSize, this.timeU, fog);
       this.maskMats.push(flora.material as THREE.ShaderMaterial);
       this.track.add(flora);
     }
@@ -1118,6 +1159,8 @@ export class RainGame {
           ripple: restored ? 1 : -1,
           dressed: restored,
           anim: 0,
+          growT: restored ? 1 : 0,
+          growStart: 0,
           x: at.x,
           y: at.y,
           z: at.z,
@@ -1167,6 +1210,8 @@ export class RainGame {
         ripple: restored ? 1 : -1,
         dressed: restored,
         anim: 0,
+        growT: restored ? 1 : 0,
+        growStart: 0,
         x: at.x,
         y: this.globe ? at.y : column,
         z: at.z,
@@ -1250,6 +1295,8 @@ export class RainGame {
     const art = this.art;
     view.dressed = true;
     view.anim = 1;
+    view.growStart = this.clock.elapsedTime;
+    view.growT = 0;
     if (view.pond) (view.pond.material as THREE.MeshBasicMaterial).map = art.pondFull;
     if (view.bar) view.bar.visible = false;
     if (view.prop) {
@@ -1311,8 +1358,14 @@ export class RainGame {
               : this.propTexture(spec.decor, live, state.world, false);
           if (map) (view.prop.material as THREE.MeshBasicMaterial).map = map;
           const base = Number(view.prop.userData['s']) || 1;
-          const pop = restored ? 1 : clamp(0.32 + wet * 0.78, 0.32, 0.96);
-          view.prop.scale.setScalar(base * pop);
+          let pop = restored ? 1 : clamp(0.32 + wet * 0.78, 0.32, 0.96);
+          if (view.growStart > 0) {
+            view.growT = Math.min(1, (t - view.growStart) / 0.85);
+            const gy = easeOutBack(view.growT);
+            view.prop.scale.set(base * pop * gy, base * pop * Math.max(0.06, gy), base * pop * gy);
+          } else {
+            view.prop.scale.setScalar(base * pop);
+          }
         }
       }
       if (view.prop && restored) {
@@ -1674,6 +1727,34 @@ export class RainGame {
     state.maskDirty = false;
   }
 
+  private makePulse(data: Uint8Array, cols: number, rows: number): THREE.DataTexture {
+    const tex = new THREE.DataTexture(data as never, cols, rows, THREE.RedFormat);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.flipY = false;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  private syncPulse(): void {
+    const state = this.state;
+    if (!state) return;
+    const { cols, rows } = maskOf(state.world);
+    if (!this.pulseTex || this.pulseTex.image.width !== cols || this.pulseTex.image.height !== rows) {
+      this.pulseTex = this.makePulse(state.pulse, cols, rows);
+      for (const mat of this.maskMats) {
+        if (mat.uniforms['uPulse']) mat.uniforms['uPulse'].value = this.pulseTex;
+      }
+    } else {
+      (this.pulseTex.image as { data: Uint8Array }).data = state.pulse;
+    }
+    this.pulseTex.needsUpdate = true;
+    state.pulseDirty = false;
+  }
+
   /** Camera pull-back vs puff size; lerps so upgrades feel like stepping back. */
   private cameraGrowPull(dt: number): number {
     if (this.introActive) return this.camGrowPull;
@@ -1865,15 +1946,17 @@ export class RainGame {
     this.babies.push({ mesh, x, z });
   }
 
-  private spawnTornado(): void {
+  private spawnTornado(lifeStorm = false): void {
     if (this.tornado) this.scene.remove(this.tornado.mesh);
     const len = Math.hypot(this.faceX, this.faceZ) || 1;
     this.faceX /= len;
     this.faceZ /= len;
     const mesh = this.billboard(this.art.tornado, 1.15, 1.35, 0.15);
+    if (lifeStorm) (mesh.material as THREE.MeshBasicMaterial).color.set('#9ef0b4');
     mesh.position.set(this.cloudX, 1.05, this.cloudZ);
     this.scene.add(mesh);
-    this.tornado = { mesh, x: this.cloudX, z: this.cloudZ, life: 3.4, acc: 0 };
+    this.tornado = { mesh, x: this.cloudX, z: this.cloudZ, life: lifeStorm ? 4.2 : 3.4, acc: 0 };
+    if (lifeStorm) this.abilityVfx.play('lifestorm', this.cloudX, 1.2, this.cloudZ, this.state?.reach() ?? 1);
   }
 
   private flashBolt(center: number): void {
@@ -1927,6 +2010,8 @@ export class RainGame {
     drop.y = this.cloud.position.y - 0.25;
     drop.mesh.position.y = drop.y;
     drop.vy = 5.5 + Math.random() * 2;
+    drop.vx = (Math.random() - 0.5) * 0.8;
+    drop.vz = (Math.random() - 0.5) * 0.8;
     const grown = 0.95 + (this.state?.ranks.specks ?? 0) * 0.1;
     drop.mesh.scale.setScalar(grown + Math.random() * 0.25);
   }
@@ -2000,7 +2085,7 @@ export class RainGame {
       const mesh = this.billboard(this.art.drop, 0.22, 0.34, 0.12);
       mesh.visible = false;
       this.scene.add(mesh);
-      this.drops.push({ mesh, y: 0, vy: 0, alive: false });
+      this.drops.push({ mesh, y: 0, vy: 0, vx: 0, vz: 0, alive: false });
     }
   }
 

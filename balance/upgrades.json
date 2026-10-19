@@ -9,16 +9,24 @@
     "glacier",
     "drizzle",
     "specks",
+    "spore",
     "mist",
+    "hail",
     "soak",
     "downpour",
+    "geyser",
+    "monsoon",
     "reach",
     "circle",
+    "waterbomb",
     "wide",
+    "mirage",
     "horizon",
     "charm",
+    "rainbow",
     "dew",
     "bounty",
+    "purify",
     "crit",
     "sprinkler",
     "spin",
@@ -192,6 +200,29 @@
       ]
     },
     {
+      "id": "geyser",
+      "parent": "soak",
+      "kind": "upgrade",
+      "max": 4,
+      "costs": [
+        180,
+        420,
+        980,
+        2200
+      ]
+    },
+    {
+      "id": "spore",
+      "parent": "specks",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        95,
+        240,
+        580
+      ]
+    },
+    {
       "id": "reach",
       "parent": "puff",
       "kind": "gate",
@@ -239,6 +270,28 @@
       ]
     },
     {
+      "id": "mirage",
+      "parent": "wide",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        2200,
+        5200,
+        12000
+      ]
+    },
+    {
+      "id": "waterbomb",
+      "parent": "circle",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        1800,
+        4200,
+        9800
+      ]
+    },
+    {
       "id": "charm",
       "parent": "puff",
       "kind": "gate",
@@ -258,6 +311,49 @@
         84,
         195,
         450
+      ]
+    },
+    {
+      "id": "rainbow",
+      "parent": "charm",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        650,
+        1500,
+        3400
+      ]
+    },
+    {
+      "id": "hail",
+      "parent": "mist",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        520,
+        1200,
+        2800
+      ]
+    },
+    {
+      "id": "purify",
+      "parent": "bounty",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        2400,
+        5600,
+        13000
+      ]
+    },
+    {
+      "id": "monsoon",
+      "parent": "downpour",
+      "kind": "upgrade",
+      "max": 2,
+      "costs": [
+        18000,
+        42000
       ]
     },
     {
