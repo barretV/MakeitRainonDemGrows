@@ -1,24 +1,36 @@
 """Mirrors src/game/tree.ts and src/game/balance.ts. Keep the two in step."""
 
-TILE = 3.2
+import math
 
-# cols, rows, mask cols, mask rows, cell hp, dew per cell
+TILE = 3.2
+GLOBE_WORLD = 4
+
+# cols, rows, mask cols, mask rows, cell hp, dew per cell.
+# Each island is a full arc: the mask is big, and hp sets how many bottles a cell needs.
+# hp/pay are solved by `python balance/tune.py` (one-buy player model, ~30-36 min per island).
 WORLDS = [
-    (8, 6, 100, 75, 72, 3),
-    (13, 9, 130, 90, 720, 2),
-    (15, 11, 150, 110, 820, 3),
-    (17, 12, 170, 120, 680, 4),
-    (14, 9, 140, 90, 680, 4),
+    (8, 6, 100, 75, 76, 3),
+    (13, 9, 130, 90, 3000, 2),
+    (15, 11, 150, 110, 10500, 3),
+    (17, 12, 170, 120, 22500, 4),
+    (14, 9, 800, 120, 3072281, 4),
 ]
 
 BASE_SCALE = 0.48
 PUFF_STEP = 0.085
 OVERHEAD_SEC = 15
 
-from upgrade_loader import build_costs, build_priority_unique
+from upgrade_loader import (
+    build_bloom_costs,
+    build_costs,
+    build_priority_unique,
+    build_world_min,
+)
 
 # From balance/upgrades.json — run `npm run dump-upgrades` after editing src/game/tree.ts
 COSTS = build_costs()
+BLOOM_COSTS = build_bloom_costs()
+WORLD_MIN = build_world_min()
 MAXED = {key: len(costs) for key, costs in COSTS.items()}
 PRIORITY_UNIQUE = build_priority_unique()
 
@@ -48,6 +60,8 @@ def prereq(node, state):
         "spore": state["specks"] >= 1,
         "hail": state["mist"] >= 1,
         "monsoon": state["downpour"] >= 1,
+        "flow": state["soak"] >= 2,
+        "spring": state["mist"] >= 2,
         "circle": state["reach"] >= 1,
         "waterbomb": state["circle"] >= 1,
         "wide": state["circle"] >= 1,
@@ -57,6 +71,7 @@ def prereq(node, state):
         "dew": state["charm"] >= 1,
         "bounty": state["dew"] >= 1,
         "purify": state["bounty"] >= 1,
+        "harvest": state["bounty"] >= 4,
         "crit": state["bounty"] >= 1,
         "sprinkler": state["crit"] >= 2,
         "spin": state["sprinkler"] >= 1,
@@ -77,7 +92,8 @@ def max_liters(state):
 
 
 def drain_per_sec(state):
-    return 46 / (1.1 ** state["linger"]) / (1.08 ** state["glacier"])
+    """Linger/glacier slow the pour; Cascade (`flow`) pours harder."""
+    return (46 / (1.1 ** state["linger"]) / (1.08 ** state["glacier"])) * (1.3 ** state["flow"])
 
 
 def bottle_seconds(state):
@@ -86,12 +102,27 @@ def bottle_seconds(state):
 
 def rain_radius(state):
     grown = cloud_scale(state) / BASE_SCALE
-    reach = (1 + 0.18 * state["circle"]) * (1 + 0.16 * state["wide"]) * (1 + 0.14 * state["horizon"])
+    reach = (
+        (1 + 0.18 * state["circle"])
+        * (1 + 0.16 * state["wide"])
+        * (1 + 0.14 * state["horizon"])
+        * (1 + 0.02 * state["harvest"])
+    )
     return 0.92 * grown * reach
 
 
 def soak_per_tick(state):
-    return 1.35 * (1.28 ** state["soak"]) * (1.22 ** state["downpour"])
+    return 1.35 * (1.28 ** state["soak"]) * (1.22 ** state["downpour"]) * (1.3 ** state["flow"])
+
+
+def pool_gain(state):
+    """Fraction of spilled rain that pools on finished ground (Meadow Spring)."""
+    return 0.72 + 0.22 * state["spring"]
+
+
+def pool_flow(state):
+    """How much of a standing pool seeps into its neighbour each step."""
+    return 0.9 + 0.12 * state["spring"]
 
 
 def patch_fraction(state):

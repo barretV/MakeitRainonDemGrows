@@ -85,8 +85,9 @@ function costLabel(node: TreeNodeView): string {
   return parts.join(' + ');
 }
 
-function primaryBuyLabel(node: TreeNodeView): string {
+function primaryBuyLabel(node: TreeNodeView, rootsLeft = 2): string {
   if (node.maxed) return 'Maxed out';
+  if (rootsLeft <= 0 && node.afford) return 'Next bottle';
   if (node.worldReq != null) return `Reach ${worldDef(node.worldReq).name}`;
   if (node.ghost) return 'Not unlocked yet';
   if (!node.afford) return node.blooms > 0 ? 'Need dew + blooms' : 'Need more dew';
@@ -573,12 +574,12 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
               <p className="workshop-panel__effect">{selected.effect}</p>
               <button
                 type="button"
-                disabled={!selected.afford}
+                disabled={!selected.afford || model.rootsLeft <= 0}
                 onClick={() => purchase(selected.id)}
-                className={`workshop-buy pixel${selected.afford ? ' workshop-buy--go' : ''}${buyPulse ? ' workshop-buy--pulse' : ''}`}
+                className={`workshop-buy pixel${selected.afford && model.rootsLeft > 0 ? ' workshop-buy--go' : ''}${buyPulse ? ' workshop-buy--pulse' : ''}`}
                 key={buyPulse ? `buy-${buyPulse}` : 'buy'}
               >
-                {primaryBuyLabel(selected)}
+                {primaryBuyLabel(selected, model.rootsLeft)}
               </button>
               <button type="button" onClick={() => game.returnFromWorkshop()} className="workshop-back pixel">
                 Back to rain

@@ -1,8 +1,10 @@
 /** Meta upgrades bought with lifetime blooms (mask completions). Cosmetic / light buff only. */
 
-export type PetalId = 'blush' | 'bow' | 'trail' | 'buddy' | 'sparkle' | 'hum';
+import { treeBloomsSpent, type Ranks } from './tree';
 
-export const PETAL_IDS: readonly PetalId[] = ['blush', 'bow', 'trail', 'buddy', 'sparkle', 'hum'];
+export type PetalId = 'blush' | 'bow' | 'trail' | 'buddy' | 'sparkle' | 'hum' | 'press';
+
+export const PETAL_IDS: readonly PetalId[] = ['blush', 'bow', 'trail', 'buddy', 'sparkle', 'hum', 'press'];
 
 export interface PetalNode {
   id: PetalId;
@@ -15,16 +17,17 @@ export interface PetalNode {
 export type PetalRanks = Record<PetalId, number>;
 
 const NODES: readonly PetalNode[] = [
-  { id: 'blush', name: 'Rosy Cheeks', desc: 'The cloud blushes when it rains.', max: 1, costs: [4] },
-  { id: 'bow', name: 'Rain Bow', desc: 'A little ribbon on your fluff.', max: 1, costs: [8] },
-  { id: 'trail', name: 'Silver Drops', desc: 'Rain streaks catch the light.', max: 1, costs: [14] },
-  { id: 'buddy', name: 'Meadow Friend', desc: '+1 critter wanders the green.', max: 1, costs: [22] },
-  { id: 'sparkle', name: 'Bloom Sparkle', desc: 'Tiny glints when tiles pop green.', max: 1, costs: [35] },
-  { id: 'hum', name: 'Happy Hum', desc: 'Soft hum while the bottle drains.', max: 1, costs: [50] },
+  { id: 'blush', name: 'Rosy Cheeks', desc: 'The cloud blushes when it rains.', max: 1, costs: [40] },
+  { id: 'bow', name: 'Rain Bow', desc: 'A little ribbon on your fluff.', max: 1, costs: [100] },
+  { id: 'trail', name: 'Silver Drops', desc: 'Rain streaks catch the light.', max: 1, costs: [220] },
+  { id: 'buddy', name: 'Meadow Friend', desc: '+1 critter wanders the green.', max: 1, costs: [480] },
+  { id: 'sparkle', name: 'Bloom Sparkle', desc: 'Tiny glints when tiles pop green.', max: 1, costs: [900] },
+  { id: 'hum', name: 'Happy Hum', desc: 'Soft hum while the bottle drains.', max: 1, costs: [1600] },
+  { id: 'press', name: 'Pressed Petals', desc: 'Spend blooms to fatten every drop. +4% dew each rank.', max: 8, costs: [120, 280, 600, 1200, 2400, 5000, 10000, 18000] },
 ];
 
 export function emptyPetals(): PetalRanks {
-  return { blush: 0, bow: 0, trail: 0, buddy: 0, sparkle: 0, hum: 0 };
+  return { blush: 0, bow: 0, trail: 0, buddy: 0, sparkle: 0, hum: 0, press: 0 };
 }
 
 export function petalNode(id: PetalId): PetalNode {
@@ -48,8 +51,13 @@ export function bloomsSpent(petals: PetalRanks): number {
   return sum;
 }
 
-export function spendableBlooms(totalBlooms: number, petals: PetalRanks): number {
-  return Math.max(0, totalBlooms - bloomsSpent(petals));
+/** Blooms already sunk into petals and into bloom-costed tree ranks. */
+export function bloomsLocked(petals: PetalRanks, ranks: Ranks): number {
+  return bloomsSpent(petals) + treeBloomsSpent(ranks);
+}
+
+export function spendableBlooms(totalBlooms: number, petals: PetalRanks, ranks: Ranks): number {
+  return Math.max(0, totalBlooms - bloomsLocked(petals, ranks));
 }
 
 export interface PetalNodeView {
@@ -63,8 +71,8 @@ export interface PetalNodeView {
   owned: boolean;
 }
 
-export function buildPetalTree(totalBlooms: number, petals: PetalRanks): PetalNodeView[] {
-  const wallet = spendableBlooms(totalBlooms, petals);
+export function buildPetalTree(totalBlooms: number, petals: PetalRanks, ranks: Ranks): PetalNodeView[] {
+  const wallet = spendableBlooms(totalBlooms, petals, ranks);
   return NODES.map((node) => {
     const level = petals[node.id];
     const maxed = level >= node.max;

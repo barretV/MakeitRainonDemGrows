@@ -125,6 +125,8 @@ export interface HudModel {
   cleared: boolean;
   /** This bottle set a new revival record on the current world. */
   newBest: boolean;
+  /** Tree ranks still allowed before the next bottle. */
+  rootsLeft: number;
   tree: TreeNodeView[];
   worlds: WorldChip[];
   stats: Stats;
@@ -279,6 +281,8 @@ export class SaveState {
   phase: RunPhase = 'play';
   screen: Screen = 'play';
   runDew = 0;
+  /** Tree ranks bought since the last refill. Two per bottle. */
+  private rootsThisBottle = 0;
   runTiles = 0;
   runReached = 0;
   best: number[] = [0, 0, 0, 0, 0];
@@ -483,6 +487,7 @@ export class SaveState {
 
   private refillBottle(): void {
     this.tank = 1;
+    this.rootsThisBottle = 0;
     this.resetAbilityCooldowns(true);
     this.lightningCd = abilityOn(this.ranks, 'lightning') ? 6 : LIGHTNING_CD;
     this.tornadoCd = abilityOn(this.ranks, 'tornado') ? 10 : TORNADO_CD;
@@ -673,6 +678,10 @@ export class SaveState {
       this.toast = `Need ${cost} dew (you have ${wallet}).`;
       return false;
     }
+    if (this.rootsThisBottle >= 2) {
+      this.toast = 'Two roots a bottle. Rain again for more.';
+      return false;
+    }
     const bloomCost = nodeBloomCost(id, level);
     const blooms = spendableBlooms(this.stats.tiles, this.petals, this.ranks);
     if (blooms < bloomCost) {
@@ -681,6 +690,7 @@ export class SaveState {
     }
     this.dew -= cost;
     this.ranks[id] += 1;
+    this.rootsThisBottle += 1;
     this.toast = node.kind === 'gate' ? `${node.name} unlocked.` : `${node.name} rank ${this.ranks[id]}.`;
     this.claim();
     return true;
@@ -1063,6 +1073,34 @@ export class SaveState {
     return hills;
   }
 
+  /**
+   * Dev-only visual QA helper (see scripts/shot.mjs): soaks a radial blob of the
+   * current island so staged restoration can be inspected without a full run.
+   */
+  devSoak(pct: number): void {
+    if (!import.meta.env.DEV) return;
+    const { cols, rows } = maskOf(this.world);
+    const hp = cellHp(this.world);
+    const cx = cols * 0.5;
+    const cz = rows * 0.5;
+    const radius = Math.hypot(cx, cz) * Math.sqrt(Math.min(1, Math.max(0, pct)));
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        const d = Math.hypot(c + 0.5 - cx, r + 0.5 - cz);
+        const wobble =
+          0.86 + 0.1 * Math.sin(c * 0.45 + r * 0.9) + 0.06 * Math.sin(c * 1.7 - r * 0.6);
+        const t = d < radius - 2.5 ? 1 : Math.max(0, 1 - (d - (radius - 2.5)) / 5);
+        const value = Math.min(1, Math.max(0, t * wobble)) * hp;
+        const idx = r * cols + c;
+        if ((this.progress[idx] ?? 0) < value) this.progress[idx] = value;
+      }
+    }
+    this.rebuildMaskPixels();
+    this.refreshGreenFromProgress();
+    this.maskDirty = true;
+    this.pulseDirty = true;
+  }
+
   ratio(world = this.world): number {
     if (world !== this.world) return this.best[world] ?? 0;
     const count = this.progress.length;
@@ -1103,6 +1141,12 @@ export class SaveState {
   spec(index: number): TileSpec {
     const tiles = this.current();
     return tileSpec(this.world, index, tiles.length);
+  }
+
+  /** Continuous pond fill (0–1) driven by the mask soak so water visibly rises. */
+  pondFill(index: number): number {
+    if (this.isRestored(index)) return 1;
+    return Math.min(1, this.hillWet(index) * 1.02);
   }
 
   current(): TileState[] {
@@ -1216,6 +1260,7 @@ export class SaveState {
       best: this.best[this.world] ?? 0,
       cleared: this.phase === 'clear',
       newBest: this.newBest,
+      rootsLeft: Math.max(0, 2 - this.rootsThisBottle),
       tree: buildTree(this.ranks, wallet, this.unlocked),
       worlds: [0, 1, 2, 3, 4].map((index) => ({
         index,
@@ -1388,7 +1433,7 @@ export class SaveState {
     let filled = 0;
     let hill = -1;
     if (now > was && !done) {
-      const drip = cellDew(this.world, this.ranks) * ((now - was) / hp) * 0.22;
+      const drip = cellDew(this.world, this.ranks, this.petals.press) * ((now - was) / hp) * 0.22;
       if (drip >= 0.001) dew += this.addDew(drip);
     }
     if (done) {
@@ -1396,7 +1441,7 @@ export class SaveState {
       this.ripples += 1;
       this.filled += 1;
       filled = 1;
-      dew += this.addDew(cellDew(this.world, this.ranks) * (crit ? 3 : 1));
+      dew += this.addDew(cellDew(this.world, this.ranks, this.petals.press) * (crit ? 3 : 1));
       this.stats.tiles += 1;
       this.runTiles += 1;
       hill = this.hillIndex(c, r, cols, rows);

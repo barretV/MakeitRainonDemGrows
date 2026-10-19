@@ -26,10 +26,11 @@ function nodeVisual(node: TreeNodeView): Visual {
   return 'locked';
 }
 
-function stateLabel(state: Visual): string | null {
-  if (state === 'ready') return 'Buy';
-  if (state === 'ghost' || state === 'locked') return 'Locked';
-  if (state === 'maxed') return 'Max';
+function stateLabel(node: TreeNodeView): string | null {
+  if (node.worldReq != null) return `World ${node.worldReq + 1}`;
+  if (node.afford) return 'Buy';
+  if (node.ghost || !node.visible) return 'Locked';
+  if (node.maxed) return 'Max';
   return null;
 }
 
@@ -218,6 +219,20 @@ function NodeSymbol({
       </>
     ),
     geyser: <path d="M0 8V-6M-4 0h8M0 -6l-3 4h6z" fill="none" />,
+    flow: (
+      <>
+        <path d="M-8 -7h16" fill="none" />
+        <path d="M-5 -3c-2 4-2 6 0 9M0 -3c-2 4-2 6 0 9M5 -3c-2 4-2 6 0 9" fill="none" />
+      </>
+    ),
+    spring: (
+      <>
+        <ellipse cx={0} cy={7} rx={9} ry={2.4} fill="none" />
+        <path d="M0 7V2" fill="none" />
+        <path d="M-5 1c0-5 10-5 10 0" fill="none" />
+        <path d="M0 -8c-2 3-2 5 0 7 2-2 2-4 0-7z" fill="none" />
+      </>
+    ),
     spore: <circle cx={0} cy={0} r={6} fill="none" />,
     rainbow: <path d="M-8 4a8 8 0 0 1 16 0" fill="none" />,
     hail: <path d="M-4 -6l4 8 4-8M0 2v6" fill="none" />,
@@ -225,6 +240,12 @@ function NodeSymbol({
     waterbomb: <circle cx={0} cy={0} r={5} fill="none" />,
     purify: <path d="M0 7C-7-2-7-8 0-4c7-4 7 2 0 11z" fill="none" />,
     monsoon: <path d="M-10 0h20M-6 -4h12M-6 4h12" fill="none" />,
+    harvest: (
+      <>
+        <path d="M0 6 V-2" fill="none" />
+        <path d="M0 -2 C-6 -2 -7 -8 -2 -8 C-2 -4 0 -2 0 -2 C0 -2 2 -4 2 -8 C7 -8 6 -2 0 -2" fill="none" />
+      </>
+    ),
   };
 
   return (
@@ -261,7 +282,7 @@ export function TreeNodeCloud({
   const { w, h } = nodeSize(node, shape);
   const gateOpen = node.kind !== 'gate' || node.level > 0 || node.afford;
   const mutedIcon = state === 'ghost' || state === 'locked';
-  const badge = stateLabel(state);
+  const badge = stateLabel(node);
   const showRank = node.max > 1 && !node.maxed;
 
   return (
@@ -314,7 +335,9 @@ export function TreeNodeCloud({
         <span
           role={state === 'ready' ? 'button' : undefined}
           tabIndex={state === 'ready' ? 0 : undefined}
-          className={`tree-node__badge tree-node__badge--${state === 'ghost' ? 'locked' : state}`}
+          className={`tree-node__badge tree-node__badge--${state === 'ghost' ? 'locked' : state}${
+            node.worldReq != null ? ' tree-node__badge--world' : ''
+          }`}
           onClick={(e) => {
             e.stopPropagation();
             if (state === 'ready') onBuy();

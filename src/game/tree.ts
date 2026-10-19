@@ -12,6 +12,8 @@ export type NodeId =
   | 'specks'
   | 'mist'
   | 'soak'
+  | 'flow'
+  | 'spring'
   | 'downpour'
   | 'reach'
   | 'circle'
@@ -20,6 +22,7 @@ export type NodeId =
   | 'charm'
   | 'dew'
   | 'bounty'
+  | 'harvest'
   | 'crit'
   | 'sprinkler'
   | 'spin'
@@ -48,6 +51,10 @@ export interface UpgradeNode {
   max: number;
   color: string;
   costs: readonly number[];
+  /** Blooms (finished mask cells) required for each rank. Omitted ranks are dew-only. */
+  blooms?: readonly number[];
+  /** Island index that must be unlocked before this rank can be bought. */
+  worldMin?: number;
   effect: (level: number) => string;
 }
 
@@ -66,6 +73,8 @@ export const NODE_IDS: readonly NodeId[] = [
   'mist',
   'hail',
   'soak',
+  'flow',
+  'spring',
   'downpour',
   'geyser',
   'monsoon',
@@ -79,6 +88,7 @@ export const NODE_IDS: readonly NodeId[] = [
   'rainbow',
   'dew',
   'bounty',
+  'harvest',
   'purify',
   'crit',
   'sprinkler',
@@ -107,15 +117,26 @@ export const PRIORITY: readonly NodeId[] = [
   'bounty',
   'linger',
   'crit',
+  'flow',
+  'spring',
+  'geyser',
+  'spore',
   'downpour',
+  'hail',
+  'rainbow',
   'horizon',
   'glacier',
+  'mirage',
+  'waterbomb',
   'sprinkler',
   'spin',
   'lightning',
   'zap',
+  'purify',
   'tornado',
   'twist',
+  'monsoon',
+  'harvest',
 ];
 
 const NODES: readonly UpgradeNode[] = [
@@ -261,7 +282,34 @@ const NODES: readonly UpgradeNode[] = [
     max: 4,
     color: '#5ec8ff',
     costs: [180, 420, 980, 2200],
+    blooms: [0, 120, 280, 650],
     effect: (level) => `Geyser rank ${level}`,
+  },
+  {
+    id: 'flow',
+    parent: 'soak',
+    branch: 'drizzle',
+    kind: 'upgrade',
+    name: 'Cascade',
+    desc: 'The bottle tips harder and every drop sinks further.',
+    max: 4,
+    color: '#5ec8ff',
+    costs: [2200, 5200, 12000, 27000],
+    blooms: [300, 700, 1600, 3600],
+    effect: (level) => `Pour x${(1.3 ** level).toFixed(2)}`,
+  },
+  {
+    id: 'spring',
+    parent: 'mist',
+    branch: 'drizzle',
+    kind: 'upgrade',
+    name: 'Meadow Spring',
+    desc: 'Finished ground holds a pool that seeps into thirsty neighbours.',
+    max: 3,
+    color: '#8ee0a0',
+    costs: [3400, 7800, 18000],
+    blooms: [500, 1100, 2400],
+    effect: (level) => `Pools ${Math.round((0.72 + 0.22 * level) * 100)}%`,
   },
   {
     id: 'spore',
@@ -273,6 +321,7 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#7ddf6a',
     costs: [95, 240, 580],
+    blooms: [0, 90, 240],
     effect: (level) => `Spore +${level}`,
   },
   {
@@ -333,6 +382,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#f5d27a',
     costs: [2200, 5200, 12000],
+    blooms: [260, 620, 1400],
+    worldMin: 2,
     effect: (level) => `Wave +${level}`,
   },
   {
@@ -345,6 +396,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#7ec8f0',
     costs: [1800, 4200, 9800],
+    blooms: [220, 520, 1200],
+    worldMin: 2,
     effect: (level) => `Bomb +${level}`,
   },
   {
@@ -381,6 +434,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#ffb4e8',
     costs: [650, 1500, 3400],
+    blooms: [80, 200, 460],
+    worldMin: 1,
     effect: (level) => `Arc +${level}`,
   },
   {
@@ -393,6 +448,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#d8f4ff',
     costs: [520, 1200, 2800],
+    blooms: [60, 150, 350],
+    worldMin: 1,
     effect: (level) => `Melt +${level}`,
   },
   {
@@ -405,6 +462,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#b8ff9a',
     costs: [2400, 5600, 13000],
+    blooms: [700, 1600, 3600],
+    worldMin: 3,
     effect: (level) => `Purify +${level}`,
   },
   {
@@ -417,6 +476,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 2,
     color: '#6ec8ff',
     costs: [18000, 42000],
+    blooms: [1100, 2600],
+    worldMin: 4,
     effect: (level) => `Band +${level}`,
   },
   {
@@ -426,10 +487,24 @@ const NODES: readonly UpgradeNode[] = [
     kind: 'upgrade',
     name: 'Bounty',
     desc: 'The meadow tips extra.',
-    max: 4,
+    max: 12,
     color: '#ff9bb8',
-    costs: [78, 188, 435, 1000],
+    costs: [78, 188, 435, 1000, 8000, 20000, 24000, 28000, 52000, 230000, 320000, 440000],
     effect: (level) => `Dew x${(1.18 ** level).toFixed(2)}`,
+  },
+  {
+    id: 'harvest',
+    parent: 'bounty',
+    branch: 'charm',
+    kind: 'upgrade',
+    name: 'Heavy Harvest',
+    desc: 'A wider rain on the last world. Each rank is a globe bottle well spent.',
+    max: 24,
+    color: '#ff9bb8',
+    worldMin: 4,
+    costs: [130000, 140400, 151600, 163800, 176900, 191000, 206300, 222800, 240600, 259900, 280700, 303100, 327400, 353600, 381800, 412400, 445400, 481000, 519500, 561000, 605900, 654400, 706800, 763300],
+    blooms: [1800, 1900, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600, 3900, 4200, 4500, 4800, 3000, 3200, 3400, 3600, 3800, 4000, 4200, 4400, 4600],
+    effect: (level) => `Radius +${level * 2}%`,
   },
   {
     id: 'crit',
@@ -453,6 +528,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 1,
     color: '#ff9bb8',
     costs: [19000],
+    blooms: [420],
+    worldMin: 1,
     effect: () => 'Sprinkler unlocked',
   },
   {
@@ -465,6 +542,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#ff9bb8',
     costs: [25000, 54000, 115000],
+    blooms: [350, 800, 1800],
+    worldMin: 1,
     effect: (level) => `Ring +${level}`,
   },
   {
@@ -477,6 +556,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 1,
     color: '#ffd56a',
     costs: [42000],
+    blooms: [900],
+    worldMin: 2,
     effect: () => 'Lightning unlocked',
   },
   {
@@ -489,6 +570,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#ffd56a',
     costs: [50000, 105000, 210000],
+    blooms: [450, 1000, 2200],
+    worldMin: 2,
     effect: (level) => `Bolt +${level}`,
   },
   {
@@ -501,6 +584,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 1,
     color: '#d7c4ff',
     costs: [125000],
+    blooms: [1600],
+    worldMin: 3,
     effect: () => 'Tornado unlocked',
   },
   {
@@ -513,6 +598,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 3,
     color: '#d7c4ff',
     costs: [145000, 270000, 500000],
+    blooms: [900, 2000, 4400],
+    worldMin: 3,
     effect: (level) => `Twister +${level}`,
   },
 ];
@@ -541,6 +628,8 @@ export function emptyRanks(): Ranks {
     specks: 0,
     mist: 0,
     soak: 0,
+    flow: 0,
+    spring: 0,
     downpour: 0,
     reach: 0,
     circle: 0,
@@ -549,6 +638,7 @@ export function emptyRanks(): Ranks {
     charm: 0,
     dew: 0,
     bounty: 0,
+    harvest: 0,
     crit: 0,
     sprinkler: 0,
     spin: 0,
@@ -570,6 +660,26 @@ export function emptyRanks(): Ranks {
 export function nodeCost(id: NodeId, level: number): number {
   const node = upgradeNode(id);
   return node.costs[level] ?? node.costs[node.costs.length - 1] ?? 0;
+}
+
+export function nodeBloomCost(id: NodeId, level: number): number {
+  const node = upgradeNode(id);
+  return node.blooms?.[level] ?? 0;
+}
+
+/** Blooms already spent on tree ranks (not the petal shop). */
+export function treeBloomsSpent(ranks: Ranks): number {
+  let sum = 0;
+  for (const node of NODES) {
+    if (!node.blooms) continue;
+    const level = ranks[node.id];
+    for (let i = 0; i < level; i += 1) sum += node.blooms[i] ?? 0;
+  }
+  return sum;
+}
+
+export function worldMet(id: NodeId, unlocked: number): boolean {
+  return (upgradeNode(id).worldMin ?? 0) <= unlocked;
 }
 
 /** A node can be seen and bought once this is true. Hidden buds stay off the flower. */
@@ -601,6 +711,10 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
       return ranks.mist >= 1;
     case 'downpour':
       return ranks.soak >= 2;
+    case 'flow':
+      return ranks.soak >= 2;
+    case 'spring':
+      return ranks.mist >= 2;
     case 'circle':
       return ranks.reach >= 1;
     case 'wide':
@@ -611,6 +725,8 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
       return ranks.charm >= 1;
     case 'bounty':
       return ranks.dew >= 1;
+    case 'harvest':
+      return ranks.bounty >= 4;
     case 'crit':
       return ranks.bounty >= 1;
     case 'sprinkler':
@@ -670,7 +786,7 @@ export function maxLiters(ranks: Ranks): number {
 }
 
 export function drainPerSec(ranks: Ranks): number {
-  return 46 / 1.1 ** ranks.linger / 1.08 ** ranks.glacier;
+  return (46 / 1.1 ** ranks.linger / 1.08 ** ranks.glacier) * 1.3 ** ranks.flow;
 }
 
 export function bottleSeconds(ranks: Ranks): number {
@@ -679,12 +795,26 @@ export function bottleSeconds(ranks: Ranks): number {
 
 export function rainRadius(ranks: Ranks): number {
   const grown = cloudScale(ranks) / BASE_SCALE;
-  const reach = (1 + 0.18 * ranks.circle) * (1 + 0.16 * ranks.wide) * (1 + 0.14 * ranks.horizon);
+  const reach =
+    (1 + 0.18 * ranks.circle) *
+    (1 + 0.16 * ranks.wide) *
+    (1 + 0.14 * ranks.horizon) *
+    (1 + 0.02 * ranks.harvest);
   return 0.92 * grown * reach;
 }
 
 export function soakPerTick(ranks: Ranks): number {
-  return 1.35 * 1.28 ** ranks.soak * 1.22 ** ranks.downpour;
+  return 1.35 * 1.28 ** ranks.soak * 1.22 ** ranks.downpour * 1.3 ** ranks.flow;
+}
+
+/** Fraction of spilled rain that stands on finished ground. */
+export function poolGain(ranks: Ranks): number {
+  return 0.72 + 0.22 * ranks.spring;
+}
+
+/** How hard a standing pool seeps into a thirsty neighbour. */
+export function poolFlow(ranks: Ranks): number {
+  return 0.9 + 0.12 * ranks.spring;
 }
 
 /** Fraction of the disc that actually receives rain. The rest stays a dry hole in the circle. */
@@ -720,8 +850,8 @@ export function boardSpan(world: number): { w: number; h: number } {
   return { w: cols * TILE, h: rows * TILE };
 }
 
-export function cellDew(world: number, ranks: Ranks): number {
-  return worldDef(world).pay * dewMultiplier(ranks);
+export function cellDew(world: number, ranks: Ranks, petalPress = 0): number {
+  return worldDef(world).pay * dewMultiplier(ranks) * (1 + 0.04 * petalPress);
 }
 
 export interface TreePoint {
@@ -746,7 +876,11 @@ export function layoutTree(): TreePoint[] {
   const points: TreePoint[] = [{ id: 'puff', x: center.x, y: center.y }];
   const petals: Array<{ angle: number; ids: NodeId[]; step: number }> = [
     { angle: -Math.PI / 2, ids: ['bottle', 'flask', 'reservoir', 'linger', 'glacier'], step: 68 },
-    { angle: 0.05, ids: ['drizzle', 'specks', 'spore', 'mist', 'hail', 'soak', 'downpour', 'geyser', 'monsoon'], step: 58 },
+    {
+      angle: 0.05,
+      ids: ['drizzle', 'specks', 'spore', 'mist', 'hail', 'soak', 'flow', 'spring', 'downpour', 'geyser', 'monsoon'],
+      step: 52,
+    },
     { angle: Math.PI / 2, ids: ['reach', 'circle', 'waterbomb', 'wide', 'mirage', 'horizon'], step: 64 },
     {
       angle: Math.PI,
@@ -763,6 +897,7 @@ export function layoutTree(): TreePoint[] {
         'zap',
         'tornado',
         'twist',
+        'harvest',
       ],
       step: 0,
     },
@@ -796,6 +931,9 @@ export interface TreeNodeView {
   level: number;
   max: number;
   cost: number;
+  blooms: number;
+  /** Island index still required, when the node is visible but world-locked. */
+  worldReq: number | null;
   kind: 'upgrade' | 'gate';
   color: string;
   branch: Branch;
@@ -810,27 +948,37 @@ export interface TreeNodeView {
 
 /** True when the player can spend dew on the next rank (not a preview ghost). */
 /** Nodes that became fully visible (not ghost) since the previous ranks snapshot. */
-export function nodesUnlockedSince(before: Ranks, after: Ranks): NodeId[] {
+export function nodesUnlockedSince(before: Ranks, after: Ranks, unlocked = 99): NodeId[] {
   const out: NodeId[] = [];
   for (const id of NODE_IDS) {
     if (id === 'puff') continue;
-    const was = isVisible(id, before) && !isGhost(id, before);
-    const now = isVisible(id, after) && !isGhost(id, after);
+    const was = isVisible(id, before) && !isGhost(id, before) && worldMet(id, unlocked);
+    const now = isVisible(id, after) && !isGhost(id, after) && worldMet(id, unlocked);
     if (now && !was) out.push(id);
   }
   return out;
 }
 
-export function canPurchase(id: NodeId, ranks: Ranks, spendable: number): boolean {
+export function canPurchase(
+  id: NodeId,
+  ranks: Ranks,
+  dew: number,
+  blooms = Number.POSITIVE_INFINITY,
+  unlocked = 99,
+): boolean {
   if (!isVisible(id, ranks) || isGhost(id, ranks)) return false;
   const node = upgradeNode(id);
   const level = ranks[id];
   if (level >= node.max) return false;
-  if (!prereqMet(id, ranks)) return false;
-  return spendable >= nodeCost(id, level);
+  if (!prereqMet(id, ranks) || !worldMet(id, unlocked)) return false;
+  return dew >= nodeCost(id, level) && blooms >= nodeBloomCost(id, level);
 }
 
-export function buildTree(ranks: Ranks, dew: number, spendable = Math.floor(dew)): TreeNodeView[] {
+export function buildTree(
+  ranks: Ranks,
+  wallet: { dew: number; blooms: number },
+  unlocked = 0,
+): TreeNodeView[] {
   const points = new Map(layoutTree().map((point) => [point.id, point]));
   return allNodes().map((node) => {
     const level = ranks[node.id];
@@ -839,6 +987,9 @@ export function buildTree(ranks: Ranks, dew: number, spendable = Math.floor(dew)
     const ghost = isGhost(node.id, ranks);
     const maxed = level >= node.max;
     const cost = nodeCost(node.id, level);
+    const blooms = nodeBloomCost(node.id, level);
+    const worldMin = node.worldMin ?? 0;
+    const worldLocked = visible && !ghost && !maxed && worldMin > unlocked;
     return {
       id: node.id,
       name: node.name,
@@ -847,6 +998,8 @@ export function buildTree(ranks: Ranks, dew: number, spendable = Math.floor(dew)
       level,
       max: node.max,
       cost,
+      blooms,
+      worldReq: worldLocked ? worldMin : null,
       kind: node.kind,
       color: node.color,
       branch: node.branch,
@@ -856,7 +1009,7 @@ export function buildTree(ranks: Ranks, dew: number, spendable = Math.floor(dew)
       visible,
       ghost,
       maxed,
-      afford: canPurchase(node.id, ranks, spendable),
+      afford: canPurchase(node.id, ranks, wallet.dew, wallet.blooms, unlocked),
     };
   });
 }
