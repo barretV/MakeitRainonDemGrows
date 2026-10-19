@@ -117,7 +117,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
 
       {playing && model.nextAbility && (
         <div
-          className="hud-ability-telegraph pointer-events-none absolute top-[11%] right-[2%] select-none"
+          className="hud-ability-telegraph pointer-events-none absolute top-[18%] right-[2%] select-none"
           aria-hidden
         >
           <div
@@ -131,13 +131,21 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
       )}
 
       {playing && (
-        <button
-          className="menu-gear pointer-events-auto absolute top-[3%] right-[2%]"
-          onClick={() => setGear((v) => !v)}
-          aria-label="Settings"
-        >
-          <GearIcon />
-        </button>
+        <div className="hud-cam-rig pointer-events-auto absolute top-[2.6%] right-[2%] z-20 flex flex-col items-end gap-1.5 select-none">
+          <div className="hud-cam-rig__cluster pixel" role="toolbar" aria-label="Camera">
+            <CamBtn label="Rotate left" hint="Q" onClick={() => game.orbitCamera(-0.28)}>↺</CamBtn>
+            <CamBtn label="Zoom in" hint="in" onClick={() => game.zoomCamera(-0.1)}>−</CamBtn>
+            <CamBtn label="Zoom out" hint="out" onClick={() => game.zoomCamera(0.1)}>+</CamBtn>
+            <CamBtn label="Rotate right" hint="E" onClick={() => game.orbitCamera(0.28)}>↻</CamBtn>
+          </div>
+          <button
+            className="menu-gear hud-cam-rig__gear"
+            onClick={() => setGear((v) => !v)}
+            aria-label="Settings"
+          >
+            <GearIcon />
+          </button>
+        </div>
       )}
 
       {gear && playing && (
@@ -339,6 +347,25 @@ function Mini({ children, onClick }: { children: string; onClick: () => void }) 
   return (
     <button onClick={onClick} className="menu-btn pixel">
       {children}
+    </button>
+  );
+}
+
+function CamBtn({
+  children,
+  label,
+  hint,
+  onClick,
+}: {
+  children: string;
+  label: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className="hud-cam-btn" aria-label={label} onClick={onClick}>
+      <span className="hud-cam-btn__glyph" aria-hidden>{children}</span>
+      <span className="hud-cam-btn__hint" aria-hidden>{hint}</span>
     </button>
   );
 }

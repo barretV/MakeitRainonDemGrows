@@ -233,7 +233,40 @@ function skyCanvas(top: string, mid: string, bot: string): THREE.CanvasTexture {
   ctx.beginPath();
   ctx.ellipse(180, 120, 90, 26, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillStyle = 'rgba(90, 180, 110, 0.22)';
+  for (let i = 0; i < 6; i += 1) {
+    const cx = 60 + i * 105 + (i % 2) * 30;
+    const cy = 250 + (i % 3) * 8;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 38 + (i % 2) * 12, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(70, 140, 90, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 10, 28, 22, 0, 0, Math.PI);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(90, 180, 110, 0.22)';
+  }
   return texOf(canvas, true);
+}
+
+function drawSun(): THREE.CanvasTexture {
+  return bake(
+    (p) => {
+      p.ellipse(24, 24, 18, 18, 'rgba(255, 220, 140, 0.35)');
+      p.ellipse(24, 24, 12, 12, '#ffe9a8');
+      p.ellipse(24, 24, 8, 8, '#fff8dc');
+      p.star(24, 24, '#fff');
+      for (let i = 0; i < 8; i += 1) {
+        const a = (i / 8) * Math.PI * 2;
+        const x = 24 + Math.cos(a) * 15;
+        const y = 24 + Math.sin(a) * 15;
+        p.ellipse(x, y, 2.2, 1.2, '#fff6c2');
+      }
+    },
+    48,
+    48,
+    true,
+  );
 }
 
 function drawBird(): THREE.CanvasTexture {
@@ -841,6 +874,7 @@ export interface ArtSet {
   tornado: THREE.CanvasTexture;
   butterfly: THREE.CanvasTexture;
   bird: THREE.CanvasTexture;
+  sun: THREE.CanvasTexture;
   barrel: THREE.CanvasTexture;
   flora: THREE.CanvasTexture;
 }
@@ -925,6 +959,7 @@ export function getArt(): ArtSet {
     tornado: tornadoSprite(),
     butterfly: butterfly(),
     bird: drawBird(),
+    sun: drawSun(),
     barrel: barrel(),
     flora: floraAtlas(),
   };
