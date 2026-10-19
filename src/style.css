@@ -197,6 +197,104 @@ canvas {
   line-height: 1.2;
 }
 
+.finale-veil {
+  background: radial-gradient(ellipse 80% 55% at 50% 42%, rgba(0, 0, 0, 0.35), transparent 70%);
+  contain: content;
+}
+
+.finale-banner {
+  text-align: center;
+  padding: 0.65rem 1.4rem 0.75rem;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+  animation: finale-pop 520ms ease-out;
+}
+
+@keyframes finale-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.82) translateY(12px);
+  }
+  70% {
+    transform: scale(1.04) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.finale-banner__spark {
+  display: block;
+  font-size: 1.1rem;
+  color: var(--color-secondary);
+  text-shadow: 0 0 12px var(--color-primary);
+  margin-bottom: 0.15rem;
+}
+
+.finale-banner__pct {
+  display: block;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff6c2;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+  letter-spacing: 0.04em;
+}
+
+.finale-banner__title {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-primary);
+}
+
+.finale-banner__sub {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.finale-progress {
+  margin-top: 1rem;
+  width: min(220px, 62vw);
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.finale-progress__fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  transition: transform 120ms linear;
+}
+
+.finale-skip {
+  margin-top: 1.25rem;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.finale-skip:active {
+  transform: scale(0.95);
+}
+
 .hud-reclaimed-chip--glow {
   border-color: rgba(126, 220, 140, 0.35);
   box-shadow:

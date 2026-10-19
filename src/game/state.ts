@@ -40,13 +40,17 @@ import {
   maskOf,
   maxLiters,
   NODE_IDS,
+  nodeBloomCost,
   nodeCost,
   patchFraction,
+  poolFlow,
+  poolGain,
   prereqMet,
   rainRadius,
   soakPerTick,
   upgradeNode,
   worldCount,
+  worldMet,
   type NodeId,
   type Ranks,
   type TreeNodeView,
@@ -78,7 +82,7 @@ export interface SoakResult {
   filling: number | null;
 }
 
-export type RunPhase = 'play' | 'dry' | 'clear';
+export type RunPhase = 'play' | 'finale' | 'dry' | 'clear';
 export type Screen = 'play' | 'results' | 'workshop' | 'worlds';
 
 export interface WorldChip {
@@ -128,6 +132,8 @@ export interface HudModel {
   nextAbility: string;
   abilityCdNorm: number;
   revivalGlow: number;
+  /** 0–1 during the 100% restoration spectacle (play screen). */
+  finaleProgress: number;
 }
 
 interface PersistedLand {
@@ -285,6 +291,7 @@ export class SaveState {
   nextAbilityId: AbilityId | '' = '';
   lifeStormPulse = false;
   revivalGlow = 0;
+  finaleProgress = 0;
   private filled = 0;
   private green: boolean[] = [];
   private justGreen: number[] = [];
@@ -399,7 +406,7 @@ export class SaveState {
   }
 
   dropEvery(): number {
-    return 0.18 / (1 + this.ranks.specks * 0.55 + this.ranks.mist * 0.25);
+    return 0.18 / (1 + this.ranks.specks * 0.55 + this.ranks.mist * 0.25 + this.ranks.flow * 0.3);
   }
 
   tick(dt: number, mode: { raining: boolean; moving: boolean }): void {
@@ -487,6 +494,7 @@ export class SaveState {
       this.phase = 'clear';
       this.screen = 'results';
       this.toast = `${worldDef(this.world).name} is green again.`;
+      this.finaleProgress = 1;
     }
   }
 
@@ -647,6 +655,10 @@ export class SaveState {
       this.toast = 'Unlock the parent upgrade first.';
       return false;
     }
+    if (!worldMet(id, this.unlocked)) {
+      this.toast = 'That upgrade waits for a farther island.';
+      return false;
+    }
     const node = upgradeNode(id);
     const level = this.ranks[id];
     if (level >= node.max) return false;
@@ -654,6 +666,12 @@ export class SaveState {
     const wallet = walletDew(this.dew);
     if (wallet < cost) {
       this.toast = `Need ${cost} dew (you have ${wallet}).`;
+      return false;
+    }
+    const bloomCost = nodeBloomCost(id, level);
+    const blooms = spendableBlooms(this.stats.tiles, this.petals, this.ranks);
+    if (blooms < bloomCost) {
+      this.toast = `Need ${bloomCost} blooms (you have ${blooms}).`;
       return false;
     }
     this.dew -= cost;
@@ -669,7 +687,7 @@ export class SaveState {
     const level = this.petals[id];
     if (level >= node.max) return false;
     const cost = petalCost(id, level);
-    if (spendableBlooms(this.stats.tiles, this.petals) < cost) return false;
+    if (spendableBlooms(this.stats.tiles, this.petals, this.ranks) < cost) return false;
     this.petals[id] += 1;
     this.toast = `${node.name} unlocked.`;
     return true;
@@ -992,7 +1010,7 @@ export class SaveState {
       if (nProg < hp) {
         const bc = t.to % cols;
         const br = Math.floor(t.to / cols);
-        this.applySoak(t.to, bc, br, cols, rows, t.amt * 0.9, hp, false, 0);
+        this.applySoak(t.to, bc, br, cols, rows, t.amt * poolFlow(this.ranks), hp, false, 0);
       }
     }
     this.syncPoolPixels();
@@ -1108,6 +1126,10 @@ export class SaveState {
   }
 
   animalCount(): number {
+    if (this.phase === 'finale') {
+      const { cols, rows } = gridOf(this.world);
+      return Math.min(20, Math.max(10, Math.floor(cols * rows * 0.55)));
+    }
     const ratio = this.ratio();
     if (ratio < 0.03) return 0;
     const { cols, rows } = gridOf(this.world);
@@ -1121,6 +1143,7 @@ export class SaveState {
   }
 
   helperCount(): number {
+    if (this.phase === 'finale') return 4;
     return Math.min(4, Math.floor(this.ranks.puff / 2));
   }
 
@@ -1155,6 +1178,10 @@ export class SaveState {
   }
 
   snapshot(extra: { raining: boolean; sleepy: boolean; slosh: number; music: boolean; pond: number | null }): HudModel {
+    const wallet = {
+      dew: walletDew(this.dew),
+      blooms: spendableBlooms(this.stats.tiles, this.petals, this.ranks),
+    };
     return {
       ready: true,
       dew: this.dew,
@@ -1177,13 +1204,13 @@ export class SaveState {
       boost: false,
       pond: extra.pond,
       phase: this.phase,
-      screen: this.phase === 'play' ? 'play' : this.screen,
+      screen: this.phase === 'play' || this.phase === 'finale' ? 'play' : this.screen,
       runDew: this.runDew,
       runTiles: this.runTiles,
       runReached: this.runReached,
       best: this.best[this.world] ?? 0,
       cleared: this.phase === 'clear',
-      tree: buildTree(this.ranks, this.dew, walletDew(this.dew)),
+      tree: buildTree(this.ranks, wallet, this.unlocked),
       worlds: [0, 1, 2, 3, 4].map((index) => ({
         index,
         name: worldDef(index).name,
@@ -1193,11 +1220,12 @@ export class SaveState {
       })),
       stats: { ...this.stats },
       achievements: ACHIEVEMENTS.map((a) => ({ ...a, done: this.achievements.includes(a.id) })),
-      spendableBlooms: spendableBlooms(this.stats.tiles, this.petals),
-      petalTree: buildPetalTree(this.stats.tiles, this.petals),
+      spendableBlooms: wallet.blooms,
+      petalTree: buildPetalTree(this.stats.tiles, this.petals, this.ranks),
       nextAbility: this.abilityTelegraph().id,
       abilityCdNorm: this.abilityTelegraph().cdNorm,
-      revivalGlow: this.revivalGlow,
+      revivalGlow: this.phase === 'finale' ? Math.max(this.revivalGlow, 0.85 + this.finaleProgress * 0.4) : this.revivalGlow,
+      finaleProgress: this.finaleProgress,
     };
   }
 
@@ -1239,7 +1267,7 @@ export class SaveState {
         if (respectPatches && this.ranks.specks >= 2 && hash01(c + 19, r + 3) > gate + edge * 0.28) continue;
         const index = r * cols + c;
         if ((this.progress[index] ?? 0) >= hp) {
-          this.depositPool(index, amount * 0.72);
+          this.depositPool(index, amount * poolGain(this.ranks));
           if (spills.length < 18) spills.push(index);
           continue;
         }
@@ -1531,9 +1559,24 @@ export class SaveState {
   private finishIfDone(): void {
     if (this.phase !== 'play') return;
     if (this.ratio() < 1) return;
+    this.beginFinale();
+  }
+
+  beginFinale(): void {
+    if (this.phase !== 'play') return;
     this.captureRunPeak();
+    this.phase = 'finale';
+    this.screen = 'play';
+    this.finaleProgress = 0;
+    this.revivalGlow = 1.5;
+    this.toast = '';
+  }
+
+  endFinale(): void {
+    if (this.phase !== 'finale') return;
     this.phase = 'clear';
     this.screen = 'results';
+    this.finaleProgress = 1;
     this.noteBest();
     if (this.world < GLOBE_WORLD && this.unlocked < this.world + 1) this.unlocked = this.world + 1;
     this.toast = `${worldDef(this.world).name} is green again.`;

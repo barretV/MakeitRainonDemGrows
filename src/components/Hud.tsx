@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RainGame } from '../game/RainGame';
+import { worldDef } from '../game/balance';
 import { formatDew, walletDew, type HudModel } from '../game/state';
 import { Bottle } from './Bottle';
 import { HudDewIcon, HudPlantIcon } from './HudCurrencyIcons';
@@ -93,6 +94,27 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
         </>
       )}
 
+      {model.phase === 'finale' && (
+        <div className="finale-veil pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center select-none">
+          <div className="finale-banner pixel">
+            <span className="finale-banner__spark" aria-hidden>✦</span>
+            <span className="finale-banner__pct tabular-nums">100%</span>
+            <span className="finale-banner__title">Land Restored</span>
+            <span className="finale-banner__sub">{model.worldName}</span>
+          </div>
+          <div className="finale-progress pixel" aria-hidden>
+            <div className="finale-progress__fill" style={{ transform: `scaleX(${Math.max(0.04, model.finaleProgress)})` }} />
+          </div>
+          <button
+            type="button"
+            className="finale-skip pixel pointer-events-auto"
+            onClick={() => game.skipFinale()}
+          >
+            Skip
+          </button>
+        </div>
+      )}
+
       {playing && model.nextAbility && (
         <div
           className="hud-ability-telegraph pointer-events-none absolute top-[11%] right-[2%] select-none"
@@ -154,14 +176,19 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
   const best = formatPct(Math.max(model.best, reached));
   const actions = useMemo(
     () => {
-      const list = [
+      const list: Array<{ id: string; label: string; run: () => void }> = [];
+      if (model.cleared && model.canNext && !model.nextLocked) {
+        const next = worldDef(model.worldIndex + 1);
+        list.push({ id: 'next', label: `Next · ${next.name}`, run: () => game.advance() });
+      }
+      list.push(
         { id: 'rain', label: 'Rain again', run: () => game.retry() },
         { id: 'workshop', label: 'Workshop', run: () => game.openWorkshop() },
-      ];
+      );
       if (model.cleared) list.push({ id: 'worlds', label: 'Worlds', run: () => game.openWorlds() });
       return list;
     },
-    [model.cleared, game],
+    [model.cleared, model.canNext, model.nextLocked, model.worldIndex, game],
   );
   const [focus, setFocus] = useState(0);
   const focusIdx = Math.min(focus, Math.max(0, actions.length - 1));
@@ -204,7 +231,7 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
   return (
     <div ref={bindResultsVeil} className="menu-veil pointer-events-auto" tabIndex={-1}>
       <div className="menu-card menu-card--pop results-card text-center">
-        <div className="menu-card__title">{model.cleared ? 'Land restored' : 'Bottle empty'}</div>
+        <div className="menu-card__title">{model.cleared ? 'A living world' : 'Bottle empty'}</div>
         <p className="menu-card__sub">{model.worldName}</p>
         <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
         {model.runDew > 0 && model.runTiles > 0 && (

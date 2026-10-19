@@ -119,6 +119,13 @@ export class AudioBus {
     this.tone({ type: 'triangle', from: 440, to: 880, dur: 0.18, gain: 0.04 });
   }
 
+  victory(): void {
+    this.chime();
+    this.tone({ type: 'sine', from: 392, to: 523, dur: 0.22, gain: 0.05, delay: 0.22 });
+    this.tone({ type: 'triangle', from: 523, to: 784, dur: 0.28, gain: 0.045, delay: 0.38 });
+    this.tone({ type: 'sine', from: 659, to: 988, dur: 0.42, gain: 0.04, delay: 0.55 });
+  }
+
   dispose(): void {
     this.rainStop();
     this.stopCustom();

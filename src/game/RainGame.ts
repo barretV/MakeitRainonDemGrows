@@ -12,7 +12,7 @@ import { BASE_SCALE, maskOf, upgradeNode, type NodeId, type Ranks } from './tree
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
 import type { PetalId } from './petal';
-import { SaveState, formatDew, walletDew, type HudModel, type SoakResult } from './state';
+import { SaveState, formatDew, walletDew, type HudModel, type RunPhase, type SoakResult } from './state';
 
 function formatSplashDew(n: number): string {
   return formatDew(walletDew(n));
@@ -28,6 +28,7 @@ const STEER = 0.042;
 /** 1 = default framing (closest). Larger values pull the camera back. */
 const CAM_ZOOM_MIN = 1;
 const CAM_ZOOM_MAX = 1.85;
+const FINALE_DURATION = 5.4;
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
@@ -219,7 +220,9 @@ export class RainGame {
   private skipSave = false;
   private frame = 0;
   private hudAcc = 0;
-  private lastPhase: 'play' | 'dry' | 'clear' = 'play';
+  private lastPhase: RunPhase = 'play';
+  private finaleT = 0;
+  private finaleHudAcc = 0;
   private saveAcc = 0;
   private soakAcc = 0;
   private dropAcc = 0;
@@ -635,6 +638,15 @@ export class RainGame {
     this.goto(this.state.world + 1);
   }
 
+  skipFinale(): void {
+    const state = this.state;
+    if (!state || state.phase !== 'finale') return;
+    state.endFinale();
+    this.finaleT = FINALE_DURATION;
+    this.pushHud(true);
+    void this.saveNow();
+  }
+
   openWorkshop(): void {
     if (this.state) {
       this.workshopSnap = { scale: this.state.scale(), reach: this.state.reach() };
@@ -854,13 +866,7 @@ export class RainGame {
     const held = this.wantsRain();
     const raining = held && state.tank > 0.008;
     state.tick(dt, { raining: held, moving: speed > 0.4 });
-    if (state.phase !== this.lastPhase) {
-      if (state.phase !== 'play') {
-        this.pushHud(true);
-        void this.saveNow();
-      }
-      this.lastPhase = state.phase;
-    }
+    if (this.syncRunPhase()) return;
     if (raining && !this.audio.muted) {
       this.audio.rainStart();
       this.audio.setRainHum(state.petals.hum >= 1);
@@ -889,6 +895,7 @@ export class RainGame {
       });
       if (cast) this.fireAbility(cast, state);
     }
+    if (this.syncRunPhase()) return;
     if (splashDew >= 0.05) {
       const label =
         splashCrits > 0
@@ -964,20 +971,23 @@ export class RainGame {
     const vx = this.cloudX - this.cloud.position.x;
     const vz = this.cloudZ - this.cloud.position.z;
     const lean = -(vx * Math.cos(YAW) - vz * Math.sin(YAW));
-    const sleepy = state.tank <= 0.01;
-    const raining = this.wantsRain() && !sleepy && !this.introActive;
+    const inFinale = state.phase === 'finale';
+    const sleepy = state.tank <= 0.01 && !inFinale;
+    const raining = this.wantsRain() && !sleepy && !this.introActive && !inFinale;
     const blink = Math.sin(t * 0.65) > 0.965;
-    const mood: CloudMood = sleepy
-      ? 'sleep'
-      : this.grin > 0
-        ? 'grin'
-        : state.tank < 0.25
-          ? 'pout'
-          : blink
-            ? 'blink'
-            : raining
-              ? 'joy'
-              : 'idle';
+    const mood: CloudMood = inFinale
+      ? 'grin'
+      : sleepy
+        ? 'sleep'
+        : this.grin > 0
+          ? 'grin'
+          : state.tank < 0.25
+            ? 'pout'
+            : blink
+              ? 'blink'
+              : raining
+                ? 'joy'
+                : 'idle';
     this.grin = Math.max(0, this.grin - dt);
     const mat = this.cloud.material as THREE.MeshBasicMaterial;
     if (mood !== this.mood) {
@@ -1099,6 +1109,8 @@ export class RainGame {
       }
     }
 
+    if (inFinale) this.updateWorldFinale(dt, t);
+
     this.applySkyLift(dt);
     this.faceAll();
     this.syncProps(t);
@@ -1106,10 +1118,104 @@ export class RainGame {
     this.stepFx(dt);
   }
 
+  /** Returns true when play-phase simulation should stop (finale / dry / clear). */
+  private syncRunPhase(): boolean {
+    const state = this.state;
+    if (!state) return true;
+    const phaseNow: RunPhase = state.phase;
+    if (phaseNow === this.lastPhase) return phaseNow !== 'play';
+    if (phaseNow === 'finale') this.startWorldFinale();
+    if (phaseNow !== 'play') {
+      this.pushHud(true);
+      void this.saveNow();
+    }
+    this.lastPhase = phaseNow;
+    return phaseNow !== 'play';
+  }
+
+  private startWorldFinale(): void {
+    const state = this.state;
+    if (!state) return;
+    this.finaleT = 0;
+    this.finaleHudAcc = 0;
+    this.skyLift = 5.2;
+    this.shake = 0.52;
+    this.grin = 1.2;
+    this.cloudPop = 1.38;
+    this.camZoomPulse = 0.85;
+    this.audio.victory();
+    const reach = state.reach();
+    const cx = this.terrain ? this.terrain.originX + this.terrain.width * 0.5 : this.camX;
+    const cz = this.terrain ? this.terrain.originZ + this.terrain.depth * 0.5 : this.camZ;
+    for (let i = 0; i < this.views.length; i += 1) {
+      const view = this.views[i];
+      if (!view) continue;
+      if (!view.dressed) this.dressTile(i);
+      else {
+        view.growStart = this.clock.elapsedTime;
+        view.growT = 0;
+      }
+      const at = this.tilePos(i);
+      this.burst(at.x, 1.15, at.z, 12);
+      state.stampWaveAt(at.x, at.z, 1.35);
+      this.rippleAt(at.x, at.z, '#ffe56a');
+    }
+    state.maskDirty = true;
+    state.pulseDirty = true;
+    this.abilityVfx.play('rainbow', cx, 2.4, cz, reach * 1.6);
+    this.abilityVfx.play('purify', cx, 1.2, cz, reach * 1.2);
+    this.floatText(cx, 2.6, 'The land breathes again', false);
+    this.syncCritters(0, 0, true);
+  }
+
+  private updateWorldFinale(dt: number, t: number): void {
+    const state = this.state;
+    if (!state || state.phase !== 'finale') return;
+    const prev = this.finaleT;
+    this.finaleT += dt;
+    state.finaleProgress = Math.min(1, this.finaleT / FINALE_DURATION);
+    this.shake = Math.max(0, 0.42 * (1 - this.finaleT / 1.4));
+    const cx = this.terrain ? this.terrain.originX + this.terrain.width * 0.5 : this.camX;
+    const cz = this.terrain ? this.terrain.originZ + this.terrain.depth * 0.5 : this.camZ;
+    const reach = state.reach();
+    if (prev < 1.1 && this.finaleT >= 1.1) {
+      this.audio.bloom();
+      this.abilityVfx.play('monsoon', cx, 2.8, cz, reach * 1.4);
+      this.floatText(cx, 2.2, 'Wildlife returns', false);
+      this.syncCritters(0, t, true);
+    }
+    if (prev < 2.6 && this.finaleT >= 2.6) {
+      this.abilityVfx.play('spore', cx, 1.4, cz, reach);
+      this.shake = 0.18;
+    }
+    const tick = Math.floor(this.finaleT * 2.2);
+    const prevTick = Math.floor(prev * 2.2);
+    if (tick !== prevTick) {
+      const spots = this.restoredSpots();
+      const idx = spots[tick % Math.max(1, spots.length)] ?? 0;
+      const at = this.tilePos(idx);
+      this.burst(at.x, 1.25, at.z, 10);
+      this.rippleAt(at.x, at.z, '#b6f27a');
+    }
+    this.finaleHudAcc += dt;
+    if (this.finaleHudAcc > 0.12) {
+      this.finaleHudAcc = 0;
+      this.pushHud(false);
+    }
+    if (this.finaleT >= FINALE_DURATION) {
+      state.endFinale();
+      this.pushHud(true);
+      void this.saveNow();
+      this.lastPhase = state.phase;
+      this.shake = 0.15;
+    }
+  }
+
   private applySkyLift(dt: number): void {
     if (this.skyLift <= 0 || this.globe) return;
     this.skyLift = Math.max(0, this.skyLift - dt);
-    const lift = (this.skyLift / 2.6) * 0.22;
+    const peak = 5.2;
+    const lift = (this.skyLift / peak) * 0.3;
     const bg = this.scene.background as THREE.Color;
     const fog = this.scene.fog as THREE.Fog | null;
     bg.r = clamp(this.skyBase.r + lift, 0, 1);
@@ -1447,10 +1553,12 @@ export class RainGame {
     if (rebuild || this.animals.length !== want) {
       for (const animal of this.animals) this.track.remove(animal.mesh);
       const spots = this.restoredSpots();
-      const map = [this.art.frog, this.art.fox, this.art.fennec, this.art.duck][state.world] ?? this.art.frog;
+      const roster = [this.art.frog, this.art.fox, this.art.fennec, this.art.duck];
+      const map = roster[state.world] ?? this.art.frog;
       this.animals = [];
       for (let i = 0; i < want; i += 1) {
-        const mesh = this.billboard(map, 0.62, 0.52, 0.2);
+        const tex = state.phase === 'finale' ? (roster[i % roster.length] ?? map) : map;
+        const mesh = this.billboard(tex, state.phase === 'finale' ? 0.72 : 0.62, state.phase === 'finale' ? 0.58 : 0.52, 0.2);
         mesh.userData['pet'] = i;
         const spot = spots[i % Math.max(1, spots.length)] ?? 0;
         const view = this.views[spot];
@@ -1491,7 +1599,7 @@ export class RainGame {
           animal.cool = 1.8 + Math.random() * 2.4;
         }
       }
-      const step = (0.85 + ratio * 1.4) * dt;
+      const step = (state.phase === 'finale' ? 2.4 : 0.85 + ratio * 1.4) * dt;
       animal.x += (animal.tx - animal.x) * Math.min(1, step);
       animal.z += (animal.tz - animal.z) * Math.min(1, step);
       const gy = this.groundY(animal.x, animal.z);
@@ -1515,7 +1623,7 @@ export class RainGame {
       mesh.position.set(view?.x ?? 0, 2.15 + Math.sin(t * 1.4 + i) * 0.08, view?.z ?? 0);
     });
 
-    const flies = state.ratio() > 0.25 ? 5 : 0;
+    const flies = state.phase === 'finale' ? 16 : state.ratio() > 0.25 ? 5 : 0;
     if (this.butterflies.length !== flies) {
       for (const mesh of this.butterflies) this.scene.remove(mesh);
       this.butterflies = [];
