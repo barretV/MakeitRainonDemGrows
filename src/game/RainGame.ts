@@ -28,6 +28,8 @@ const STEER = 0.042;
 /** 1 = default framing (closest). Larger values pull the camera back. */
 const CAM_ZOOM_MIN = 1;
 const CAM_ZOOM_MAX = 1.85;
+/** Max orbit away from the default MashKin board angle (radians). */
+const CAM_YAW_SPAN = 0.38;
 const FINALE_DURATION = 5.4;
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -426,7 +428,7 @@ export class RainGame {
 
     for (let i = 0; i < 10; i += 1) {
       const tex = this.art.parallaxIslands[i % this.art.parallaxIslands.length]!;
-      const mesh = this.billboard(tex, 10.5, 7.8, 0.06);
+      const mesh = this.billboard(tex, 7.2, 5.2, 0.06);
       const mat = mesh.material as THREE.MeshBasicMaterial;
       mat.fog = false;
       mat.transparent = true;
@@ -438,12 +440,12 @@ export class RainGame {
       this.scene.add(mesh);
       this.parallaxIslands.push({
         mesh,
-        spread: (i - 4.5) * 9.5 + ((i * 5) % 7) * 1.1,
-        depth: 14 + (i % 5) * 7 + Math.floor(i / 2) * 3.5,
-        altitude: 11 + (i % 6) * 2.8,
-        parallax: 0.22 + (i % 5) * 0.08,
+        spread: (i - 4.5) * 11 + ((i * 5) % 7) * 1.4,
+        depth: 34 + (i % 5) * 9 + Math.floor(i / 2) * 5,
+        altitude: 7.5 + (i % 5) * 1.6,
+        parallax: 0.14 + (i % 5) * 0.05,
         bobPhase: i * 1.37,
-        size: 0.72 + (i % 3) * 0.14 + (i % 2) * 0.08,
+        size: 0.55 + (i % 3) * 0.1,
       });
     }
 
@@ -654,7 +656,7 @@ export class RainGame {
 
   orbitCamera(delta: number): void {
     if (this.globe) return;
-    this.camYaw += delta;
+    this.camYaw = clamp(this.camYaw + delta, YAW - CAM_YAW_SPAN, YAW + CAM_YAW_SPAN);
   }
 
   zoomCamera(delta: number): void {
@@ -1529,7 +1531,14 @@ export class RainGame {
       const wet = state.hillWet(i);
       const restored = state.isRestored(i);
       if (view.prop && spec.kind !== 'seed') {
-        view.prop.visible = restored || wet > 0.14;
+        let slopeOk = true;
+        if (spec.decor === 'tree' && this.terrain) {
+          const y0 = this.groundY(view.x, view.z);
+          const y1 = this.groundY(view.x + 0.28, view.z);
+          const y2 = this.groundY(view.x, view.z + 0.28);
+          slopeOk = Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0)) < 0.32;
+        }
+        view.prop.visible = slopeOk && (restored || wet > 0.14);
         if (view.prop.visible) {
           const live = restored || wet > 0.68;
           const map =
@@ -1848,9 +1857,11 @@ export class RainGame {
     if (!state || this.globe) return;
     if (state.phase !== 'play' && state.phase !== 'finale') return;
     let orbit = 0;
-    if (this.keys.has('q')) orbit -= 1;
-    if (this.keys.has('e')) orbit += 1;
-    if (orbit !== 0) this.camYaw += orbit * dt * 1.55;
+    if (this.keys.has('q')) orbit += 1;
+    if (this.keys.has('e')) orbit -= 1;
+    if (orbit !== 0) {
+      this.camYaw = clamp(this.camYaw + orbit * dt * 1.35, YAW - CAM_YAW_SPAN, YAW + CAM_YAW_SPAN);
+    }
   }
 
   private skyAxes(): { backX: number; backZ: number; rightX: number; rightZ: number } {
@@ -1864,6 +1875,9 @@ export class RainGame {
   }
 
   private placeCamera(dt: number): void {
+    if (!this.globe) {
+      this.camYaw = clamp(this.camYaw, YAW - CAM_YAW_SPAN, YAW + CAM_YAW_SPAN);
+    }
     if (this.camZoomPulse > 0 && dt > 0) {
       this.camZoomPulse = Math.max(0, this.camZoomPulse - dt);
       this.camZoom += (1 - this.camZoom) * Math.min(1, dt * 5.5);
@@ -1891,15 +1905,16 @@ export class RainGame {
       const panX = (this.camX - boardX) * 0.35;
       const panZ = (this.camZ - boardZ) * 0.35;
       const pull = this.cameraGrowPull(dt);
-      const lift = span * 0.72 * this.camZoom * pull;
-      const back = span * 0.78 * this.camZoom * pull;
-      const { backX, backZ } = this.skyAxes();
-      this.camera.position.set(
-        boardX + panX + backX * back + jx,
-        2.2 + lift + jy,
-        boardZ + panZ + backZ * back,
-      );
-      this.camera.lookAt(boardX + panX * 0.4, 1.6, boardZ + panZ * 0.2);
+      const lift = span * 0.68 * this.camZoom * pull;
+      const back = span * 0.82 * this.camZoom * pull;
+      const yaw = this.camYaw;
+      const backX = -Math.sin(yaw);
+      const backZ = -Math.cos(yaw);
+      const targetX = boardX + panX * 0.45;
+      const targetZ = boardZ + panZ * 0.35;
+      const targetY = 1.35 + span * 0.04;
+      this.camera.position.set(targetX + backX * back + jx, 2.05 + lift + jy, targetZ + backZ * back);
+      this.camera.lookAt(targetX, targetY, targetZ);
       return;
     }
     const yaw = this.camYaw;
@@ -2011,7 +2026,7 @@ export class RainGame {
       const sunZ = anchorZ + rightZ * span * 0.95 + backZ * span * 0.35;
       this.sunDisc.position.set(sunX, sunY, sunZ);
       const sunPulse = 1 + Math.sin(t * 1.1) * 0.06;
-      this.sunDisc.scale.set(span * 0.22 * sunPulse, span * 0.22 * sunPulse, 1);
+      this.sunDisc.scale.set(span * 0.14 * sunPulse, span * 0.14 * sunPulse, 1);
       this.sunDisc.lookAt(this.camera.position);
     }
     this.puffs.forEach((mesh, i) => {
@@ -2056,7 +2071,7 @@ export class RainGame {
 
     const camDx = this.camX - anchorX;
     const camDz = this.camZ - anchorZ;
-    const islandSpan = span * 0.48;
+    const islandSpan = span * 0.13;
     for (const isl of this.parallaxIslands) {
       if (this.globe) {
         isl.mesh.visible = false;
@@ -2082,7 +2097,7 @@ export class RainGame {
       if (obj.userData['upright']) {
         const dx = this.camera.position.x - obj.position.x;
         const dz = this.camera.position.z - obj.position.z;
-        obj.rotation.set(0, Math.atan2(dx, dz), 0);
+        obj.rotation.set(0, Math.atan2(dx, dz) + Math.PI, 0);
         return;
       }
       const roll = obj === this.cloud ? Number(obj.userData['roll']) || 0 : 0;
