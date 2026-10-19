@@ -181,6 +181,16 @@ interface SkyBird {
   speed: number;
 }
 
+interface ParallaxIsland {
+  mesh: THREE.Mesh;
+  spread: number;
+  depth: number;
+  altitude: number;
+  parallax: number;
+  bobPhase: number;
+  size: number;
+}
+
 interface Stick {
   id: number;
   x: number;
@@ -270,6 +280,7 @@ export class RainGame {
   private puffDrift: number[] = [];
   private birds: SkyBird[] = [];
   private farTrees: THREE.Mesh[] = [];
+  private parallaxIslands: ParallaxIsland[] = [];
   private animals: Critter[] = [];
   private helpers: THREE.Mesh[] = [];
   private boxes: THREE.Mesh[] = [];
@@ -395,6 +406,28 @@ export class RainGame {
       const mesh = this.billboard(this.art.deadTree[0]!, 1.5, 2.1, 0.2);
       this.farTrees.push(mesh);
       this.scene.add(mesh);
+    }
+
+    for (let i = 0; i < 10; i += 1) {
+      const tex = this.art.parallaxIslands[i % this.art.parallaxIslands.length]!;
+      const mesh = this.billboard(tex, 6.2, 4.6, 0.07);
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.fog = true;
+      mat.transparent = true;
+      mat.opacity = 0.94 - (i % 4) * 0.07;
+      mat.depthWrite = false;
+      mesh.renderOrder = 1;
+      mesh.userData['bb'] = 1;
+      this.scene.add(mesh);
+      this.parallaxIslands.push({
+        mesh,
+        spread: (i - 4.5) * 6.2 + ((i * 5) % 7) * 0.6,
+        depth: 20 + (i % 5) * 5.5 + Math.floor(i / 2) * 2.2,
+        altitude: 4.8 + (i % 6) * 1.35,
+        parallax: 0.1 + (i % 5) * 0.05,
+        bobPhase: i * 1.37,
+        size: 0.72 + (i % 3) * 0.14 + (i % 2) * 0.08,
+      });
     }
 
     this.cloud = this.billboard(this.art.cloud.idle, 4.6, 3.0, 0.12);
@@ -622,6 +655,10 @@ export class RainGame {
 
   getRanks(): Ranks | null {
     return this.state ? { ...this.state.ranks } : null;
+  }
+
+  getUnlocked(): number {
+    return this.state?.unlocked ?? 0;
   }
 
   buy(id: NodeId): boolean {
@@ -1010,7 +1047,6 @@ export class RainGame {
       const mat = this.curtain.material as THREE.ShaderMaterial;
       mat.uniforms['uTop']!.value = Math.min(1, (2.0 * grown) / wide);
       mat.uniforms['uDensity']!.value = Math.min(0.75, state.patch() + 0.15);
-      console.log('RAIN', 'reach', state.reach(), 'grown', grown, 'wide', wide, 'tall', tall, 'ground', ground);
       this.curtain.scale.set(wide, tall, 1);
       this.curtain.position.set(this.cloud.position.x, ground + tall / 2, this.cloud.position.z);
       this.puddle.position.set(this.cloud.position.x, ground + 0.04, this.cloud.position.z);
@@ -1106,6 +1142,12 @@ export class RainGame {
     for (const peak of this.peaks) peak.visible = false;
     this.hillsBackdrop.visible = !this.globe;
     for (const tree of this.farTrees) tree.visible = !this.globe;
+    for (let i = 0; i < this.parallaxIslands.length; i += 1) {
+      const isl = this.parallaxIslands[i]!;
+      isl.mesh.visible = !this.globe;
+      const map = this.art.parallaxIslands[(world + i) % this.art.parallaxIslands.length]!;
+      (isl.mesh.material as THREE.MeshBasicMaterial).map = map;
+    }
     const hillTex = this.art.hills[world] ?? this.art.hills[0]!;
     (this.hillsBackdrop.material as THREE.MeshBasicMaterial).map = hillTex;
     const tint = ['#f0d0e0', '#d8ecff', '#f5e6c8', '#e0d4f0'][world] ?? '#e8dce8';
@@ -1830,6 +1872,27 @@ export class RainGame {
       bird.mesh.scale.set(flap, 1, 1);
       const visible = (state?.ratio() ?? 0) > 0.04 || (state?.world ?? 0) > 0;
       bird.mesh.visible = visible;
+    }
+
+    const camDx = this.camX - anchorX;
+    const camDz = this.camZ - anchorZ;
+    const islandSpan = span * 0.11;
+    for (const isl of this.parallaxIslands) {
+      if (this.globe) {
+        isl.mesh.visible = false;
+        continue;
+      }
+      const bob = Math.sin(t * 0.38 + isl.bobPhase) * 0.28;
+      const drift = Math.sin(t * 0.11 + isl.bobPhase * 0.65) * 1.1;
+      const sway = Math.cos(t * 0.09 + isl.bobPhase) * 0.35;
+      isl.mesh.position.set(
+        anchorX + backX * isl.depth + rightX * (isl.spread + drift + sway) - camDx * isl.parallax,
+        isl.altitude + bob,
+        anchorZ + backZ * isl.depth + rightZ * (isl.spread * 0.38 + drift * 0.25) - camDz * isl.parallax,
+      );
+      const s = isl.size * islandSpan;
+      isl.mesh.scale.set(s * 1.05, s, 1);
+      isl.mesh.visible = true;
     }
   }
 

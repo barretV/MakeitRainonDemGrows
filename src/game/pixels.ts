@@ -289,6 +289,73 @@ function drawHills(color: string, back: string): THREE.CanvasTexture {
   }, 280, 80);
 }
 
+/** Distant restored sky-islands for parallax backdrop. */
+function drawParallaxIsland(variant: number): THREE.CanvasTexture {
+  const v = variant % 6;
+  return bake((p) => {
+    const cx = 48;
+    const capY = 34;
+    const rock = ['#8a6a52', '#6e5038', '#a07858', '#5c4838', '#7a6048', '#6b5544'][v]!;
+    const rockDeep = ['#5c4030', '#4a3224', '#6e4a34', '#3e2c20', '#524030', '#463628'][v]!;
+    const grass = ['#7dce4a', '#8fd8f0', '#c8f090', '#86efac', '#b6e86a', '#9be7ff'][v]!;
+    const grassHi = ['#b6e86a', '#e8fbff', '#ffe08a', '#c084fc', '#d7f06a', '#b7f0ff'][v]!;
+
+    for (let y = capY; y < p.h; y += 1) {
+      const t = (y - capY) / (p.h - capY);
+      const bulge = 1 - t * 0.35;
+      const rx = 38 * bulge + Math.sin(y * 0.4) * 1.2;
+      for (let x = 0; x < p.w; x += 1) {
+        const dx = (x + 0.5 - cx) / rx;
+        if (dx * dx > 1) continue;
+        const edge = Math.abs(dx);
+        let c = edge > 0.82 ? rockDeep : rock;
+        if ((x * 5 + y * 11) % 17 === 0) c = rockDeep;
+        if ((x * 7 + y * 3) % 23 === 0 && t < 0.55) c = '#a56b42';
+        p.set(x, y, c);
+      }
+    }
+    for (let i = 0; i < 5 + (v % 3); i += 1) {
+      const sx = cx - 18 + ((i * 17 + v * 9) % 36);
+      const sy = p.h - 4 - (i % 4) * 3;
+      const len = 4 + (i % 3);
+      for (let k = 0; k < len; k += 1) p.set(sx, sy + k, k === len - 1 ? rockDeep : rock);
+    }
+    p.ellipse(cx, capY - 2, 40, 14, grass);
+    p.ellipse(cx - 8, capY, 28, 10, grassHi);
+    p.ellipse(cx + 10, capY + 1, 24, 9, grass);
+    if (v === 1 || v === 5) {
+      p.ellipse(cx + 14, capY + 4, 9, 4, '#6ec4e0');
+      p.ellipse(cx + 14, capY + 4, 6, 2.5, '#b7f0ff');
+    }
+    const tree = (tx: number, kind: number) => {
+      p.line(tx, capY + 6, tx, capY - 4, '#6b4630');
+      if (kind === 0) {
+        p.ellipse(tx, capY - 8, 7, 6, '#ff8fb8');
+        p.ellipse(tx - 4, capY - 6, 5, 4, '#ffb3d0');
+        p.ellipse(tx + 4, capY - 7, 5, 4, '#ff7aa8');
+      } else if (kind === 1) {
+        p.line(tx, capY - 6, tx - 6, capY + 2, '#5eb0d4');
+        p.line(tx, capY - 6, tx + 6, capY + 2, '#5eb0d4');
+        p.line(tx - 6, capY + 2, tx + 6, capY + 2, '#9be7ff');
+      } else {
+        p.ellipse(tx, capY - 7, 6, 5, '#5cb83a');
+        p.ellipse(tx, capY - 11, 5, 4, '#7dce4a');
+      }
+    };
+    tree(cx - 16, v % 3);
+    tree(cx + 6, (v + 1) % 3);
+    if (v % 2 === 0) tree(cx + 22, (v + 2) % 3);
+    if (v === 3) {
+      p.ellipse(cx - 20, capY + 2, 3, 2, '#67e8f9');
+      p.line(cx - 20, capY + 2, cx - 20, capY + 10, '#c084fc88');
+    }
+    p.star(cx - 4, capY - 14, '#fff');
+    if (v === 2) p.star(cx + 18, capY - 12, '#ffe56a');
+    p.shadeLower('#f7c6df', 0.55);
+    p.outline('#3e3228');
+  }, 96, 72);
+}
+
 function groundTex(colors: string[], cracks: boolean): THREE.CanvasTexture {
   return bake((p) => {
     const base = colors[1] ?? colors[0] ?? '#888';
@@ -741,6 +808,7 @@ export interface ArtSet {
   baby: THREE.CanvasTexture;
   skies: THREE.CanvasTexture[];
   mountain: THREE.CanvasTexture;
+  parallaxIslands: THREE.CanvasTexture[];
   hills: THREE.CanvasTexture[];
   deadTop: THREE.CanvasTexture[];
   liveTop: THREE.CanvasTexture[];
@@ -796,6 +864,7 @@ export function getArt(): ArtSet {
       return skyCanvas(w.skyTop, w.skyMid, w.skyBot);
     }),
     mountain: drawMountain(),
+    parallaxIslands: [0, 1, 2, 3, 4, 5].map((i) => drawParallaxIsland(i)),
     hills: [0, 1, 2, 3].map((i) => {
       const w = worldDef(i);
       return drawHills(w.hill, w.farHill);
