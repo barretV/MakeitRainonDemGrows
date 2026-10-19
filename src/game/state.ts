@@ -123,10 +123,12 @@ export interface HudModel {
   runReached: number;
   best: number;
   cleared: boolean;
+  /** This bottle set a new revival record on the current world. */
+  newBest: boolean;
   tree: TreeNodeView[];
   worlds: WorldChip[];
   stats: Stats;
-  achievements: Array<AchievementDef & { done: boolean }>;
+  achievements: Array<AchievementDef & { done: boolean; current: number; goal: number }>;
   spendableBlooms: number;
   petalTree: PetalNodeView[];
   nextAbility: string;
@@ -292,6 +294,7 @@ export class SaveState {
   lifeStormPulse = false;
   revivalGlow = 0;
   finaleProgress = 0;
+  newBest = false;
   private filled = 0;
   private green: boolean[] = [];
   private justGreen: number[] = [];
@@ -608,6 +611,7 @@ export class SaveState {
     this.runDew = 0;
     this.runTiles = 0;
     this.runReached = 0;
+    this.newBest = false;
     this.screen = 'play';
     this.mountWorld(this.world);
     this.refillBottle();
@@ -640,6 +644,7 @@ export class SaveState {
     this.runDew = 0;
     this.runTiles = 0;
     this.runReached = 0;
+    this.newBest = false;
     this.screen = 'play';
     this.syncPhaseAfterLoad();
     this.toast = worldDef(this.world).name;
@@ -1210,6 +1215,7 @@ export class SaveState {
       runReached: this.runReached,
       best: this.best[this.world] ?? 0,
       cleared: this.phase === 'clear',
+      newBest: this.newBest,
       tree: buildTree(this.ranks, wallet, this.unlocked),
       worlds: [0, 1, 2, 3, 4].map((index) => ({
         index,
@@ -1219,7 +1225,10 @@ export class SaveState {
         best: this.best[index] ?? 0,
       })),
       stats: { ...this.stats },
-      achievements: ACHIEVEMENTS.map((a) => ({ ...a, done: this.achievements.includes(a.id) })),
+      achievements: ACHIEVEMENTS.map((a) => {
+        const track = this.achievementTrack(a.id);
+        return { ...a, done: this.achievements.includes(a.id), current: track.current, goal: track.goal };
+      }),
       spendableBlooms: wallet.blooms,
       petalTree: buildPetalTree(this.stats.tiles, this.petals, this.ranks),
       nextAbility: this.abilityTelegraph().id,
@@ -1553,7 +1562,38 @@ export class SaveState {
 
   private noteBest(): void {
     const ratio = Math.max(this.ratio(), this.runReached);
-    if (ratio > (this.best[this.world] ?? 0)) this.best[this.world] = ratio;
+    const before = this.best[this.world] ?? 0;
+    this.newBest = ratio > before + 0.0005;
+    if (ratio > before) this.best[this.world] = ratio;
+  }
+
+  private achievementTrack(id: string): { current: number; goal: number } {
+    switch (id) {
+      case 'gardener':
+        return { current: this.stats.tiles, goal: 80 };
+      case 'koi':
+        return { current: this.stats.ponds, goal: 1 };
+      case 'money':
+        return { current: this.stats.blooms, goal: 1 };
+      case 'friend':
+        return { current: this.stats.animals, goal: 10 };
+      case 'forest':
+        return { current: this.best[0] ?? 0, goal: 1 };
+      case 'frost':
+        return { current: this.best[1] ?? 0, goal: 1 };
+      case 'oasis':
+        return { current: this.best[2] ?? 0, goal: 1 };
+      case 'clean':
+        return { current: this.best[3] ?? 0, goal: 1 };
+      case 'band':
+        return { current: Math.floor(this.stats.dewEarned), goal: 1000 };
+      case 'mogul':
+        return { current: Math.floor(this.stats.dewEarned), goal: 50000 };
+      case 'drip-check':
+        return { current: this.ranks.puff, goal: 4 };
+      default:
+        return { current: this.stats.tiles > 0 && this.runTiles > 0 ? 1 : 0, goal: 1 };
+    }
   }
 
   private finishIfDone(): void {

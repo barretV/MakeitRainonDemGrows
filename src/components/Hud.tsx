@@ -199,12 +199,24 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
     [model.cleared, model.canNext, model.nextLocked, model.worldIndex, game],
   );
   const [focus, setFocus] = useState(0);
+  const [barsOn, setBarsOn] = useState(false);
+  const barsFrame = useRef(0);
   const focusIdx = Math.min(focus, Math.max(0, actions.length - 1));
   const focusRef = useRef(focusIdx);
   focusRef.current = focusIdx;
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
   const keyListenerRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+
+  const bindBars = useCallback((el: HTMLDivElement | null) => {
+    cancelAnimationFrame(barsFrame.current);
+    if (!el) {
+      setBarsOn(false);
+      return;
+    }
+    setBarsOn(false);
+    barsFrame.current = requestAnimationFrame(() => setBarsOn(true));
+  }, []);
 
   const bindResultsVeil = useCallback((el: HTMLDivElement | null) => {
     if (keyListenerRef.current) {
@@ -246,8 +258,13 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
           <p className="results-earned">Rain earned {formatDew(model.runDew)} dew · {model.runTiles} blooms</p>
         )}
         <div className="results-stats">
-          <Stat label="This bottle" value={`${formatDew(model.runDew)} dew`} />
-          <Stat label="Reached" value={pct} />
+          <Stat label="This bottle" value="" count={model.runDew} suffix=" dew" />
+          <Stat
+            label="Reached"
+            value={pct}
+            tag={model.newBest ? 'New best' : reached > 0.0005 && reached + 0.0005 >= model.best ? 'Personal best' : undefined}
+            hot={model.newBest}
+          />
           <Stat label="Best" value={best} />
         </div>
         <div className="results-actions" role="toolbar" aria-label="Results actions">
@@ -266,16 +283,31 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
           ))}
         </div>
         <p className="results-keyhint pixel" aria-hidden>A / D or arrows · Enter to choose</p>
-        <div className="achievements-panel achievements-panel--sheet text-left">
+        <div className="achievements-panel achievements-panel--sheet text-left" ref={bindBars}>
           <div className="results-ach-title">Achievements</div>
           <ul className="achievements-list achievements-list--grid">
-            {model.achievements.map((a) => (
-              <li key={a.id} className={a.done ? 'achievements-list__done' : ''}>
-                <span className="achievements-list__name">{a.name}</span>
-                <span className="achievements-list__desc">{a.desc}</span>
-                {a.done && <span className="achievements-list__check">Done</span>}
-              </li>
-            ))}
+            {model.achievements.map((a) => {
+              const ratio = a.goal > 0 ? Math.max(0, Math.min(1, a.current / a.goal)) : 0;
+              return (
+                <li key={a.id} className={a.done ? 'ach-card ach-card--done' : 'ach-card'}>
+                  <AchIcon id={a.id} />
+                  <span className="ach-card__copy">
+                    <span className="achievements-list__name">{a.name}</span>
+                    <span className="achievements-list__desc">{a.desc}</span>
+                    <span className="ach-meter" aria-hidden>
+                      <span
+                        className={barsOn ? 'ach-meter__fill ach-meter__fill--on' : 'ach-meter__fill'}
+                        style={{ ['--p' as string]: String(a.done ? 1 : ratio) }}
+                      />
+                    </span>
+                  </span>
+                  <span className="ach-card__side">
+                    {a.done ? <span className="achievements-list__check">Done</span> : <span className="ach-card__count">{trackText(a.id, a.current, a.goal)}</span>}
+                    {a.reward > 0 && <span className="ach-card__pay">+{a.reward}</span>}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>
@@ -334,13 +366,167 @@ function Worlds({ model, game }: { model: HudModel; game: RainGame }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function trackText(id: string, current: number, goal: number): string {
+  if (id === 'forest' || id === 'frost' || id === 'oasis' || id === 'clean') {
+    return `${Math.round(Math.min(1, Math.max(0, current)) * 100)}%`;
+  }
+  if (goal >= 1000) {
+    const shown = Math.min(current, goal);
+    const goalLabel = goal >= 10000 ? `${Math.round(goal / 1000)}K` : formatDew(goal);
+    const nowLabel = shown >= 10000 ? `${Math.round(shown / 1000)}K` : formatDew(shown);
+    return `${nowLabel}/${goalLabel}`;
+  }
+  return `${Math.min(goal, Math.floor(current))}/${goal}`;
+}
+
+function Stat({
+  label,
+  value,
+  count,
+  suffix,
+  tag,
+  hot,
+}: {
+  label: string;
+  value: string;
+  count?: number;
+  suffix?: string;
+  tag?: string;
+  hot?: boolean;
+}) {
   return (
     <div className="menu-stat">
-      <div className="menu-stat__label">{label}</div>
-      <div className="menu-stat__value pixel">{value}</div>
+      <div className="menu-stat__label">
+        {label}
+        {tag && <span className={hot ? 'results-best-tag results-best-tag--hot' : 'results-best-tag'}>{tag}</span>}
+      </div>
+      <div className="menu-stat__value pixel">
+        {count !== undefined ? <CountUp value={count} suffix={suffix ?? ''} /> : value}
+      </div>
     </div>
   );
+}
+
+function CountUp({ value, suffix }: { value: number; suffix: string }) {
+  const [shown, setShown] = useState(0);
+  const frame = useRef(0);
+  const bind = useCallback((node: HTMLSpanElement | null) => {
+    cancelAnimationFrame(frame.current);
+    if (!node) return;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / 850);
+      const eased = 1 - (1 - t) * (1 - t);
+      setShown(value * eased);
+      if (t < 1) frame.current = requestAnimationFrame(tick);
+    };
+    setShown(0);
+    frame.current = requestAnimationFrame(tick);
+  }, [value]);
+  return (
+    <span ref={bind} className="results-countup tabular-nums">
+      {formatDew(shown)}
+      {suffix}
+    </span>
+  );
+}
+
+function AchIcon({ id }: { id: string }) {
+  return (
+    <span className="ach-ico" aria-hidden>
+      <AchSvg id={id} />
+    </span>
+  );
+}
+
+function AchSvg({ id }: { id: string }) {
+  const common = { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none' } as const;
+  switch (id) {
+    case 'gardener':
+      return (
+        <svg {...common}>
+          <path d="M8 14V7" stroke="#b6ff7a" strokeWidth="2" />
+          <path d="M8 8c0-3 2-5 5-5-1 3-3 5-5 5Z" fill="#7dce4a" />
+          <path d="M8 9C8 6 6 4 3 4c1 3 3 5 5 5Z" fill="#d7f06a" />
+        </svg>
+      );
+    case 'koi':
+      return (
+        <svg {...common}>
+          <ellipse cx="7" cy="8" rx="5" ry="3" fill="#ff8fb8" />
+          <path d="M12 8l3-3v6l-3-3Z" fill="#ffd0e2" />
+          <circle cx="5" cy="7.5" r="0.8" fill="#1a1020" />
+        </svg>
+      );
+    case 'money':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="5.5" fill="#ffe56a" />
+          <path d="M8 4.5v7M6 6.2h3.2a1.4 1.4 0 0 1 0 2.8H6.8" stroke="#7a4e10" strokeWidth="1.3" />
+        </svg>
+      );
+    case 'friend':
+      return (
+        <svg {...common}>
+          <circle cx="5" cy="6" r="2" fill="#fff" />
+          <circle cx="11" cy="6" r="2" fill="#fff" />
+          <ellipse cx="8" cy="11" rx="4" ry="2.4" fill="#ffb3d0" />
+        </svg>
+      );
+    case 'forest':
+      return (
+        <svg {...common}>
+          <path d="M8 2l4 5H4l4-5Z" fill="#7dce4a" />
+          <path d="M8 5l5 6H3l5-6Z" fill="#3f9a3a" />
+          <path d="M7 11h2v3H7z" fill="#8d5a38" />
+        </svg>
+      );
+    case 'frost':
+      return (
+        <svg {...common}>
+          <path d="M8 2v12M3 4.5l10 7M13 4.5l-10 7" stroke="#d8f4ff" strokeWidth="1.6" />
+        </svg>
+      );
+    case 'oasis':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="3" fill="#ffe56a" />
+          <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M12.8 3.2l-1.4 1.4M4.6 11.4l-1.4 1.4" stroke="#ffe56a" strokeWidth="1.3" />
+        </svg>
+      );
+    case 'clean':
+      return (
+        <svg {...common}>
+          <path d="M8 2l1.2 3.4H13l-2.8 2.2 1.1 3.4L8 9.8 4.7 11l1.1-3.4L3 5.4h3.8L8 2Z" fill="#d6ff7a" />
+        </svg>
+      );
+    case 'band':
+      return (
+        <svg {...common}>
+          <path d="M8 2c2 3 3 4.2 3 6a3 3 0 0 1-6 0c0-1.8 1-3 3-6Z" fill="#7ec8ff" />
+        </svg>
+      );
+    case 'mogul':
+      return (
+        <svg {...common}>
+          <path d="M2 12l2-7 2 3 2-5 2 5 2-3 2 7H2Z" fill="#ffe56a" />
+        </svg>
+      );
+    case 'drip-check':
+      return (
+        <svg {...common}>
+          <ellipse cx="8" cy="9" rx="5" ry="3" fill="#fff" />
+          <ellipse cx="5" cy="8" rx="3" ry="2.4" fill="#fff" />
+          <ellipse cx="11" cy="8" rx="3" ry="2.4" fill="#fff" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <path d="M8 2c2 3 3 4.2 3 6a3 3 0 0 1-6 0c0-1.8 1-3 3-6Z" fill="#9ee7ff" />
+        </svg>
+      );
+  }
 }
 
 function Mini({ children, onClick }: { children: string; onClick: () => void }) {
