@@ -237,20 +237,20 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
   }, []);
 
   return (
-    <div ref={bindResultsVeil} className="menu-veil pointer-events-auto" tabIndex={-1}>
+    <div ref={bindResultsVeil} className="menu-veil menu-veil--results pointer-events-auto" tabIndex={-1}>
       <div className="menu-card menu-card--pop results-card text-center">
         <div className="menu-card__title">{model.cleared ? 'A living world' : 'Bottle empty'}</div>
         <p className="menu-card__sub">{model.worldName}</p>
         <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
         {model.runDew > 0 && model.runTiles > 0 && (
-          <p className="menu-card__sub mt-1">Rain earned {formatDew(model.runDew)} dew · {model.runTiles} blooms</p>
+          <p className="results-earned">Rain earned {formatDew(model.runDew)} dew · {model.runTiles} blooms</p>
         )}
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="results-stats">
           <Stat label="This bottle" value={`${formatDew(model.runDew)} dew`} />
           <Stat label="Reached" value={pct} />
           <Stat label="Best" value={best} />
         </div>
-        <div className="results-actions mt-4" role="toolbar" aria-label="Results actions">
+        <div className="results-actions" role="toolbar" aria-label="Results actions">
           {actions.map((action, i) => (
             <ResultsAction
               key={action.id}
@@ -266,8 +266,8 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
           ))}
         </div>
         <p className="results-keyhint pixel" aria-hidden>A / D or arrows · Enter to choose</p>
-        <div className="achievements-panel achievements-panel--sheet mt-4 text-left">
-          <div className="menu-card__title text-sm">Achievements</div>
+        <div className="achievements-panel achievements-panel--sheet text-left">
+          <div className="results-ach-title">Achievements</div>
           <ul className="achievements-list achievements-list--grid">
             {model.achievements.map((a) => (
               <li key={a.id} className={a.done ? 'achievements-list__done' : ''}>

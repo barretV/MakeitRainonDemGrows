@@ -1351,10 +1351,71 @@ canvas {
   box-shadow: inset 0 0 0 2px #fff6d2, 0 1px 0 #5a3410;
 }
 
+.menu-veil--results {
+  padding: 8px 12px;
+  align-content: center;
+}
+
 .results-card {
-  width: min(680px, 96%);
-  max-width: 100%;
-  padding: 18px 22px 16px;
+  width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 6px 12px 6px;
+}
+
+.results-card .menu-card__title {
+  font-size: 22px;
+}
+
+.results-card .menu-card__sub {
+  margin-top: 2px;
+  font-size: 14px;
+  color: #fff6d4;
+}
+
+.results-card .menu-wallet {
+  margin-top: 2px;
+  font-size: 15px;
+  color: #c8f6ff;
+}
+
+.results-earned {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.2;
+  color: #fff6d4;
+}
+
+.results-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.results-card .menu-stat {
+  padding: 4px 6px;
+}
+
+.results-card .menu-stat__label {
+  font-size: 12px;
+  color: #d6e6ff;
+}
+
+.results-card .menu-stat__value {
+  margin-top: 0;
+  font-size: 15px;
+  color: #ffffff;
+}
+
+.results-card .results-actions {
+  margin-top: 6px;
+}
+
+.results-card .results-keyhint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #ffe7b0;
 }
 
 .results-actions {
@@ -1540,58 +1601,62 @@ canvas {
 .achievements-panel--sheet {
   max-height: none;
   overflow: visible;
-  padding: 10px 12px 12px;
+  margin-top: 6px;
+  padding: 6px 10px 4px;
+  background: #0b1022;
+  border: 2px solid #6d84c4;
+}
+
+.results-ach-title {
+  font-size: 16px;
+  line-height: 1;
+  color: #ffe56a;
+  text-shadow: 0 2px 0 #070d1f;
 }
 
 .achievements-list--grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 14px;
-}
-
-@media (max-width: 520px) {
-  .achievements-list--grid {
-    grid-template-columns: 1fr;
-  }
-
-  .results-card {
-    width: min(460px, 94%);
-  }
+  column-gap: 18px;
 }
 
 .achievements-list {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   padding: 0;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .achievements-list li {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  opacity: 0.55;
-}
-
-.achievements-list__done {
-  opacity: 1;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  column-gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  white-space: nowrap;
 }
 
 .achievements-list__name {
-  font-weight: 600;
-  color: #e8f0ff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #ffffff;
+  text-shadow: 0 1px 0 #12081c;
 }
 
 .achievements-list__desc {
-  grid-column: 1;
-  color: rgba(200, 210, 230, 0.7);
+  font-size: 13px;
+  line-height: 1.15;
+  color: #ffe7a4;
+  text-shadow: 0 1px 0 #12081c;
 }
 
 .achievements-list__check {
-  color: #9ee86a;
-  font-size: 9px;
+  color: #d6ff7a;
+  font-size: 12px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 0 #143000;
 }
