@@ -133,10 +133,10 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
       {playing && (
         <div className="hud-cam-rig pointer-events-auto absolute top-[2.6%] right-[2%] z-20 flex flex-col items-end gap-1.5 select-none">
           <div className="hud-cam-rig__cluster pixel" role="toolbar" aria-label="Camera">
-            <CamBtn label="Rotate left" hint="Q" onClick={() => game.orbitCamera(0.11)}>↺</CamBtn>
+            <CamBtn label="Rotate left" hint="Q" onClick={() => game.orbitCamera(-0.55)}>↺</CamBtn>
             <CamBtn label="Zoom in" hint="in" onClick={() => game.zoomCamera(-0.08)}>−</CamBtn>
             <CamBtn label="Zoom out" hint="out" onClick={() => game.zoomCamera(0.08)}>+</CamBtn>
-            <CamBtn label="Rotate right" hint="E" onClick={() => game.orbitCamera(-0.11)}>↻</CamBtn>
+            <CamBtn label="Rotate right" hint="E" onClick={() => game.orbitCamera(0.55)}>↻</CamBtn>
           </div>
           <button
             className="menu-gear hud-cam-rig__gear"

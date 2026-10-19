@@ -28,8 +28,6 @@ const STEER = 0.042;
 /** 1 = default framing (closest). Larger values pull the camera back. */
 const CAM_ZOOM_MIN = 1;
 const CAM_ZOOM_MAX = 1.85;
-/** Max orbit away from the default MashKin board angle (radians). */
-const CAM_YAW_SPAN = 0.38;
 const FINALE_DURATION = 5.4;
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -252,8 +250,9 @@ export class RainGame {
   private camGroundY = 1;
   private camZoom = 1;
   private camZoomPulse = 0;
-  /** Orbit angle around the board center (Q/E and HUD). */
-  private camYaw = YAW;
+  /** Full orbit around the island. 0 puts the camera on +Z (screen-up is −Z). */
+  private camYaw = 0;
+  private skyDome: THREE.Mesh;
   private sunDisc: THREE.Mesh;
   /** Smoothed follow distance multiplier as Cloud Puff grows (1 = day-one size). */
   private camGrowPull = 1;
@@ -387,6 +386,20 @@ export class RainGame {
       this.shafts.push(shaft);
       this.scene.add(shaft);
     }
+
+    this.skyDome = new THREE.Mesh(
+      new THREE.SphereGeometry(160, 40, 24),
+      new THREE.MeshBasicMaterial({
+        map: this.art.skies[0]!,
+        side: THREE.BackSide,
+        fog: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    );
+    this.skyDome.renderOrder = -20;
+    this.skyDome.frustumCulled = false;
+    this.scene.add(this.skyDome);
 
     this.sunDisc = this.billboard(this.art.sun, 1, 1, 0.02);
     const sunMat = this.sunDisc.material as THREE.MeshBasicMaterial;
@@ -656,7 +669,7 @@ export class RainGame {
 
   orbitCamera(delta: number): void {
     if (this.globe) return;
-    this.camYaw = clamp(this.camYaw + delta, YAW - CAM_YAW_SPAN, YAW + CAM_YAW_SPAN);
+    this.camYaw += delta;
   }
 
   zoomCamera(delta: number): void {
@@ -868,10 +881,12 @@ export class RainGame {
         this.faceZ = fwd / len;
       } else {
         const yaw = this.camYaw;
-        const rightX = Math.cos(yaw);
-        const rightZ = -Math.sin(yaw);
-        const fwdX = -Math.sin(yaw);
-        const fwdZ = -Math.cos(yaw);
+        const camOffX = Math.sin(yaw);
+        const camOffZ = Math.cos(yaw);
+        const fwdX = -camOffX;
+        const fwdZ = -camOffZ;
+        const rightX = camOffZ;
+        const rightZ = -camOffX;
         const mx = (strafe * rightX + fwd * fwdX) / len;
         const mz = (strafe * rightZ + fwd * fwdZ) / len;
         this.cloudX = clamp(this.cloudX + mx * MOVE * dt, minXZ, maxX);
@@ -1268,7 +1283,7 @@ export class RainGame {
     const world = state.world;
     this.globe = world === GLOBE_WORLD;
     this.camZoom = 1;
-    this.camYaw = YAW;
+    this.camYaw = 0;
     const skyMid = worldDef(world).skyMid;
     const skyTex = art.skies[world] ?? art.skies[0]!;
     if (this.globe) {
@@ -1278,8 +1293,10 @@ export class RainGame {
     }
     this.skyBase.set(skyMid);
     const dist = this.frameDist(0);
-    this.scene.fog = this.globe ? new THREE.Fog('#24356e', 18, 48) : new THREE.Fog(skyMid, dist * 1.25, dist * 5.2);
-    this.sunDisc.visible = !this.globe;
+    this.scene.fog = this.globe ? new THREE.Fog('#24356e', 18, 48) : new THREE.Fog(skyMid, dist * 2.2, dist * 8);
+    (this.skyDome.material as THREE.MeshBasicMaterial).map = skyTex;
+    this.skyDome.visible = !this.globe;
+    this.sunDisc.visible = false;
     this.mountain.visible = false;
     for (const peak of this.peaks) peak.visible = false;
     this.hillsBackdrop.visible = !this.globe;
@@ -1444,7 +1461,7 @@ export class RainGame {
         ? this.billboard(restored ? art.money : art.seed, 1.15, 1.7, 0.2)
         : flat && spec.decor === 'twig'
           ? null
-          : this.propMesh(spec.decor, restored, world);
+          : this.propMesh(spec.decor, restored, world, index);
     if (view.prop) {
       const shore = flat && this.terrain ? this.terrain.shoreAt(view.x, view.z) : 0;
       const offIsland = shore > (spec.decor === 'tree' ? 0.035 : 0.06);
@@ -1482,7 +1499,7 @@ export class RainGame {
     if (view.pond) (view.pond.material as THREE.MeshBasicMaterial).map = art.pondFull;
     if (view.bar) view.bar.visible = false;
     if (view.prop) {
-      const map = spec.kind === 'seed' ? art.money : this.propTexture(spec.decor, true, world, false);
+      const map = spec.kind === 'seed' ? art.money : this.propTexture(spec.decor, true, world, false, index);
       (view.prop.material as THREE.MeshBasicMaterial).map = map;
       if (spec.kind === 'seed') view.prop.userData['s'] = 1.25;
     }
@@ -1544,7 +1561,7 @@ export class RainGame {
           const map =
             spec.kind === 'pond'
               ? null
-              : this.propTexture(spec.decor, live, state.world, false);
+              : this.propTexture(spec.decor, live, state.world, false, i);
           if (map) (view.prop.material as THREE.MeshBasicMaterial).map = map;
           const base = Number(view.prop.userData['s']) || 1;
           let pop = restored ? 1 : clamp(0.32 + wet * 0.78, 0.32, 0.96);
@@ -1797,10 +1814,12 @@ export class RainGame {
     const dx = event.clientX - this.stick.x;
     const dy = event.clientY - this.stick.y;
     const yaw = this.camYaw;
-    const rightX = Math.cos(yaw);
-    const rightZ = -Math.sin(yaw);
-    const fwdX = -Math.sin(yaw);
-    const fwdZ = -Math.cos(yaw);
+    const camOffX = Math.sin(yaw);
+    const camOffZ = Math.cos(yaw);
+    const fwdX = -camOffX;
+    const fwdZ = -camOffZ;
+    const rightX = camOffZ;
+    const rightZ = -camOffX;
     const wx = (dx * rightX - dy * fwdX) * STEER;
     const wz = (dx * rightZ - dy * fwdZ) * STEER;
     const nextX = clamp(this.stick.cx + wx, -TILE / 2 + 0.3, cols * TILE - TILE / 2 - 0.3);
@@ -1857,27 +1876,24 @@ export class RainGame {
     if (!state || this.globe) return;
     if (state.phase !== 'play' && state.phase !== 'finale') return;
     let orbit = 0;
-    if (this.keys.has('q')) orbit += 1;
-    if (this.keys.has('e')) orbit -= 1;
-    if (orbit !== 0) {
-      this.camYaw = clamp(this.camYaw + orbit * dt * 1.35, YAW - CAM_YAW_SPAN, YAW + CAM_YAW_SPAN);
-    }
+    if (this.keys.has('q')) orbit -= 1;
+    if (this.keys.has('e')) orbit += 1;
+    if (orbit !== 0) this.camYaw += orbit * dt * 1.15;
   }
 
   private skyAxes(): { backX: number; backZ: number; rightX: number; rightZ: number } {
     const yaw = this.camYaw;
+    const camOffX = Math.sin(yaw);
+    const camOffZ = Math.cos(yaw);
     return {
-      backX: -Math.sin(yaw),
-      backZ: -Math.cos(yaw),
-      rightX: Math.cos(yaw),
-      rightZ: -Math.sin(yaw),
+      backX: camOffX,
+      backZ: camOffZ,
+      rightX: camOffZ,
+      rightZ: -camOffX,
     };
   }
 
   private placeCamera(dt: number): void {
-    if (!this.globe) {
-      this.camYaw = clamp(this.camYaw, YAW - CAM_YAW_SPAN, YAW + CAM_YAW_SPAN);
-    }
     if (this.camZoomPulse > 0 && dt > 0) {
       this.camZoomPulse = Math.max(0, this.camZoomPulse - dt);
       this.camZoom += (1 - this.camZoom) * Math.min(1, dt * 5.5);
@@ -1905,15 +1921,15 @@ export class RainGame {
       const panX = (this.camX - boardX) * 0.35;
       const panZ = (this.camZ - boardZ) * 0.35;
       const pull = this.cameraGrowPull(dt);
-      const lift = span * 0.68 * this.camZoom * pull;
-      const back = span * 0.82 * this.camZoom * pull;
+      const lift = span * 0.42 * this.camZoom * pull;
+      const back = span * 0.92 * this.camZoom * pull;
       const yaw = this.camYaw;
-      const backX = -Math.sin(yaw);
-      const backZ = -Math.cos(yaw);
+      const camOffX = Math.sin(yaw);
+      const camOffZ = Math.cos(yaw);
       const targetX = boardX + panX * 0.45;
       const targetZ = boardZ + panZ * 0.35;
       const targetY = 1.35 + span * 0.04;
-      this.camera.position.set(targetX + backX * back + jx, 2.05 + lift + jy, targetZ + backZ * back);
+      this.camera.position.set(targetX + camOffX * back + jx, 2.05 + lift + jy, targetZ + camOffZ * back);
       this.camera.lookAt(targetX, targetY, targetZ);
       return;
     }
@@ -2021,7 +2037,8 @@ export class RainGame {
       );
       this.hillsBackdrop.scale.set(span * 1.05, span * 0.32, 1);
 
-      const sunX = anchorX + rightX * span * 0.95 + backX * span * 0.35;
+      this.skyDome.position.set(anchorX, 6, anchorZ);
+      const sunX = anchorX + rightX * span * 1.6 - backX * span * 2.2;
       const sunY = 19 + Math.sin(t * 0.35) * 0.35;
       const sunZ = anchorZ + rightZ * span * 0.95 + backZ * span * 0.35;
       this.sunDisc.position.set(sunX, sunY, sunZ);
@@ -2032,8 +2049,8 @@ export class RainGame {
     this.puffs.forEach((mesh, i) => {
       const drift = this.puffDrift[i] ?? 0;
       const spread = (i - 3.5) * 4.6 + Math.sin(t * 0.15 + drift) * 1.2;
-      const depth = 14 + (i % 4) * 3.5;
-      const y = 8.5 + (i % 3) * 1.8 + Math.sin(t * 0.45 + drift) * 0.35;
+      const depth = 42 + (i % 4) * 6;
+      const y = 22 + (i % 3) * 3 + Math.sin(t * 0.45 + drift) * 0.35;
       const slide = Math.sin(t * 0.08 + drift) * 2.4;
       mesh.position.set(
         anchorX + backX * depth + rightX * (spread + slide),
@@ -2041,20 +2058,8 @@ export class RainGame {
         anchorZ + backZ * depth + rightZ * (spread * 0.35),
       );
     });
-    this.shafts.forEach((shaft, i) => {
-      const sm = shaft.material as THREE.MeshBasicMaterial;
-      const base = Number(shaft.userData['shaftBase']) || 0.08;
-      const amp = Number(shaft.userData['shaftAmp']) || 0.05;
-      sm.opacity = base + Math.sin(t * 0.55 + i * 1.4) * amp;
-      const sunOff = i - 1.5;
-      shaft.position.set(
-        anchorX + rightX * (span * 0.82 + sunOff * 2.4) + backX * span * 0.28,
-        14 + i * 1.2,
-        anchorZ + rightZ * (span * 0.82 + sunOff * 2.4) + backZ * span * 0.28,
-      );
-      shaft.scale.set(1.1 + i * 0.15, 1.35 + i * 0.2, 1);
-      shaft.lookAt(anchorX + rightX * span * 0.5, 0.5, anchorZ + rightZ * span * 0.5);
-      shaft.rotateZ(0.12 * sunOff);
+    this.shafts.forEach((shaft) => {
+      shaft.visible = false;
     });
     for (const bird of this.birds) {
       const ang = t * bird.speed + bird.phase;
@@ -2069,24 +2074,22 @@ export class RainGame {
       bird.mesh.visible = visible;
     }
 
-    const camDx = this.camX - anchorX;
-    const camDz = this.camZ - anchorZ;
-    const islandSpan = span * 0.13;
+    const islandSpan = Math.max(6, span * 0.22);
     for (const isl of this.parallaxIslands) {
       if (this.globe) {
         isl.mesh.visible = false;
         continue;
       }
-      const bob = Math.sin(t * 0.38 + isl.bobPhase) * 0.28;
-      const drift = Math.sin(t * 0.11 + isl.bobPhase * 0.65) * 1.1;
-      const sway = Math.cos(t * 0.09 + isl.bobPhase) * 0.35;
+      const bob = Math.sin(t * 0.38 + isl.bobPhase) * 0.45;
+      const ang = isl.bobPhase * 0.7;
+      const ring = 52 + isl.depth * 0.35;
       isl.mesh.position.set(
-        anchorX + backX * isl.depth + rightX * (isl.spread + drift + sway) - camDx * isl.parallax,
+        anchorX + Math.sin(ang) * ring,
         isl.altitude + bob,
-        anchorZ + backZ * isl.depth + rightZ * (isl.spread * 0.38 + drift * 0.25) - camDz * isl.parallax,
+        anchorZ + Math.cos(ang) * ring,
       );
-      const s = isl.size * islandSpan;
-      isl.mesh.scale.set(s * 1.05, s, 1);
+      const s = isl.size * islandSpan * 0.22;
+      isl.mesh.scale.set(s * 1.15, s, 1);
       isl.mesh.visible = true;
     }
   }
@@ -2362,12 +2365,12 @@ export class RainGame {
     return mote;
   }
 
-  private propMesh(decor: 'tree' | 'bush' | 'rock' | 'twig', restored: boolean, world: number): THREE.Mesh | null {
+  private propMesh(decor: 'tree' | 'bush' | 'rock' | 'twig', restored: boolean, world: number, index: number): THREE.Mesh | null {
     const upright = (mesh: THREE.Mesh) => {
       mesh.userData['upright'] = 1;
       return mesh;
     };
-    if (decor === 'tree') return upright(this.billboard(this.propTexture(decor, restored, world, false), 2.15, 2.9, 0.18));
+    if (decor === 'tree') return upright(this.billboard(this.propTexture(decor, restored, world, false, index), 2.6, 3.6, 0.12));
     if (decor === 'bush') return upright(this.billboard(this.propTexture(decor, restored, world, false), 0.72, 0.55, 0.2));
     if (decor === 'rock') {
       return upright(
@@ -2377,10 +2380,13 @@ export class RainGame {
     return upright(this.billboard(this.propTexture(decor, restored, world, false), 0.55, 0.4, 0.18));
   }
 
-  private propTexture(decor: 'tree' | 'bush' | 'rock' | 'twig', restored: boolean, world: number, seed: boolean): THREE.Texture {
+  private propTexture(decor: 'tree' | 'bush' | 'rock' | 'twig', restored: boolean, world: number, seed: boolean, index = 0): THREE.Texture {
     const art = this.art;
     if (seed) return restored ? art.money : art.seed;
-    if (decor === 'tree') return (restored ? art.liveTree[world] : art.deadTree[world]) ?? art.deadTree[0]!;
+    if (decor === 'tree') {
+      if (!restored) return (art.deadTree[world] ?? art.deadTree[0])!;
+      return art.grove[(index + world * 3) % art.grove.length] ?? art.liveTree[0]!;
+    }
     if (decor === 'bush') return restored ? art.bushLive : art.bushDead;
     if (decor === 'rock') {
       if (world === 3 && !restored) return art.barrel;

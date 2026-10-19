@@ -204,47 +204,64 @@ function drawCloud(mood: CloudMood): THREE.CanvasTexture {
 
 function skyCanvas(top: string, mid: string, bot: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 640;
-  canvas.height = 360;
+  canvas.width = 1024;
+  canvas.height = 512;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas unavailable');
-  const g = ctx.createLinearGradient(0, 0, 0, 360);
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
   g.addColorStop(0, top);
-  g.addColorStop(0.45, mid);
+  g.addColorStop(0.42, mid);
+  g.addColorStop(0.78, bot);
   g.addColorStop(1, bot);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 640, 360);
-  const puff = (x: number, y: number, rx: number, ry: number, a: number) => {
+  ctx.fillRect(0, 0, 1024, 512);
+  const glow = ctx.createRadialGradient(780, 90, 10, 780, 110, 220);
+  glow.addColorStop(0, 'rgba(255,244,210,0.95)');
+  glow.addColorStop(0.25, 'rgba(255,210,160,0.45)');
+  glow.addColorStop(1, 'rgba(255,180,200,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 1024, 512);
+  ctx.fillStyle = 'rgba(255,236,180,0.9)';
+  ctx.beginPath();
+  ctx.arc(780, 92, 28, 0, Math.PI * 2);
+  ctx.fill();
+  const puff = (x: number, y: number, s: number, a: number) => {
     ctx.fillStyle = `rgba(255,255,255,${a})`;
     ctx.beginPath();
-    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y, 46 * s, 18 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(x - 28 * s, y + 6, 28 * s, 14 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + 30 * s, y + 4, 26 * s, 13 * s, 0, 0, Math.PI * 2);
     ctx.fill();
   };
-  puff(90, 70, 80, 28, 0.16);
-  puff(160, 84, 54, 22, 0.12);
-  puff(300, 54, 96, 30, 0.14);
-  puff(420, 78, 70, 22, 0.1);
-  puff(520, 48, 50, 18, 0.1);
-  ctx.fillStyle = 'rgba(255, 180, 210, 0.18)';
-  ctx.beginPath();
-  ctx.ellipse(480, 90, 70, 22, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(120, 210, 255, 0.16)';
-  ctx.beginPath();
-  ctx.ellipse(180, 120, 90, 26, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(90, 180, 110, 0.22)';
-  for (let i = 0; i < 6; i += 1) {
-    const cx = 60 + i * 105 + (i % 2) * 30;
-    const cy = 250 + (i % 3) * 8;
+  puff(140, 70, 1.3, 0.55);
+  puff(340, 48, 1.6, 0.42);
+  puff(560, 86, 1.1, 0.38);
+  puff(900, 60, 1.4, 0.34);
+  ctx.fillStyle = '#7a3d66';
+  for (let i = 0; i < 48; i += 1) {
+    const x = (i * 47) % 1100 - 40;
+    const base = 300 + (i % 5) * 8;
+    const h = 36 + (i % 7) * 14;
+    const w = 28 + (i % 4) * 8;
     ctx.beginPath();
-    ctx.ellipse(cx, cy, 38 + (i % 2) * 12, 16, 0, 0, Math.PI * 2);
+    ctx.moveTo(x, base);
+    ctx.lineTo(x + w * 0.5, base - h);
+    ctx.lineTo(x + w, base);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = 'rgba(70, 140, 90, 0.35)';
+  }
+  ctx.fillStyle = '#c98aab';
+  for (let i = 0; i < 36; i += 1) {
+    const x = (i * 61) % 1080;
+    const base = 250 + (i % 3) * 6;
+    const h = 22 + (i % 5) * 8;
+    const w = 22 + (i % 3) * 6;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 10, 28, 22, 0, 0, Math.PI);
+    ctx.moveTo(x, base);
+    ctx.lineTo(x + w * 0.5, base - h);
+    ctx.lineTo(x + w, base);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = 'rgba(90, 180, 110, 0.22)';
   }
   return texOf(canvas, true);
 }
@@ -452,6 +469,34 @@ function bareTree(trunk: string, limb: string): THREE.CanvasTexture {
     p.line(12, 26, 6, 18, limb);
     p.line(34, 22, 42, 12, limb);
     p.line(16, 40, 12, 48, limb);
+  }, 48, 64);
+}
+
+function birchTree(): THREE.CanvasTexture {
+  return bake((p) => {
+    p.line(22, 62, 22, 18, '#f4f1ea');
+    p.line(26, 62, 26, 20, '#d7d0c4');
+    for (let y = 22; y < 58; y += 7) {
+      p.line(21, y, 27, y + 2, '#2a2a2e');
+    }
+    p.ellipse(16, 16, 10, 8, '#7dce4a');
+    p.ellipse(30, 18, 9, 7, '#b6e86a');
+    p.ellipse(22, 10, 8, 6, '#5cb83a');
+    p.outline('#2f6a32');
+  }, 48, 64);
+}
+
+function oakTree(): THREE.CanvasTexture {
+  return bake((p) => {
+    p.line(24, 62, 24, 34, '#6b4630');
+    p.line(23, 62, 23, 40, '#4e3222');
+    p.ellipse(24, 24, 16, 13, '#3f9a3a');
+    p.ellipse(12, 28, 10, 8, '#2f7a32');
+    p.ellipse(36, 26, 10, 9, '#5cb83a');
+    p.ellipse(24, 14, 9, 7, '#7dce4a');
+    p.outline('#1f4a22');
+    p.set(18, 18, '#e8ffc8');
+    p.set(30, 20, '#fff');
   }, 48, 64);
 }
 
@@ -850,6 +895,7 @@ export interface ArtSet {
   lip: THREE.CanvasTexture;
   deadTree: THREE.CanvasTexture[];
   liveTree: THREE.CanvasTexture[];
+  grove: THREE.CanvasTexture[];
   money: THREE.CanvasTexture;
   boombox: THREE.CanvasTexture;
   bushDead: THREE.CanvasTexture;
@@ -935,6 +981,7 @@ export function getArt(): ArtSet {
       bareTree('#6a8a48', '#445828'),
     ],
     liveTree: [cherryTree(), pineTree('#9be7ff', '#5eb0d4'), cactusTree(), alienTree()],
+    grove: [oakTree(), birchTree(), cherryTree(), pineTree('#3f9a3a', '#1f4a22'), oakTree(), birchTree()],
     money: moneyTree(),
     boombox: boomboxTree(),
     bushDead: bush(false),

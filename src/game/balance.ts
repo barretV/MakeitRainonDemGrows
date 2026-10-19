@@ -22,7 +22,7 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 8,
     rows: 6,
     tiles: 48,
-    hp: 72,
+    hp: 76,
     pay: 3,
     skyTop: '#6a3d78',
     skyMid: '#c46a8a',
@@ -35,7 +35,7 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 13,
     rows: 9,
     tiles: 117,
-    hp: 720,
+    hp: 3000,
     pay: 2,
     skyTop: '#1b2f78',
     skyMid: '#3d6ea8',
@@ -48,7 +48,7 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 15,
     rows: 11,
     tiles: 165,
-    hp: 820,
+    hp: 10500,
     pay: 3,
     skyTop: '#c46a3a',
     skyMid: '#e09a48',
@@ -61,7 +61,7 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 17,
     rows: 12,
     tiles: 204,
-    hp: 680,
+    hp: 22500,
     pay: 4,
     skyTop: '#6a5484',
     skyMid: '#7f9468',
@@ -74,7 +74,7 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 14,
     rows: 9,
     tiles: 126,
-    hp: 680,
+    hp: 3072281,
     pay: 4,
     skyTop: '#1c2a6a',
     skyMid: '#3a4e9a',
@@ -149,7 +149,7 @@ export function tileSpec(world: number, index: number, count: number): TileSpec 
   let decor: Decor = 'twig';
   if (kind === 'ground') {
     const n = (col * 5 + row * 3 + world * 2) % 8;
-    if (n <= 1) decor = 'tree';
+    if (n <= 3) decor = 'tree';
     else if (n === 2) decor = 'bush';
     else if (n === 3) decor = 'rock';
   }
