@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RainGame } from '../game/RainGame';
 import { formatDew, walletDew, type HudModel } from '../game/state';
 import { Bottle } from './Bottle';
@@ -152,9 +152,58 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
   const reached = Math.max(model.runReached, model.restored);
   const pct = formatPct(reached);
   const best = formatPct(Math.max(model.best, reached));
+  const actions = useMemo(
+    () => {
+      const list = [
+        { id: 'rain', label: 'Rain again', run: () => game.retry() },
+        { id: 'workshop', label: 'Workshop', run: () => game.openWorkshop() },
+      ];
+      if (model.cleared) list.push({ id: 'worlds', label: 'Worlds', run: () => game.openWorlds() });
+      return list;
+    },
+    [model.cleared, game],
+  );
+  const [focus, setFocus] = useState(0);
+  const focusIdx = Math.min(focus, Math.max(0, actions.length - 1));
+  const focusRef = useRef(focusIdx);
+  focusRef.current = focusIdx;
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+  const keyListenerRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+
+  const bindResultsVeil = useCallback((el: HTMLDivElement | null) => {
+    if (keyListenerRef.current) {
+      window.removeEventListener('keydown', keyListenerRef.current);
+      keyListenerRef.current = null;
+    }
+    if (!el) return;
+    const onKey = (e: KeyboardEvent) => {
+      const acts = actionsRef.current;
+      if (!acts.length) return;
+      const next = (delta: number) => {
+        const i = (focusRef.current + delta + acts.length) % acts.length;
+        focusRef.current = i;
+        setFocus(i);
+      };
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        next(1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        next(-1);
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        acts[focusRef.current]?.run();
+      }
+    };
+    keyListenerRef.current = onKey;
+    window.addEventListener('keydown', onKey);
+    requestAnimationFrame(() => el.focus({ preventScroll: true }));
+  }, []);
+
   return (
-    <div className="menu-veil pointer-events-auto">
-      <div className="menu-card menu-card--pop w-[min(460px,92%)] text-center">
+    <div ref={bindResultsVeil} className="menu-veil pointer-events-auto" tabIndex={-1}>
+      <div className="menu-card menu-card--pop results-card text-center">
         <div className="menu-card__title">{model.cleared ? 'Land restored' : 'Bottle empty'}</div>
         <p className="menu-card__sub">{model.worldName}</p>
         <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
@@ -166,14 +215,25 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
           <Stat label="Reached" value={pct} />
           <Stat label="Best" value={best} />
         </div>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          <Mini onClick={() => game.retry()}>Rain again</Mini>
-          <Mini onClick={() => game.openWorkshop()}>Workshop</Mini>
-          {model.cleared && <Mini onClick={() => game.openWorlds()}>Worlds</Mini>}
+        <div className="results-actions mt-4" role="toolbar" aria-label="Results actions">
+          {actions.map((action, i) => (
+            <ResultsAction
+              key={action.id}
+              selected={i === focusIdx}
+              onClick={() => {
+                focusRef.current = i;
+                setFocus(i);
+                action.run();
+              }}
+            >
+              {action.label}
+            </ResultsAction>
+          ))}
         </div>
-        <div className="achievements-panel mt-4 text-left">
+        <p className="results-keyhint pixel" aria-hidden>A / D or arrows · Enter to choose</p>
+        <div className="achievements-panel achievements-panel--sheet mt-4 text-left">
           <div className="menu-card__title text-sm">Achievements</div>
-          <ul className="achievements-list">
+          <ul className="achievements-list achievements-list--grid">
             {model.achievements.map((a) => (
               <li key={a.id} className={a.done ? 'achievements-list__done' : ''}>
                 <span className="achievements-list__name">{a.name}</span>
@@ -185,6 +245,27 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ResultsAction({
+  selected,
+  children,
+  onClick,
+}: {
+  selected: boolean;
+  children: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`menu-btn pixel results-action${selected ? ' results-action--focus' : ''}`}
+      aria-pressed={selected}
+    >
+      {children}
+    </button>
   );
 }
 

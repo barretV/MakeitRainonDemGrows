@@ -475,11 +475,18 @@ canvas {
   cursor: grabbing;
 }
 
-.workshop-wallet {
+.workshop-wallets {
   position: absolute;
   top: 12px;
   left: 12px;
   z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.workshop-wallet {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -489,13 +496,33 @@ canvas {
   background: rgba(12, 14, 24, 0.78);
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25);
-  pointer-events: none;
+}
+
+.workshop-wallet--blooms {
+  border-color: rgba(255, 158, 203, 0.32);
+}
+
+.workshop-wallet--blooms .workshop-wallet__amount {
+  color: #ffb4d8;
 }
 
 .workshop-wallet__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 36px;
   height: 44px;
   flex-shrink: 0;
+}
+
+.workshop-wallet__icon--bloom {
+  width: 30px;
+}
+
+.workshop-wallet__sprite {
+  display: block;
+  width: auto;
+  height: 30px;
 }
 
 .workshop-wallet__text {
@@ -1067,6 +1094,12 @@ canvas {
   background: #5a5668;
 }
 
+.tree-node__badge--world {
+  color: #ffe8f4;
+  background: #7a4a68;
+  border-color: rgba(255, 180, 216, 0.4);
+}
+
 .tree-node__badge--maxed {
   color: #3a3010;
   background: #ffe56a;
@@ -1173,6 +1206,58 @@ canvas {
 .menu-btn:active {
   transform: translateY(2px) scale(0.98);
   box-shadow: inset 0 0 0 2px #fff6d2, 0 1px 0 #5a3410;
+}
+
+.results-card {
+  width: min(680px, 96%);
+  max-width: 100%;
+  padding: 18px 22px 16px;
+}
+
+.results-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.results-action {
+  transition:
+    transform 140ms ease-out,
+    filter 140ms ease-out,
+    box-shadow 140ms ease-out;
+}
+
+.results-action--focus {
+  transform: scale(1.06);
+  animation: results-action-glow 1.15s ease-in-out infinite;
+  box-shadow:
+    inset 0 0 0 2px #fff9e8,
+    0 0 0 3px #ffe56a,
+    0 0 20px rgba(255, 229, 106, 0.5),
+    0 4px 0 #5a3410;
+}
+
+.results-action--focus:active {
+  transform: translateY(2px) scale(1.02);
+}
+
+@keyframes results-action-glow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.14);
+  }
+}
+
+.results-keyhint {
+  margin: 10px 0 0;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 231, 176, 0.45);
 }
 
 .menu-row {
@@ -1307,6 +1392,28 @@ canvas {
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.achievements-panel--sheet {
+  max-height: none;
+  overflow: visible;
+  padding: 10px 12px 12px;
+}
+
+.achievements-list--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 14px;
+}
+
+@media (max-width: 520px) {
+  .achievements-list--grid {
+    grid-template-columns: 1fr;
+  }
+
+  .results-card {
+    width: min(460px, 94%);
+  }
 }
 
 .achievements-list {
