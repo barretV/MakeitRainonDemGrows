@@ -82,10 +82,13 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             <RevivalBar pct={pct} />
           </div>
           <div
-            className="pixel absolute bottom-[2.4%] left-[1.4%] select-none text-white"
-            style={{ fontSize: 'clamp(13px, 1.7vw, 30px)', textShadow: '2px 2px 0 #2a1730, -1px -1px 0 #2a1730, 1px -1px 0 #2a1730, -1px 1px 0 #2a1730' }}
+            className={`hud-reclaimed-chip pixel absolute bottom-[2.4%] left-[1.4%] select-none${model.revivalGlow > 0.2 ? ' hud-reclaimed-chip--glow' : ''}`}
+            aria-label={`${model.worldName} ${formatPct(model.restored)} reclaimed`}
           >
-            {model.worldName}: {formatPct(model.restored)} Reclaimed
+            <span className="hud-reclaimed-chip__world">{model.worldName}</span>
+            <span className="hud-reclaimed-chip__sep" aria-hidden>·</span>
+            <span className="hud-reclaimed-chip__pct tabular-nums">{formatPct(model.restored)}</span>
+            <span className="hud-reclaimed-chip__label">Reclaimed</span>
           </div>
         </>
       )}
