@@ -1,5 +1,6 @@
 import { useReducer, useRef, useState } from 'react';
 import type { RainGame } from '../game/RainGame';
+import { worldDef } from '../game/balance';
 import {
   BRANCH_COLORS,
   PRIORITY,
@@ -16,6 +17,9 @@ import { TreeNodeCloud } from './TreeNodeCloud';
 const MIN_ZOOM = 0.42;
 const MAX_ZOOM = 1.35;
 const COMFORT_ZOOM = 0.9;
+/** First workshop visit when only Cloud Puff is on the tree. */
+const SOLO_PUFF_ZOOM = 1.28;
+const WORKSHOP_VIEW_KEY = 'mir-workshop-view-v1';
 
 type View = { x: number; y: number; s: number };
 
@@ -32,13 +36,36 @@ type FlyingSeed = {
 
 let seedUid = 0;
 
-let savedWorkshopView: View | null = null;
-let lastWorkshopFocusId: NodeId = 'puff';
-
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
+function readStoredWorkshopView(): View | null {
+  try {
+    const raw = localStorage.getItem(WORKSHOP_VIEW_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as View;
+    if (typeof v.x !== 'number' || typeof v.y !== 'number' || typeof v.s !== 'number') return null;
+    return { x: v.x, y: v.y, s: clamp(v.s, MIN_ZOOM, MAX_ZOOM) };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredWorkshopView(view: View): void {
+  try {
+    localStorage.setItem(WORKSHOP_VIEW_KEY, JSON.stringify(view));
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+let savedWorkshopView: View | null = readStoredWorkshopView();
+let lastWorkshopFocusId: NodeId = 'puff';
+
 function statusBadge(node: TreeNodeView): { kind: string; text: string } {
+  if (node.worldReq != null) {
+    return { kind: 'lock', text: `Locked · ${worldDef(node.worldReq).name}` };
+  }
   if (node.ghost) {
     return {
       kind: 'lock',
@@ -52,14 +79,21 @@ function statusBadge(node: TreeNodeView): { kind: string; text: string } {
   return { kind: 'lock', text: 'Need more dew' };
 }
 
+function costLabel(node: TreeNodeView): string {
+  const parts = [`${formatDew(node.cost)} dew`];
+  if (node.blooms > 0) parts.push(`${node.blooms} blooms`);
+  return parts.join(' + ');
+}
+
 function primaryBuyLabel(node: TreeNodeView): string {
   if (node.maxed) return 'Maxed out';
+  if (node.worldReq != null) return `Reach ${worldDef(node.worldReq).name}`;
   if (node.ghost) return 'Not unlocked yet';
-  if (!node.afford) return 'Need more dew';
-  const cost = formatDew(node.cost);
-  if (node.kind === 'gate') return `Unlock · ${cost} dew`;
-  if (node.level === 0) return `Buy · ${cost} dew`;
-  return `Rank up to ${node.level + 1} · ${cost} dew`;
+  if (!node.afford) return node.blooms > 0 ? 'Need dew + blooms' : 'Need more dew';
+  const cost = costLabel(node);
+  if (node.kind === 'gate') return `Unlock · ${cost}`;
+  if (node.level === 0) return `Buy · ${cost}`;
+  return `Rank ${node.level + 1} · ${cost}`;
 }
 
 function vinePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -112,7 +146,6 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   const tweenRafRef = useRef<number | null>(null);
   const panStart = useRef<{ vx: number; vy: number; cx: number; cy: number } | null>(null);
   const moved = useRef(false);
-  const fitted = useRef(false);
   const entryPulseRef = useRef(false);
   const revealRef = useRef<Set<NodeId>>(new Set());
   const edgeAnimRef = useRef<Set<NodeId>>(new Set());
@@ -134,6 +167,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
 
   const persistView = () => {
     savedWorkshopView = { ...viewRef.current };
+    writeStoredWorkshopView(savedWorkshopView);
   };
 
   const landSeed = (seed: FlyingSeed) => {
@@ -243,29 +277,20 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     }, 1400);
   };
 
-  const scheduleEntryPulse = () => {
+  const scheduleWorkshopEntry = (restoreSavedView: boolean) => {
     if (entryPulseRef.current) return;
     entryPulseRef.current = true;
     window.setTimeout(() => {
-      focusNode(pickFocusId(model.tree), true, savedWorkshopView ? viewRef.current.s : COMFORT_ZOOM);
+      if (restoreSavedView) {
+        triggerAffordPing();
+        return;
+      }
+      const solo = totalRanks === 0;
+      const id = solo ? 'puff' : pickFocusId(model.tree);
+      const zoom = solo ? SOLO_PUFF_ZOOM : COMFORT_ZOOM;
+      focusNode(id, true, zoom);
       window.setTimeout(() => triggerAffordPing(), 520);
     }, 120);
-  };
-
-  const fitView = (el: HTMLDivElement) => {
-    const pad = 12;
-    const side = 268;
-    const w = el.clientWidth - side;
-    const h = el.clientHeight;
-    const s = Math.min(w / TREE_CANVAS.w, h / TREE_CANVAS.h, 0.95) * 0.92;
-    const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, s));
-    viewRef.current = {
-      x: pad + (w - TREE_CANVAS.w * clamped) / 2,
-      y: (h - TREE_CANVAS.h * clamped) / 2,
-      s: clamped,
-    };
-    applyTransform();
-    persistView();
   };
 
   const bindCanvas = (el: HTMLDivElement | null) => {
@@ -275,18 +300,17 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       if (affordTimerRef.current != null) window.clearTimeout(affordTimerRef.current);
       persistView();
       lastWorkshopFocusId = pickedRef.current;
+      entryPulseRef.current = false;
       canvasRef.current = null;
       return;
     }
     canvasRef.current = el;
-    if (savedWorkshopView) {
-      viewRef.current = { ...savedWorkshopView };
+    const restoreSavedView = savedWorkshopView != null;
+    if (restoreSavedView) {
+      viewRef.current = { ...savedWorkshopView! };
       applyTransform();
-    } else if (!fitted.current) {
-      fitted.current = true;
-      requestAnimationFrame(() => fitView(el));
     }
-    scheduleEntryPulse();
+    scheduleWorkshopEntry(restoreSavedView);
   };
 
   const pointerPos = (clientX: number, clientY: number) => {
@@ -374,7 +398,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     setPicked(id);
     buyPopRef.current[id] = (buyPopRef.current[id] ?? 0) + 1;
 
-    const revealed = nodesUnlockedSince(ranksBefore, ranksAfter);
+    const revealed = nodesUnlockedSince(ranksBefore, ranksAfter, game.getUnlocked());
     for (const rid of revealed) launchReveal(rid);
 
     if (revealed.length > 0) {
@@ -405,7 +429,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
           }
         }}
       >
-        <DewWallet amount={model.dew} />
+        <DewWallet amount={model.dew} blooms={model.spendableBlooms} />
         <div className="workshop-legend pixel">
           <span className="workshop-legend__item workshop-legend__item--buy">Can buy</span>
           <span className="workshop-legend__item workshop-legend__item--owned">Owned</span>
@@ -524,7 +548,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
                 >
                   <span className="workshop-jump__label">Recommended</span>
                   <span className="workshop-jump__name">{nextBuy.name}</span>
-                  <span className="workshop-jump__cost">{formatDew(nextBuy.cost)} dew</span>
+                  <span className="workshop-jump__cost">{costLabel(nextBuy)}</span>
                 </button>
               )}
               <div className="workshop-panel__head">
