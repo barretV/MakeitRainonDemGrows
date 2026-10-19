@@ -1,4 +1,5 @@
 import { useReducer, useRef, useState } from 'react';
+import RundotGameAPI from '@series-inc/rundot-game-sdk/api';
 import type { RainGame } from '../game/RainGame';
 import { worldDef } from '../game/balance';
 import {
@@ -39,10 +40,9 @@ let seedUid = 0;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-function readStoredWorkshopView(): View | null {
+function parseWorkshopView(raw: string | null): View | null {
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem(WORKSHOP_VIEW_KEY);
-    if (!raw) return null;
     const v = JSON.parse(raw) as View;
     if (typeof v.x !== 'number' || typeof v.y !== 'number' || typeof v.s !== 'number') return null;
     return { x: v.x, y: v.y, s: clamp(v.s, MIN_ZOOM, MAX_ZOOM) };
@@ -52,14 +52,14 @@ function readStoredWorkshopView(): View | null {
 }
 
 function writeStoredWorkshopView(view: View): void {
-  try {
-    localStorage.setItem(WORKSHOP_VIEW_KEY, JSON.stringify(view));
-  } catch {
-    /* private mode / quota */
-  }
+  void RundotGameAPI.deviceCache.setItem(WORKSHOP_VIEW_KEY, JSON.stringify(view)).catch(() => undefined);
 }
 
-let savedWorkshopView: View | null = readStoredWorkshopView();
+let savedWorkshopView: View | null = null;
+void RundotGameAPI.deviceCache.getItem(WORKSHOP_VIEW_KEY).then((raw) => {
+  const stored = parseWorkshopView(raw);
+  if (stored && !savedWorkshopView) savedWorkshopView = stored;
+}).catch(() => undefined);
 let lastWorkshopFocusId: NodeId = 'puff';
 
 function statusBadge(node: TreeNodeView): { kind: string; text: string } {

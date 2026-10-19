@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { GLOBE_WORLD, TILE, gridOf, worldDef } from './balance';
+import { GLOBE_WORLD, TILE, gridOf, worldDef, type Decor } from './balance';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
 import { ABILITIES, type AbilityId } from './abilities';
@@ -132,12 +132,47 @@ interface TileView {
   anim: number;
   growT: number;
   growStart: number;
+  /** Last prop ladder step (0 dead litter, 1 sprout, 2 grown) for pop-ins. */
+  stage: number;
+  /** Prop (after billboard displacement) hangs off the island edge. */
+  offIsland: boolean;
+  /** Pond water sprite that scales up as the basin fills. */
+  pondWater: THREE.Mesh | null;
+  pondLily: THREE.Mesh[];
+  pondFrog: THREE.Mesh | null;
+  pondFill: number;
+  pondStage: number;
   x: number;
   y: number;
   z: number;
   nx: number;
   ny: number;
   nz: number;
+}
+
+interface AmbMote {
+  mesh: THREE.Mesh;
+  vx: number;
+  vy: number;
+  vz: number;
+  phase: number;
+  spin: number;
+}
+
+interface WindTrail {
+  mesh: THREE.Mesh;
+  phase: number;
+  speed: number;
+  y: number;
+  dir: number;
+}
+
+interface SoftCloud {
+  mesh: THREE.Mesh;
+  phase: number;
+  depth: number;
+  speed: number;
+  lift: number;
 }
 
 interface Floater {
@@ -253,6 +288,8 @@ export class RainGame {
   /** Full orbit around the island. 0 puts the camera on +Z (screen-up is −Z). */
   private camYaw = 0;
   private skyDome: THREE.Mesh;
+  private skyMat!: THREE.ShaderMaterial;
+  private skyMotes!: THREE.Points;
   private sunDisc: THREE.Mesh;
   /** Smoothed follow distance multiplier as Cloud Puff grows (1 = day-one size). */
   private camGrowPull = 1;
@@ -280,11 +317,21 @@ export class RainGame {
   private curtain: THREE.Mesh;
   private puddle: THREE.Mesh;
   private mountain: THREE.Mesh;
+  private spaceDome!: THREE.Mesh;
+  private atmo!: THREE.Mesh;
   private peaks: THREE.Mesh[] = [];
   private hillsBackdrop: THREE.Mesh;
+  private hillsFar: THREE.Mesh;
+  private sunHalo: THREE.Mesh;
   private shafts: THREE.Mesh[] = [];
   private puffs: THREE.Mesh[] = [];
   private puffDrift: number[] = [];
+  private softClouds: SoftCloud[] = [];
+  private winds: WindTrail[] = [];
+  private ambient: AmbMote[] = [];
+  private rainbow: THREE.Mesh;
+  private mist: THREE.Mesh;
+  private rainMix = 0;
   private birds: SkyBird[] = [];
   private farTrees: THREE.Mesh[] = [];
   private parallaxIslands: ParallaxIsland[] = [];
@@ -339,11 +386,24 @@ export class RainGame {
     puff.height = 64;
     const puffCtx = puff.getContext('2d');
     if (puffCtx) {
-      puffCtx.fillStyle = 'rgba(255,255,255,0.92)';
+      const softEdge = puffCtx.createRadialGradient(64, 38, 6, 64, 38, 58);
+      softEdge.addColorStop(0, 'rgba(255,255,255,0.24)');
+      softEdge.addColorStop(1, 'rgba(255,255,255,0)');
+      puffCtx.fillStyle = softEdge;
+      puffCtx.beginPath();
+      puffCtx.ellipse(64, 38, 62, 26, 0, 0, Math.PI * 2);
+      puffCtx.fill();
+      const body = puffCtx.createLinearGradient(0, 10, 0, 56);
+      body.addColorStop(0, 'rgba(255,255,255,0.98)');
+      body.addColorStop(0.55, 'rgba(255,252,255,0.95)');
+      body.addColorStop(1, 'rgba(243,230,248,0.82)');
+      puffCtx.fillStyle = body;
       puffCtx.beginPath();
       puffCtx.ellipse(64, 36, 48, 18, 0, 0, Math.PI * 2);
       puffCtx.ellipse(40, 40, 28, 16, 0, 0, Math.PI * 2);
       puffCtx.ellipse(92, 38, 26, 14, 0, 0, Math.PI * 2);
+      puffCtx.ellipse(52, 26, 18, 12, 0, 0, Math.PI * 2);
+      puffCtx.ellipse(80, 27, 16, 11, 0, 0, Math.PI * 2);
       puffCtx.fill();
     }
     const puffTex = new THREE.CanvasTexture(puff);
@@ -363,14 +423,14 @@ export class RainGame {
     }
 
     const shaftTex = this.glowTexture('shaft');
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       const shaft = new THREE.Mesh(
-        new THREE.PlaneGeometry(2.2 + i * 0.5, 16),
+        new THREE.PlaneGeometry(1.6 + (i % 3) * 0.7, 16),
         new THREE.MeshBasicMaterial({
           map: shaftTex,
           color: 0xfff0c8,
           transparent: true,
-          opacity: 0.1,
+          opacity: 0,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
           fog: false,
@@ -380,37 +440,320 @@ export class RainGame {
       );
       shaft.renderOrder = 2;
       shaft.userData['bb'] = 1;
-      shaft.userData['shaftBase'] = 0.14;
-      shaft.userData['shaftAmp'] = 0.09;
-      shaft.userData['sky'] = 1;
+      shaft.userData['shaftPhase'] = i * 1.9;
       this.shafts.push(shaft);
       this.scene.add(shaft);
     }
 
-    this.skyDome = new THREE.Mesh(
-      new THREE.SphereGeometry(160, 40, 24),
+    this.sunHalo = this.billboard(this.art.sunGlow, 1, 1, 0.02);
+    {
+      const haloMat = this.sunHalo.material as THREE.MeshBasicMaterial;
+      haloMat.fog = false;
+      haloMat.depthWrite = false;
+      haloMat.toneMapped = false;
+      haloMat.blending = THREE.AdditiveBlending;
+      this.sunHalo.renderOrder = -9;
+      this.scene.add(this.sunHalo);
+    }
+
+    this.hillsFar = this.billboard(this.art.hills[0]!, 44, 3.3, 0.06);
+    {
+      const farMat = this.hillsFar.material as THREE.MeshBasicMaterial;
+      farMat.fog = false;
+      farMat.transparent = true;
+      farMat.opacity = 0.6;
+      farMat.toneMapped = false;
+      this.hillsFar.userData['bb'] = 1;
+      this.scene.add(this.hillsFar);
+    }
+
+    this.rainbow = this.billboard(this.art.rainbow, 30, 15, 0.02);
+    {
+      const bowMat = this.rainbow.material as THREE.MeshBasicMaterial;
+      bowMat.fog = false;
+      bowMat.transparent = true;
+      bowMat.opacity = 0;
+      bowMat.depthWrite = false;
+      bowMat.toneMapped = false;
+      this.rainbow.renderOrder = -7;
+      this.scene.add(this.rainbow);
+    }
+
+    this.mist = this.billboard(this.glowTexture('mist'), 30, 4, 0.02);
+    {
+      const mistMat = this.mist.material as THREE.MeshBasicMaterial;
+      mistMat.fog = false;
+      mistMat.transparent = true;
+      mistMat.opacity = 0;
+      mistMat.depthWrite = false;
+      mistMat.toneMapped = false;
+      this.mist.renderOrder = 4;
+      this.scene.add(this.mist);
+    }
+
+    for (let i = 0; i < 5; i += 1) {
+      const mesh = this.billboard(this.art.softCloud, 3, 1.4, 0.02);
+      const cloudMat = mesh.material as THREE.MeshBasicMaterial;
+      cloudMat.fog = false;
+      cloudMat.transparent = true;
+      cloudMat.depthWrite = false;
+      cloudMat.toneMapped = false;
+      cloudMat.opacity = 0.68 - (i % 3) * 0.08;
+      mesh.renderOrder = -4;
+      this.scene.add(mesh);
+      this.softClouds.push({
+        mesh,
+        phase: i * 1.7,
+        depth: 1 + (i % 3) * 0.24,
+        speed: 0.5 + (i % 3) * 0.28,
+        lift: 0.1 + (i % 4) * 0.05,
+      });
+    }
+
+    for (let i = 0; i < 7; i += 1) {
+      const mesh = this.billboard(this.art.windStreak, 2.6, 0.5, 0.02);
+      const windMat = mesh.material as THREE.MeshBasicMaterial;
+      windMat.fog = false;
+      windMat.transparent = true;
+      windMat.depthWrite = false;
+      windMat.toneMapped = false;
+      windMat.opacity = 0;
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.winds.push({ mesh, phase: i * 0.9, speed: 3.4 + (i % 3) * 1.6, y: 0.9 + (i % 4) * 0.42, dir: i % 2 === 0 ? 1 : -1 });
+    }
+
+    const ambientMaps = [this.art.petal, this.art.pollen, this.art.leaf, this.art.petal, this.art.pollen];
+    for (let i = 0; i < 26; i += 1) {
+      const map = ambientMaps[i % ambientMaps.length]!;
+      const mesh = this.billboard(map, 0.16, 0.16, 0.02);
+      const ambMat = mesh.material as THREE.MeshBasicMaterial;
+      ambMat.fog = false;
+      ambMat.transparent = true;
+      ambMat.depthWrite = false;
+      ambMat.opacity = 0.55 + (i % 3) * 0.15;
+      mesh.visible = false;
+      mesh.renderOrder = 6;
+      this.scene.add(mesh);
+      const kind = i % ambientMaps.length;
+      this.ambient.push({
+        mesh,
+        vx: 0.5 + (i % 4) * 0.25,
+        vy: kind === 1 ? 0.16 + (i % 3) * 0.05 : -0.32 - (i % 3) * 0.12,
+        vz: ((i % 5) - 2) * 0.14,
+        phase: i * 1.07,
+        spin: kind === 2 ? 2.4 : 1.1,
+      });
+    }
+
+    this.skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false,
+      uniforms: {
+        uTime: { value: 0 },
+        uRain: { value: 0 },
+        uLife: { value: 0 },
+        uTop: { value: new THREE.Color('#6a3d78') },
+        uMid: { value: new THREE.Color('#c46a8a') },
+        uBot: { value: new THREE.Color('#f0a0c4') },
+        uSunDir: { value: new THREE.Vector3(0.28, 0.86, -0.42).normalize() },
+        uCamUp: { value: new THREE.Vector3(0, 1, 0) },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorld;
+        void main() {
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vWorld = world.xyz;
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform float uRain;
+        uniform float uLife;
+        uniform vec3 uTop;
+        uniform vec3 uMid;
+        uniform vec3 uBot;
+        uniform vec3 uSunDir;
+        uniform vec3 uCamUp;
+        varying vec3 vWorld;
+
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash(i);
+          float b = hash(i + vec2(1.0, 0.0));
+          float c = hash(i + vec2(0.0, 1.0));
+          float d = hash(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+        float fbm(vec2 p) {
+          float v = 0.0;
+          float a = 0.5;
+          for (int i = 0; i < 4; i++) {
+            v += a * noise(p);
+            p = p * 2.07 + vec2(1.7, 9.2);
+            a *= 0.5;
+          }
+          return v;
+        }
+
+        void main() {
+          vec3 dir = normalize(vWorld - cameraPosition);
+          float elev = dot(dir, normalize(uCamUp));
+          vec3 sky = mix(uBot, uMid, smoothstep(-0.55, 0.0, elev));
+          sky = mix(sky, uTop, smoothstep(-0.08, 0.42, elev));
+          sky = mix(sky, uTop * vec3(0.55, 0.45, 0.75), smoothstep(0.22, 0.7, elev));
+          vec3 warm = mix(uBot, vec3(1.0, 0.78, 0.55), 0.65);
+          sky = mix(sky, warm, smoothstep(0.08, -0.25, elev) * 0.55);
+
+          vec3 sunDir = normalize(uSunDir);
+          float d = max(dot(dir, sunDir), 0.0);
+          float glow = pow(d, 2.4);
+          float core = pow(d, 18.0);
+          float disc = smoothstep(0.985, 0.996, d);
+          vec3 axis = abs(sunDir.y) > 0.92 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+          vec3 side = normalize(cross(sunDir, axis));
+          float fan = abs(dot(dir, side));
+          float rays = pow(abs(sin(fan * 22.0 + uTime * 0.28)), 10.0) * pow(d, 3.2);
+          float clear = 1.0 - uRain * 0.85;
+          sky += vec3(1.0, 0.72, 0.42) * glow * 0.85 * clear;
+          sky += vec3(1.0, 0.9, 0.62) * core * 1.1 * clear;
+          sky += vec3(1.0, 0.98, 0.9) * disc * 1.4;
+          sky += vec3(1.0, 0.84, 0.55) * rays * 0.65 * clear;
+
+          vec2 cuv = vec2(atan(dir.z, dir.x) * 1.4, elev * 2.2) + vec2(uTime * 0.03, uTime * 0.01);
+          float cl = fbm(cuv);
+          float high = smoothstep(0.12, 0.34, elev) * smoothstep(0.98, 0.42, elev);
+          vec3 cloudCol = mix(uMid, vec3(1.0, 0.97, 0.99), 0.88);
+          sky = mix(sky, cloudCol, smoothstep(0.4, 0.68, cl) * high * (0.92 - uRain * 0.25));
+          float puff = fbm(cuv * 1.6 + vec2(4.0, uTime * 0.02));
+          sky = mix(sky, vec3(1.0, 0.99, 1.0), smoothstep(0.55, 0.78, puff) * high * 0.7);
+
+          float ang = atan(dir.z, dir.x);
+          float ridge = -0.02 + 0.055 * fbm(vec2(ang * 1.6, 2.2));
+          float hill = smoothstep(ridge + 0.03, ridge - 0.012, elev) * smoothstep(-0.18, 0.04, elev);
+          vec3 hillCol = mix(uTop, vec3(0.22, 0.1, 0.18), 0.72);
+          sky = mix(sky, hillCol, hill * 0.8);
+
+          float night = smoothstep(0.42, 0.14, dot(uTop, vec3(0.25, 0.5, 0.25)));
+          vec2 cell = floor(dir.xy * 70.0 + dir.z * 40.0);
+          float hsh = hash(cell);
+          float star = step(0.986, hsh);
+          float tw = 0.55 + 0.45 * sin(uTime * 1.6 + hsh * 30.0);
+          sky += vec3(1.0, 0.96, 0.9) * star * tw * night * smoothstep(0.05, 0.4, elev) * 0.85;
+
+          float motes = fbm(dir.xy * 6.0 + vec2(uTime * 0.04, 0.0));
+          sky += vec3(0.55, 0.95, 0.62) * motes * uLife * 0.07 * smoothstep(-0.05, 0.35, elev);
+
+          sky = mix(sky, sky * vec3(0.62, 0.68, 0.78) + vec3(0.02, 0.03, 0.05), uRain * 0.55);
+          gl_FragColor = vec4(sky, 1.0);
+        }
+      `,
+    });
+    this.skyDome = new THREE.Mesh(new THREE.SphereGeometry(160, 48, 32), this.skyMat);
+
+    const moteCount = 180;
+    const motePos = new Float32Array(moteCount * 3);
+    const motePhase = new Float32Array(moteCount);
+    for (let i = 0; i < moteCount; i += 1) {
+      const ang = (i / moteCount) * Math.PI * 2 + (i % 5) * 0.31;
+      const radius = 28 + (i % 8) * 4.2;
+      motePos[i * 3] = Math.cos(ang) * radius;
+      motePos[i * 3 + 1] = 14 + (i % 12) * 1.5;
+      motePos[i * 3 + 2] = Math.sin(ang) * radius;
+      motePhase[i] = i * 0.41;
+    }
+    const moteGeo = new THREE.BufferGeometry();
+    moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos, 3));
+    moteGeo.setAttribute('aPhase', new THREE.BufferAttribute(motePhase, 1));
+    this.skyMotes = new THREE.Points(
+      moteGeo,
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false,
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: /* glsl */ `
+          attribute float aPhase;
+          uniform float uTime;
+          varying float vTw;
+          void main() {
+            vec3 p = position;
+            p.y += sin(uTime * 0.45 + aPhase) * 0.8;
+            p.x += cos(uTime * 0.18 + aPhase) * 0.6;
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            gl_PointSize = (2.4 + sin(aPhase) * 1.1) * (70.0 / max(18.0, -mv.z));
+            gl_Position = projectionMatrix * mv;
+            vTw = 0.45 + 0.55 * sin(uTime * 1.7 + aPhase * 2.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying float vTw;
+          void main() {
+            vec2 uv = gl_PointCoord - 0.5;
+            float d = length(uv);
+            float a = smoothstep(0.5, 0.08, d) * vTw;
+            if (a < 0.05) discard;
+            vec3 col = mix(vec3(1.0, 0.82, 0.45), vec3(0.75, 1.0, 0.9), step(0.0, uv.y));
+            gl_FragColor = vec4(col, a);
+          }
+        `,
+      }),
+    );
+    this.skyMotes.frustumCulled = false;
+    this.skyMotes.renderOrder = -4;
+    this.scene.add(this.skyMotes);
+    this.skyDome.renderOrder = -20;
+    this.skyDome.frustumCulled = false;
+    this.scene.add(this.skyDome);
+
+    this.spaceDome = new THREE.Mesh(
+      new THREE.SphereGeometry(150, 40, 24),
       new THREE.MeshBasicMaterial({
-        map: this.art.skies[0]!,
+        map: this.art.space,
         side: THREE.BackSide,
         fog: false,
         depthWrite: false,
         toneMapped: false,
       }),
     );
-    this.skyDome.renderOrder = -20;
-    this.skyDome.frustumCulled = false;
-    this.scene.add(this.skyDome);
+    this.spaceDome.renderOrder = -21;
+    this.spaceDome.frustumCulled = false;
+    this.spaceDome.visible = false;
+    this.scene.add(this.spaceDome);
+
+    // atmosphere halo behind the restored-world planet
+    this.atmo = this.billboard(this.glowTexture('halo'), 20, 20, 0.01);
+    {
+      const atmoMat = this.atmo.material as THREE.MeshBasicMaterial;
+      atmoMat.fog = false;
+      atmoMat.transparent = true;
+      atmoMat.depthWrite = false;
+      atmoMat.blending = THREE.AdditiveBlending;
+      atmoMat.color.set('#79d6ff');
+      atmoMat.opacity = 0.5;
+      this.atmo.renderOrder = -6;
+      this.atmo.visible = false;
+      this.scene.add(this.atmo);
+    }
 
     this.sunDisc = this.billboard(this.art.sun, 1, 1, 0.02);
     const sunMat = this.sunDisc.material as THREE.MeshBasicMaterial;
     sunMat.fog = false;
     sunMat.depthWrite = false;
     sunMat.toneMapped = false;
-    sunMat.blending = THREE.AdditiveBlending;
     this.sunDisc.renderOrder = -8;
     this.scene.add(this.sunDisc);
 
-    this.hillsBackdrop = this.billboard(this.art.hills[0]!, 44, 12, 0.06);
+    this.hillsBackdrop = this.billboard(this.art.hills[0]!, 44, 3.3, 0.06);
     const hillMat = this.hillsBackdrop.material as THREE.MeshBasicMaterial;
     hillMat.fog = true;
     hillMat.transparent = true;
@@ -507,11 +850,11 @@ export class RainGame {
             vec2 cell = floor(vec2((x * 0.5 + 0.5) * 22.0, vUv.y * 48.0 + uTime * 8.0));
             float spark = step(0.9, h(cell));
             float fade = smoothstep(0.0, 0.08, vUv.y) * smoothstep(1.0, 0.78, vUv.y);
-            vec3 cool = mix(vec3(0.35, 0.82, 1.0), vec3(0.82, 0.98, 1.0), body);
+            vec3 cool = mix(vec3(0.28, 0.72, 1.0), vec3(0.85, 0.98, 1.0), body);
             vec3 silver = mix(vec3(0.72, 0.88, 1.0), vec3(0.95, 0.98, 1.0), body);
             vec3 col = mix(cool, silver, uSilver);
             col = mix(col, vec3(1.0), spark);
-            float alpha = (0.42 * body + streak * 0.55 + spark * 0.85) * fade;
+            float alpha = (0.5 * body + streak * 0.6 + spark * 0.85) * fade;
             gl_FragColor = vec4(col, alpha);
           }
         `,
@@ -578,6 +921,9 @@ export class RainGame {
     bridge.onPause = this.saveBridge;
     bridge.onQuit = this.saveBridge;
     this.placeCamera(0);
+    if (import.meta.env.DEV) {
+      (window as unknown as { __rain?: RainGame }).__rain = this;
+    }
     void this.boot();
   }
 
@@ -808,6 +1154,24 @@ export class RainGame {
     this.pushHud(true);
   }
 
+  /** Dev-only visual QA hooks (scripts/shot.mjs); no-ops in production builds. */
+  devJump(world: number, soak: number): void {
+    if (!import.meta.env.DEV || !this.state) return;
+    this.skipSave = true;
+    this.state.unlocked = Math.max(this.state.unlocked, world);
+    if (world !== this.state.world) this.goto(world);
+    this.devSoak(soak);
+  }
+
+  devSoak(pct: number): void {
+    const state = this.state;
+    if (!import.meta.env.DEV || !state) return;
+    state.devSoak(pct);
+    this.rebuild();
+    this.dropCloud(this.spawnAt());
+    this.pushHud(true);
+  }
+
   private saveBridge = (): void => {
     void this.saveNow();
   };
@@ -1016,6 +1380,7 @@ export class RainGame {
     const inFinale = state.phase === 'finale';
     const sleepy = state.tank <= 0.01 && !inFinale;
     const raining = this.wantsRain() && !sleepy && !this.introActive && !inFinale;
+    this.rainMix += ((raining ? 1 : 0) - this.rainMix) * Math.min(1, dt * 2.2);
     const blink = Math.sin(t * 0.65) > 0.965;
     const mood: CloudMood = inFinale
       ? 'grin'
@@ -1092,16 +1457,17 @@ export class RainGame {
     this.puddle.visible = raining;
     if (raining) {
       const reach = state.reach();
-      const ground = this.globe ? this.cloud.position.y - 1.2 * grown - 0.4 : this.hoverY - 1.35 - 0.55 * grown;
-      const cloudBase = this.cloud.position.y - 0.45 * grown;
-      const tall = Math.max(0.4, cloudBase - ground);
-      const wide = Math.max(reach * 2.8, 3.4 * grown);
+      const gy = this.globe ? this.cloud.position.y - 1.6 : this.groundY(this.cloudX, this.cloudZ);
+      const ground = gy - 0.18;
+      const cloudBase = this.cloud.position.y - 0.35 * grown;
+      const tall = Math.max(0.9, cloudBase - ground);
+      const wide = Math.max(reach * 3.6, 4.4 * grown);
       const mat = this.curtain.material as THREE.ShaderMaterial;
       mat.uniforms['uTop']!.value = Math.min(1, (2.0 * grown) / wide);
       mat.uniforms['uDensity']!.value = Math.min(0.75, state.patch() + 0.15);
       this.curtain.scale.set(wide, tall, 1);
       this.curtain.position.set(this.cloud.position.x, ground + tall / 2, this.cloud.position.z);
-      this.puddle.position.set(this.cloud.position.x, ground + 0.04, this.cloud.position.z);
+      this.puddle.position.set(this.cloud.position.x, gy + 0.06, this.cloud.position.z);
       this.puddle.scale.setScalar(reach * (1 + Math.sin(t * 8) * 0.03));
     }
 
@@ -1157,6 +1523,7 @@ export class RainGame {
     this.faceAll();
     this.syncProps(t);
     this.syncCritters(dt, t);
+    this.stepAmbient(dt, t);
     this.stepFx(dt);
   }
 
@@ -1254,18 +1621,21 @@ export class RainGame {
   }
 
   private applySkyLift(dt: number): void {
-    if (this.skyLift <= 0 || this.globe) return;
-    this.skyLift = Math.max(0, this.skyLift - dt);
-    const peak = 5.2;
-    const lift = (this.skyLift / peak) * 0.3;
+    if (this.skyLift > 0) this.skyLift = Math.max(0, this.skyLift - dt);
+    if (this.globe) return;
+    const lift = this.skyLift > 0 ? (this.skyLift / 5.2) * 0.3 : 0;
     const fog = this.scene.fog as THREE.Fog | null;
     if (fog) {
       const c = this.skyBase.clone();
       c.r = clamp(c.r + lift, 0, 1);
       c.g = clamp(c.g + lift * 0.9, 0, 1);
       c.b = clamp(c.b + lift * 0.55, 0, 1);
+      c.r *= 1 - this.rainMix * 0.16;
+      c.g *= 1 - this.rainMix * 0.09;
+      c.b = c.b * (1 - this.rainMix * 0.02) + this.rainMix * 0.03;
       fog.color.copy(c);
     }
+    this.skyMat.uniforms['uRain']!.value = this.rainMix;
   }
 
   private rebuild(): void {
@@ -1285,22 +1655,35 @@ export class RainGame {
     this.camZoom = 1;
     this.camYaw = 0;
     const skyMid = worldDef(world).skyMid;
-    const skyTex = art.skies[world] ?? art.skies[0]!;
+    const sky = worldDef(world);
     if (this.globe) {
       this.scene.background = new THREE.Color('#24356e');
     } else {
-      this.scene.background = skyTex;
+      this.scene.background = new THREE.Color(sky.skyMid);
     }
     this.skyBase.set(skyMid);
     const dist = this.frameDist(0);
     this.scene.fog = this.globe ? new THREE.Fog('#24356e', 18, 48) : new THREE.Fog(skyMid, dist * 2.2, dist * 8);
-    (this.skyDome.material as THREE.MeshBasicMaterial).map = skyTex;
+    (this.skyMat.uniforms['uTop']!.value as THREE.Color).set(sky.skyTop);
+    (this.skyMat.uniforms['uMid']!.value as THREE.Color).set(sky.skyMid);
+    (this.skyMat.uniforms['uBot']!.value as THREE.Color).set(sky.skyBot);
     this.skyDome.visible = !this.globe;
+    this.spaceDome.visible = this.globe;
+    this.atmo.visible = this.globe;
+    if (this.globe) {
+      this.spaceDome.position.set(0, 0, 0);
+      this.atmo.position.set(0, 0, 0);
+      this.atmo.renderOrder = -6;
+    }
     this.sunDisc.visible = false;
+    this.sunHalo.visible = false;
+    this.rainbow.visible = false;
+    this.mist.visible = false;
     this.mountain.visible = false;
     for (const peak of this.peaks) peak.visible = false;
-    this.hillsBackdrop.visible = !this.globe;
-    for (const tree of this.farTrees) tree.visible = !this.globe;
+    this.hillsBackdrop.visible = false;
+    this.hillsFar.visible = false;
+    for (const tree of this.farTrees) tree.visible = false;
     for (let i = 0; i < this.parallaxIslands.length; i += 1) {
       const isl = this.parallaxIslands[i]!;
       isl.mesh.visible = !this.globe;
@@ -1308,9 +1691,24 @@ export class RainGame {
       (isl.mesh.material as THREE.MeshBasicMaterial).map = map;
     }
     const hillTex = this.art.hills[world] ?? this.art.hills[0]!;
-    (this.hillsBackdrop.material as THREE.MeshBasicMaterial).map = hillTex;
-    const tint = ['#f0d0e0', '#d8ecff', '#f5e6c8', '#e0d4f0'][world] ?? '#e8dce8';
-    (this.hillsBackdrop.material as THREE.MeshBasicMaterial).color.set(tint);
+    const nearMat = this.hillsBackdrop.material as THREE.MeshBasicMaterial;
+    nearMat.map = hillTex;
+    nearMat.color.setRGB(0.86, 0.78, 0.84);
+    nearMat.fog = false;
+    nearMat.opacity = 1;
+    const farMat = this.hillsFar.material as THREE.MeshBasicMaterial;
+    farMat.map = hillTex;
+    farMat.color.setRGB(0.97, 0.94, 0.97);
+    farMat.fog = false;
+    farMat.opacity = 0.62;
+    for (const m of this.ambient) {
+      m.mesh.position.set(
+        (this.terrain?.originX ?? -13) + Math.random() * (this.terrain?.width ?? 26),
+        1 + Math.random() * 4,
+        (this.terrain?.originZ ?? -10) + Math.random() * (this.terrain?.depth ?? 20),
+      );
+      m.mesh.visible = false;
+    }
 
     const { cols, rows } = gridOf(world);
     const spanX = (cols - 1) * TILE;
@@ -1362,6 +1760,13 @@ export class RainGame {
           anim: 0,
           growT: restored ? 1 : 0,
           growStart: 0,
+          stage: -1,
+          offIsland: false,
+          pondWater: null,
+          pondLily: [],
+          pondFrog: null,
+          pondFill: restored ? 1 : 0,
+          pondStage: restored ? 2 : 0,
           x: at.x,
           y: at.y,
           z: at.z,
@@ -1413,6 +1818,13 @@ export class RainGame {
         anim: 0,
         growT: restored ? 1 : 0,
         growStart: 0,
+        stage: -1,
+        offIsland: false,
+        pondWater: null,
+        pondLily: [],
+        pondFrog: null,
+        pondFill: restored ? 1 : 0,
+        pondStage: restored ? 2 : 0,
         x: at.x,
         y: this.globe ? at.y : column,
         z: at.z,
@@ -1422,18 +1834,14 @@ export class RainGame {
       };
       this.dressView(view, i, restored, world);
     }
-    const { backX, backZ, rightX, rightZ } = this.skyAxes();
+    const { backX, backZ } = this.skyAxes();
     const boardX = spanX / 2;
     const boardZ = spanZ / 2;
     const span = Math.max(spanX, spanZ);
     this.hillsBackdrop.position.set(boardX + backX * span * 0.62, 0.35, boardZ + backZ * span * 0.62);
     this.hillsBackdrop.scale.set(span * 1.05, span * 0.32, 1);
-    this.farTrees.forEach((tree, i) => {
-      const along = (i - 3.5) * 2.8;
-      const liveTree = state.ratio() > 0.12 && i % 2 === 0;
-      const map = liveTree ? (art.liveTree[world] ?? art.liveTree[0]) : (art.deadTree[world] ?? art.deadTree[0]);
-      (tree.material as THREE.MeshBasicMaterial).map = map ?? null;
-      tree.position.set(boardX + backX * span * 0.58 + rightX * along, 0.55, boardZ + backZ * span * 0.58 + rightZ * along);
+    this.farTrees.forEach((tree) => {
+      tree.visible = false;
     });
 
     this.syncBoxes(true);
@@ -1446,39 +1854,86 @@ export class RainGame {
     const art = this.art;
     const spec = state.spec(index);
     if (spec.kind === 'pond') {
-      view.pond = this.billboard(restored ? art.pondFull : art.pondEmpty, 1.15, 0.62, 0.25);
-      view.pond.position.set(view.x + view.nx * 0.35, view.y + view.ny * 0.35, view.z + view.nz * 0.35);
-      this.track.add(view.pond);
-      view.bar = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.07), new THREE.MeshBasicMaterial({ color: '#7ec8f0' }));
-      view.bar.position.set(view.x + view.nx * 0.9, view.y + view.ny * 0.9, view.z + view.nz * 0.9);
-      view.bar.userData['bb'] = 1;
-      this.track.add(view.bar);
+      const group = new THREE.Group();
+      group.userData['bb'] = 1;
+      group.visible = !this.globe;
+      group.position.set(view.x + view.nx * 0.3, view.y + view.ny * 0.3, view.z + view.nz * 0.3);
+      const basin = this.sprite(restored ? art.pondFull : art.pondEmpty, 2.4, 1.3, 0.25, 0);
+      group.add(basin);
+      // billboards are flipped by faceAll, so layers stack toward -Z
+      const water = this.sprite(art.pondWaterA, 2.0, 1.04, 0.04, -0.02);
+      water.visible = false;
+      group.add(water);
+      const lily0 = this.sprite(art.lilyPad, 0.76, 0.57, 0.06, -0.05);
+      lily0.position.set(-0.58, -0.08, -0.05);
+      lily0.visible = false;
+      group.add(lily0);
+      const lily1 = this.sprite(art.lilyPadFlower, 0.6, 0.45, 0.06, -0.05);
+      lily1.position.set(0.58, 0.1, -0.05);
+      lily1.visible = false;
+      group.add(lily1);
+      const frog = this.sprite(art.frog, 0.52, 0.45, 0.08, -0.08);
+      frog.visible = false;
+      group.add(frog);
+      const koi = this.sprite(art.koi, 0.62, 0.36, 0.08, -0.035);
+      koi.visible = false;
+      group.add(koi);
+      this.track.add(group);
+      view.pond = basin;
+      view.pondWater = water;
+      view.pondLily = [lily0, lily1];
+      view.pondFrog = frog;
+      view.koi = koi;
+      view.pondFill = restored ? 1 : 0;
+      view.pondStage = restored ? 2 : 0;
+      if (restored) {
+        water.visible = true;
+        water.scale.setScalar(1);
+        lily0.visible = true;
+        lily1.visible = true;
+        frog.visible = true;
+        koi.visible = true;
+      }
     }
     const flat = !this.globe;
     const wet = state.hillWet(index);
+    const step = spec.kind === 'seed' ? (restored ? 2 : 0) : restored ? 2 : this.propStep(spec.decor, wet);
+    view.stage = step;
     view.prop =
-      spec.kind === 'seed'
-        ? this.billboard(restored ? art.money : art.seed, 1.15, 1.7, 0.2)
-        : flat && spec.decor === 'twig'
-          ? null
-          : this.propMesh(spec.decor, restored, world, index);
+      flat && spec.decor === 'twig' && spec.kind !== 'seed'
+        ? null
+        : spec.kind === 'seed'
+          ? this.billboard(restored ? art.money : art.seed, 1.15, 1.7, 0.2)
+          : this.propMesh(spec.decor, world, index);
     if (view.prop) {
-      const shore = flat && this.terrain ? this.terrain.shoreAt(view.x, view.z) : 0;
-      const offIsland = shore > (spec.decor === 'tree' ? 0.035 : 0.06);
-      view.prop.visible = !offIsland && (restored || wet > 0.14 || spec.kind === 'seed');
+      const map =
+        spec.kind === 'seed'
+          ? restored
+            ? art.money
+            : art.seed
+          : this.propTexture(spec.decor, step, world, index);
+      (view.prop.material as THREE.MeshBasicMaterial).map = map;
+      (view.prop.material as THREE.MeshBasicMaterial).color.set(this.propTint());
       if (flat) {
         const jx = (((index * 37) % 11) / 11 - 0.5) * TILE * 0.5;
         const jz = (((index * 53) % 13) / 13 - 0.5) * TILE * 0.5;
         view.x += jx;
         view.z += jz;
         view.y = this.groundY(view.x, view.z);
-        if (spec.decor === 'tree') {
-          view.prop.userData['s'] = 1.25 + ((index * 7) % 5) * 0.08;
-          view.prop.scale.setScalar(view.prop.userData['s'] as number);
-        }
       }
+      const base = this.propBase(spec.decor, step, index);
+      view.prop.userData['s'] = base;
+      view.prop.scale.setScalar(base);
       const ph = (Number(view.prop.userData['ph']) || 1) * view.prop.scale.y;
       view.prop.position.set(view.x + view.nx * (ph / 2), view.y + view.ny * (ph / 2), view.z + view.nz * (ph / 2));
+      // Tall billboards are pushed out along the surface normal, so an edge tile
+      // can hang the sprite over the void: test the displaced spot, not the tile.
+      if (flat && this.terrain && spec.kind !== 'seed') {
+        const foot = this.terrain.shoreAt(view.x, view.z);
+        const crown = this.terrain.shoreAt(view.x + view.nx * ph * 0.35, view.z + view.nz * ph * 0.35);
+        view.offIsland = foot > 0.012 || crown > 0.02;
+      }
+      view.prop.visible = !this.globe && !view.offIsland && (restored || wet > 0.14 || spec.kind === 'seed');
       this.track.add(view.prop);
     }
     if (restored && spec.kind === 'seed' && view.prop) view.prop.userData['s'] = 1.25;
@@ -1499,14 +1954,22 @@ export class RainGame {
     if (view.pond) (view.pond.material as THREE.MeshBasicMaterial).map = art.pondFull;
     if (view.bar) view.bar.visible = false;
     if (view.prop) {
-      const map = spec.kind === 'seed' ? art.money : this.propTexture(spec.decor, true, world, false, index);
+      const map = spec.kind === 'seed' ? art.money : this.propTexture(spec.decor, 2, world, index);
       (view.prop.material as THREE.MeshBasicMaterial).map = map;
+      (view.prop.material as THREE.MeshBasicMaterial).color.set(this.propTint());
       if (spec.kind === 'seed') view.prop.userData['s'] = 1.25;
+      view.stage = 2;
     }
-    if (spec.kind === 'pond' && !view.koi) {
-      view.koi = this.billboard(art.koi, 0.62, 0.38, 0.2);
-      view.koi.position.set(view.x + 0.12, 0.55, view.z);
-      this.track.add(view.koi);
+    if (spec.kind === 'pond') {
+      if (view.pondWater) {
+        view.pondWater.visible = true;
+        view.pondWater.scale.setScalar(1);
+      }
+      for (const lily of view.pondLily) lily.visible = true;
+      if (view.pondFrog) view.pondFrog.visible = true;
+      if (view.koi) view.koi.visible = true;
+      view.pondFill = 1;
+      view.pondStage = 2;
     }
     if (view.koi) view.koi.visible = spec.kind === 'pond';
   }
@@ -1541,12 +2004,74 @@ export class RainGame {
       const tile = state.current()[i];
       if (!view || !tile) continue;
       const spec = state.spec(i);
-      if (view.bar && spec.kind === 'pond' && !state.isRestored(i)) {
-        view.bar.scale.x = Math.max(0.05, tile.pond);
-        view.bar.visible = tile.pond < 1;
-      }
       const wet = state.hillWet(i);
       const restored = state.isRestored(i);
+      const gust = this.gustAt(view.x, view.z, t);
+      if (spec.kind === 'pond') {
+        const fill = state.pondFill(i);
+        view.pondFill = fill;
+        const stage = fill >= 0.985 ? 2 : fill >= 0.45 ? 1 : 0;
+        if (stage > view.pondStage) {
+          view.pondStage = stage;
+          if (stage === 1) {
+            this.burst(view.x, view.y + 0.35, view.z, 6);
+          } else {
+            this.burst(view.x, view.y + 0.45, view.z, 12);
+            this.rippleAt(view.x, view.z, '#bfeaff');
+            this.audio.splash();
+          }
+        }
+        if (view.pondWater) {
+          view.pondWater.visible = fill > 0.02;
+          const grow = clamp(0.12 + fill * 0.95, 0.12, 1);
+          view.pondWater.scale.set(grow, grow, 1);
+          view.pondWater.position.y = Math.sin(t * 1.25 + i) * 0.012;
+          const shimmer = Math.floor(t * 2.1 + i * 0.7) % 2 === 0 ? this.art.pondWaterA : this.art.pondWaterB;
+          const mat = view.pondWater.material as THREE.MeshBasicMaterial;
+          if (mat.map !== shimmer) mat.map = shimmer;
+        }
+        const lily0 = view.pondLily[0];
+        const lily1 = view.pondLily[1];
+        if (view.pond) {
+          (view.pond.material as THREE.MeshBasicMaterial).map = restored ? this.art.pondFull : this.art.pondEmpty;
+        }
+        if (lily0) {
+          lily0.visible = fill > 0.5;
+          const s = easeOutBack(clamp((fill - 0.5) / 0.28, 0, 1));
+          lily0.scale.setScalar(Math.max(0.02, s));
+        }
+        if (lily1) {
+          lily1.visible = fill > 0.76;
+          const s = easeOutBack(clamp((fill - 0.76) / 0.2, 0, 1));
+          lily1.scale.setScalar(Math.max(0.02, s));
+        }
+        if (view.pondFrog) {
+          const frog = view.pondFrog;
+          frog.visible = fill > 0.68;
+          if (frog.visible) {
+            const cycle = (t + i * 1.7) % 4.6;
+            const hop = cycle < 0.85 ? Math.sin((cycle / 0.85) * Math.PI) : 0;
+            const wave = Math.sin(t * 2.6 + i);
+            frog.position.set(-0.52 + hop * 1.06, -0.05 + hop * 0.36 + wave * 0.015, -0.08);
+            frog.rotation.z = hop * 0.6 * Math.sign(1);
+            const squash = 1 + Math.sin(t * 3.1 + i) * 0.05;
+            frog.scale.set(squash, 2 - squash, 1);
+          }
+        }
+        if (view.koi) {
+          const koi = view.koi;
+          koi.visible = fill > 0.32;
+          if (koi.visible) {
+            const swim = t * 0.55 + i;
+            koi.position.set(Math.cos(swim) * 0.46, Math.sin(swim * 1.6) * 0.14, -0.035);
+            koi.rotation.z = Math.cos(swim) * 0.4;
+          }
+        }
+        if (view.bar && !restored) {
+          view.bar.scale.x = Math.max(0.05, fill);
+          view.bar.visible = fill < 0.985;
+        }
+      }
       if (view.prop && spec.kind !== 'seed') {
         let slopeOk = true;
         if (spec.decor === 'tree' && this.terrain) {
@@ -1555,16 +2080,26 @@ export class RainGame {
           const y2 = this.groundY(view.x, view.z + 0.28);
           slopeOk = Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0)) < 0.32;
         }
-        view.prop.visible = slopeOk && (restored || wet > 0.14);
+        view.prop.visible = !this.globe && slopeOk && !view.offIsland && (restored || wet > 0.14);
+        const step = restored ? 2 : this.propStep(spec.decor, wet);
+        if (step > view.stage) {
+          view.stage = step;
+          view.growStart = t;
+          view.growT = 0;
+          view.anim = 1;
+          const base = this.propBase(spec.decor, step, i);
+          view.prop.userData['s'] = base;
+          this.burst(view.x, view.y + 0.4 + step * 0.25, view.z, 4 + step * 2);
+        } else if (step < view.stage) {
+          view.stage = step;
+          view.prop.userData['s'] = this.propBase(spec.decor, step, i);
+        }
         if (view.prop.visible) {
-          const live = restored || wet > 0.68;
-          const map =
-            spec.kind === 'pond'
-              ? null
-              : this.propTexture(spec.decor, live, state.world, false, i);
-          if (map) (view.prop.material as THREE.MeshBasicMaterial).map = map;
+          const map = this.propTexture(spec.decor, view.stage, state.world, i);
+          const mat = view.prop.material as THREE.MeshBasicMaterial;
+          if (mat.map !== map) mat.map = map;
           const base = Number(view.prop.userData['s']) || 1;
-          let pop = restored ? 1 : clamp(0.32 + wet * 0.78, 0.32, 0.96);
+          const pop = restored ? 1 : clamp(0.34 + wet * 0.8, 0.34, 0.98);
           if (view.growStart > 0) {
             view.growT = Math.min(1, (t - view.growStart) / 0.85);
             const gy = easeOutBack(view.growT);
@@ -1574,11 +2109,26 @@ export class RainGame {
           }
         }
       }
-      if (view.prop && restored) {
-        view.prop.rotation.z = Math.sin(t * 1.6 + i) * 0.05;
-      } else if (view.prop) view.prop.rotation.z *= 0.9;
-      if (view.koi) view.koi.position.y = 0.48 + Math.abs(Math.sin(t * 3 + i)) * 0.22;
+      if (view.prop) {
+        const sway = restored ? Math.sin(t * 1.6 + i) * 0.05 : Math.sin(t * 1.2 + i) * 0.02;
+        view.prop.rotation.z = sway + gust * 0.14;
+        const ph = (Number(view.prop.userData['ph']) || 1) * view.prop.scale.y;
+        view.prop.position.set(
+          view.x + view.nx * (ph / 2) + gust * 0.06,
+          view.y + view.ny * (ph / 2),
+          view.z + view.nz * (ph / 2),
+        );
+      }
+      if (view.pond && view.pondFill > 0 && view.pondFill < 1) {
+        view.pond.rotation.z = Math.sin(t * 1.1 + i) * 0.02;
+      }
     }
+  }
+
+  /** 0–1 gust intensity sweeping across the board; shared by shaders, props and wind trails. */
+  private gustAt(x: number, z: number, t: number): number {
+    const wave = Math.sin(x * 0.16 + z * 0.11 - t * 1.35);
+    return clamp((wave - 0.42) / 0.58, 0, 1);
   }
 
   private syncBoxes(force: boolean): void {
@@ -1696,6 +2246,41 @@ export class RainGame {
       const view = this.views[spot];
       mesh.position.set((view?.x ?? 0) + Math.sin(t + i) * 0.45, 1.05 + Math.cos(t * 1.3 + i) * 0.16, view?.z ?? 0);
     });
+  }
+
+  /** Drifting petals, pollen and leaves that keep the island feeling alive. */
+  private stepAmbient(dt: number, t: number): void {
+    const state = this.state;
+    if (!state) return;
+    const show = !this.globe && (state.phase === 'play' || state.phase === 'finale') && state.ratio() > 0.14;
+    const spanX = this.terrain ? this.terrain.width : 26;
+    const spanZ = this.terrain ? this.terrain.depth : 20;
+    const ox = this.terrain ? this.terrain.originX : -13;
+    const oz = this.terrain ? this.terrain.originZ : -10;
+    for (const m of this.ambient) {
+      const mesh = m.mesh;
+      if (!show) {
+        mesh.visible = false;
+        continue;
+      }
+      mesh.visible = true;
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.3 + Math.sin(t * 1.3 + m.phase) * 0.14 + this.rainMix * 0.08;
+      const gust = this.gustAt(mesh.position.x, mesh.position.z, t);
+      mesh.position.x += (m.vx + gust * 1.8) * dt;
+      mesh.position.z += (m.vz + Math.sin(t * 0.7 + m.phase) * 0.35) * dt;
+      mesh.position.y += (m.vy - this.rainMix * 0.25) * dt;
+      mesh.rotation.z += m.spin * dt * 0.6;
+      if (mesh.position.y < 0.45) {
+        mesh.position.set(ox + Math.random() * spanX, 1.2 + Math.random() * 3.4, oz + Math.random() * spanZ);
+      }
+      if (mesh.position.x > ox + spanX + 1.5) mesh.position.x = ox - 1.5;
+      if (mesh.position.z > oz + spanZ + 1.5) mesh.position.z = oz - 1.5;
+      if (mesh.position.z < oz - 1.5) mesh.position.z = oz + spanZ + 1.5;
+      if (mesh.position.y > 7.5 || mesh.position.x < ox - 1.6) mesh.position.y = 1.2 + Math.random() * 2.4;
+      const depthScale = 0.14 + Math.min(0.1, (m.mesh.position.y - 0.4) * 0.02);
+      mesh.scale.setScalar(depthScale / 0.16);
+    }
   }
 
   private stepFx(dt: number): void {
@@ -2020,77 +2605,166 @@ export class RainGame {
     return clamp(span * 0.35 * worldPad * pull, 8, 34);
   }
 
+  /** Point on a virtual sky shell at the given screen NDC position (sun, clouds, distant islands). */
+  private skyPoint(ndcX: number, ndcY: number, dist: number): THREE.Vector3 {
+    const v = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(this.camera);
+    const dir = v.sub(this.camera.position).normalize();
+    return this.camera.position.clone().addScaledVector(dir, dist);
+  }
+
   private dressSky(t: number): void {
     const state = this.state;
     const { backX, backZ, rightX, rightZ } = this.skyAxes();
+    const sun = this.skyMat.uniforms['uSunDir']!.value as THREE.Vector3;
+    sun.set(-backX * 0.2 + rightX * 0.62, 0.74, -backZ * 0.2 + rightZ * 0.62).normalize();
+    const camUp = this.skyMat.uniforms['uCamUp']!.value as THREE.Vector3;
+    camUp.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
     let anchorX = this.camX;
     let anchorZ = this.camZ;
     let span = 22;
+    const ratio = state?.ratio() ?? 0;
+    this.skyMat.uniforms['uTime']!.value = t;
+    this.skyMat.uniforms['uLife']!.value = ratio;
+    const moteMat = this.skyMotes.material as THREE.ShaderMaterial;
+    moteMat.uniforms['uTime']!.value = t;
+    this.skyMotes.visible = !this.globe;
     if (this.terrain && state && !this.globe) {
       anchorX = this.terrain.originX + this.terrain.width * 0.5;
       anchorZ = this.terrain.originZ + this.terrain.depth * 0.5;
       span = Math.max(this.terrain.width, this.terrain.depth);
-      this.hillsBackdrop.position.set(
-        anchorX + backX * span * 0.62,
-        0.35 + Math.sin(t * 0.25) * 0.04,
-        anchorZ + backZ * span * 0.62,
-      );
-      this.hillsBackdrop.scale.set(span * 1.05, span * 0.32, 1);
-
       this.skyDome.position.set(anchorX, 6, anchorZ);
-      const sunX = anchorX + rightX * span * 1.6 - backX * span * 2.2;
-      const sunY = 19 + Math.sin(t * 0.35) * 0.35;
-      const sunZ = anchorZ + rightZ * span * 0.95 + backZ * span * 0.35;
-      this.sunDisc.position.set(sunX, sunY, sunZ);
-      const sunPulse = 1 + Math.sin(t * 1.1) * 0.06;
-      this.sunDisc.scale.set(span * 0.14 * sunPulse, span * 0.14 * sunPulse, 1);
+      this.skyMotes.position.set(anchorX, 0, anchorZ);
+      this.skyMotes.rotation.y = t * 0.035;
+
+      // Layered backdrop ranges pinned just above the island's far edge.
+      // Tail extends well below the island's crest so the range has no visible cut edge.
+      this.hillsBackdrop.position.copy(this.skyPoint(-0.05, 0.33 + Math.sin(t * 0.24) * 0.006, 40));
+      this.sizeTo(this.hillsBackdrop, 82, 7.2);
+      this.hillsFar.position.copy(this.skyPoint(0.06, 0.54 + Math.sin(t * 0.17 + 1.4) * 0.008, 60));
+      this.sizeTo(this.hillsFar, 94, 8);
+
+      const sunDist = 108;
+      const sun = this.skyPoint(0.3, 0.86, sunDist);
+      this.sunDisc.position.copy(sun);
+      this.sunHalo.position.copy(sun);
+      const sunPulse = 1 + Math.sin(t * 1.1) * 0.05;
+      this.sunDisc.scale.setScalar(4.6 * sunPulse);
+      this.sunHalo.scale.setScalar(9 + Math.sin(t * 0.8 + 2) * 0.35);
+      const sunMat = this.sunDisc.material as THREE.MeshBasicMaterial;
+      sunMat.opacity = 0.95 - this.rainMix * 0.5;
+      const haloMat = this.sunHalo.material as THREE.MeshBasicMaterial;
+      haloMat.opacity = (0.34 + Math.sin(t * 0.9) * 0.04) * (1 - this.rainMix * 0.65);
       this.sunDisc.lookAt(this.camera.position);
+
+      this.shafts.forEach((shaft, i) => {
+        const phase = Number(shaft.userData['shaftPhase']) || 0;
+        const bx = 0.28 - i * 0.055;
+        const by = 0.62 + (i % 2) * 0.05 - i * 0.006;
+        shaft.position.copy(this.skyPoint(bx, by, 33 + (i % 2) * 3));
+        shaft.userData['tiltZ'] = -0.34 - (i % 3) * 0.06;
+        const len = 4.6 + (i % 3) * 0.8;
+        this.sizeTo(shaft, 0.6 + (i % 3) * 0.22, len);
+        const mat = shaft.material as THREE.MeshBasicMaterial;
+        mat.opacity =
+          (0.3 + (i % 3) * 0.05) *
+          (0.82 + Math.sin(t * 0.55 + phase) * 0.16) *
+          (1 - this.rainMix * 0.7) *
+          (0.62 + ratio * 0.38);
+        shaft.visible = false;
+      });
+
+      const bowStrength = clamp((ratio - 0.55) / 0.35, 0, 1);
+      const finale = state.phase === 'finale' ? clamp(state.finaleProgress * 2.2, 0, 1) : 0;
+      const bowMat = this.rainbow.material as THREE.MeshBasicMaterial;
+      bowMat.opacity = Math.max(bowStrength * 0.6, finale * 0.9);
+      this.rainbow.visible = bowMat.opacity > 0.01;
+      this.rainbow.position.copy(this.skyPoint(0.3, 0.6, 100));
+      this.sizeTo(this.rainbow, 46, 23);
+
+      const mistMat = this.mist.material as THREE.MeshBasicMaterial;
+      mistMat.opacity = this.rainMix * 0.2;
+      this.mist.visible = mistMat.opacity > 0.01;
+      this.mist.position.set(anchorX - backX * span * 0.05, 1.15, anchorZ - backZ * span * 0.05);
+      this.sizeTo(this.mist, span * 1.15, span * 0.18);
+    } else {
+      this.hillsFar.visible = false;
+      this.sunHalo.visible = false;
+      this.rainbow.visible = false;
+      this.mist.visible = false;
+      this.shafts.forEach((shaft) => (shaft.visible = false));
     }
+    this.softClouds.forEach((cloud, i) => {
+      if (this.globe) {
+        cloud.mesh.visible = false;
+        return;
+      }
+      const track = 3.0;
+      const driftX = ((((i / 5) * track + t * cloud.speed * 0.004) % track) + track) % track - track * 0.5;
+      const p = this.skyPoint(driftX, 0.62 + cloud.lift * 0.7 + Math.sin(t * 0.22 + cloud.phase) * 0.012, 86 + cloud.depth * 8);
+      cloud.mesh.position.copy(p);
+      this.sizeTo(cloud.mesh, 10 + cloud.depth * 1.8, 3.4 + cloud.depth * 0.5);
+      const cMat = cloud.mesh.material as THREE.MeshBasicMaterial;
+      cMat.opacity = (0.44 - (i % 3) * 0.08) * (1 - this.rainMix * 0.35);
+      cloud.mesh.visible = true;
+    });
     this.puffs.forEach((mesh, i) => {
       const drift = this.puffDrift[i] ?? 0;
-      const spread = (i - 3.5) * 4.6 + Math.sin(t * 0.15 + drift) * 1.2;
-      const depth = 42 + (i % 4) * 6;
-      const y = 22 + (i % 3) * 3 + Math.sin(t * 0.45 + drift) * 0.35;
-      const slide = Math.sin(t * 0.08 + drift) * 2.4;
-      mesh.position.set(
-        anchorX + backX * depth + rightX * (spread + slide),
-        y,
-        anchorZ + backZ * depth + rightZ * (spread * 0.35),
-      );
-    });
-    this.shafts.forEach((shaft) => {
-      shaft.visible = false;
+      const track = 2.6;
+      const ndcX = ((((drift * 0.28 + t * 0.006) % track) + track) % track) - track * 0.5;
+      const p = this.skyPoint(ndcX, 0.6 + (i % 3) * 0.08 + Math.sin(t * 0.3 + drift) * 0.01, 46);
+      mesh.position.copy(p);
+      const size = 3.4 + (i % 3) * 0.9;
+      this.sizeTo(mesh, size * 1.25, size * 0.5);
     });
     for (const bird of this.birds) {
       const ang = t * bird.speed + bird.phase;
       const flap = Math.sin(t * 9 + bird.phase) > 0 ? 1 : 0.82;
-      bird.mesh.position.set(
-        anchorX + Math.cos(ang) * bird.radius,
-        bird.height + Math.sin(t * 1.2 + bird.phase) * 0.35,
-        anchorZ + Math.sin(ang) * bird.radius * 0.65,
-      );
-      bird.mesh.scale.set(flap, 1, 1);
+      const bx = Math.sin(ang * 0.5 + bird.phase) * 0.85;
+      const p = this.skyPoint(bx, 0.5 + Math.sin(t * 0.5 + bird.phase) * 0.06, 30);
+      bird.mesh.position.copy(p);
+      this.sizeTo(bird.mesh, 0.62 * flap, 0.36);
       const visible = (state?.ratio() ?? 0) > 0.04 || (state?.world ?? 0) > 0;
-      bird.mesh.visible = visible;
+      bird.mesh.visible = visible && !this.globe;
     }
 
-    const islandSpan = Math.max(6, span * 0.22);
-    for (const isl of this.parallaxIslands) {
+    this.stepWinds(t, anchorX, anchorZ, span);
+    for (let i = 0; i < this.parallaxIslands.length; i += 1) {
+      const isl = this.parallaxIslands[i]!;
       if (this.globe) {
         isl.mesh.visible = false;
         continue;
       }
-      const bob = Math.sin(t * 0.38 + isl.bobPhase) * 0.45;
-      const ang = isl.bobPhase * 0.7;
-      const ring = 52 + isl.depth * 0.35;
-      isl.mesh.position.set(
-        anchorX + Math.sin(ang) * ring,
-        isl.altitude + bob,
-        anchorZ + Math.cos(ang) * ring,
-      );
-      const s = isl.size * islandSpan * 0.22;
-      isl.mesh.scale.set(s * 1.15, s, 1);
-      isl.mesh.visible = true;
+      const spread = clamp(isl.spread * 0.01, -0.85, 0.85);
+      const bob = Math.sin(t * 0.38 + isl.bobPhase) * 0.01;
+      const p = this.skyPoint(spread, 0.72 + (i % 3) * 0.05 + bob, 120);
+      isl.mesh.position.copy(p);
+      const s = 2.4 + isl.size * 1.1;
+      this.sizeTo(isl.mesh, s * 1.4, s);
+      isl.mesh.visible = i < 4;
+    }
+  }
+
+  /** Wind streaks that sweep across the board, synced to the grass gust waves. */
+  private stepWinds(t: number, anchorX: number, anchorZ: number, span: number): void {
+    const state = this.state;
+    if (this.globe || !state) {
+      for (const trail of this.winds) trail.mesh.visible = false;
+      return;
+    }
+    const alive = state.phase === 'play' || state.phase === 'finale';
+    const ratio = state.ratio();
+    for (const trail of this.winds) {
+      const mesh = trail.mesh;
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      const travel = span * 1.45;
+      const x = ((((t * trail.speed * trail.dir + trail.phase * span * 1.9) % (travel * 2)) + travel * 2) % (travel * 2)) - travel;
+      const zOff = Math.sin(t * 0.6 + trail.phase) * span * 0.18;
+      mesh.position.set(anchorX + x, trail.y + Math.sin(t * 0.8 + trail.phase) * 0.15, anchorZ + zOff);
+      const gust = this.gustAt(anchorX + x * 0.6, anchorZ, t);
+      mat.opacity = alive && ratio > 0.12 ? (0.05 + gust * 0.24) * 0.9 : 0;
+      trail.mesh.visible = mat.opacity > 0.01;
+      this.sizeTo(trail.mesh, span * 0.055, span * 0.011);
+      trail.mesh.userData['tiltZ'] = trail.dir > 0 ? 0.06 : Math.PI - 0.06;
     }
   }
 
@@ -2107,6 +2781,8 @@ export class RainGame {
       obj.lookAt(this.camera.position);
       obj.rotateY(Math.PI);
       if (roll) obj.rotateZ(roll);
+      const tilt = Number(obj.userData['tiltZ']) || 0;
+      if (tilt) obj.rotateZ(tilt);
     });
   }
 
@@ -2190,7 +2866,8 @@ export class RainGame {
     this.camZ = at.z;
     const gy = this.groundY(at.x, at.z);
     this.camGroundY = gy;
-    this.hoverY = gy + 1.35 + 2.1 * (this.state?.scale() ?? 0.48);
+    // keep the cloud clearly airborne so the pour reads as a column of rain
+    this.hoverY = gy + 2.8 + 3.1 * (this.state?.scale() ?? 0.48);
     this.cloud.position.set(at.x, this.hoverY, at.z);
     this.placeCamera(0);
   }
@@ -2198,10 +2875,22 @@ export class RainGame {
   private restoredSpots(): number[] {
     const state = this.state;
     if (!state) return [0];
-    const spots: number[] = [];
+    const strong: number[] = [];
+    const soft: number[] = [];
     const tiles = state.current();
-    for (let i = 0; i < tiles.length; i += 1) if (state.isRestored(i)) spots.push(i);
-    return spots.length > 0 ? spots : [0];
+    for (let i = 0; i < tiles.length; i += 1) {
+      const view = this.views[i];
+      // skip shore tiles whose ground has eroded away: critters would float there
+      if (view && this.groundY(view.x, view.z) < 0.35) continue;
+      if (state.isRestored(i)) strong.push(i);
+      else if (state.hillWet(i) > 0.55) soft.push(i);
+    }
+    if (strong.length >= 3) return strong;
+    // early game: let critters roam the greening land around the few finished tiles
+    const all = [...strong, ...soft];
+    if (all.length > 0) return all;
+    const { cols, rows } = gridOf(state.world);
+    return [Math.floor(rows / 2) * cols + Math.floor(cols / 2)];
   }
 
   private spawnBaby(): void {
@@ -2365,55 +3054,107 @@ export class RainGame {
     return mote;
   }
 
-  private propMesh(decor: 'tree' | 'bush' | 'rock' | 'twig', restored: boolean, world: number, index: number): THREE.Mesh | null {
+  /** Prop ladder step for a decor at the given tile wetness: 0 litter, 1 sprouting, 2 grown. */
+  private propStep(decor: Decor, wet: number): number {
+    if (decor === 'tree') return wet >= 0.66 ? 2 : wet >= 0.44 ? 1 : 0;
+    if (decor === 'bush') return wet >= 0.58 ? 2 : wet >= 0.32 ? 1 : 0;
+    if (decor === 'rock') return wet >= 0.5 ? 1 : 0;
+    return wet >= 0.56 ? 1 : 0;
+  }
+
+  private propBase(decor: Decor, step: number, index: number): number {
+    if (decor === 'tree') {
+      if (step === 2) return 1.25 + ((index * 7) % 5) * 0.08;
+      return step === 1 ? 0.62 + ((index * 3) % 4) * 0.04 : 0.95;
+    }
+    if (decor === 'bush') return step === 2 ? 1.06 + ((index * 3) % 4) * 0.06 : step === 1 ? 0.74 : 1;
+    return 1;
+  }
+
+  private propMesh(decor: Decor, world: number, index: number): THREE.Mesh | null {
+    void world;
+    void index;
     const upright = (mesh: THREE.Mesh) => {
       mesh.userData['upright'] = 1;
       return mesh;
     };
-    if (decor === 'tree') return upright(this.billboard(this.propTexture(decor, restored, world, false, index), 2.6, 3.6, 0.12));
-    if (decor === 'bush') return upright(this.billboard(this.propTexture(decor, restored, world, false), 0.72, 0.55, 0.2));
-    if (decor === 'rock') {
-      return upright(
-        this.billboard(world === 3 && !restored ? this.art.barrel : this.propTexture(decor, restored, world, false), 0.62, 0.42, 0.2),
-      );
-    }
-    return upright(this.billboard(this.propTexture(decor, restored, world, false), 0.55, 0.4, 0.18));
+    if (decor === 'tree') return upright(this.billboard(this.art.sapling, 2.6, 3.6, 0.12));
+    if (decor === 'bush') return upright(this.billboard(this.art.bushDead, 0.72, 0.55, 0.2));
+    if (decor === 'rock') return upright(this.billboard(this.art.rock, 0.62, 0.42, 0.2));
+    return upright(this.billboard(this.art.twig, 0.55, 0.4, 0.18));
   }
 
-  private propTexture(decor: 'tree' | 'bush' | 'rock' | 'twig', restored: boolean, world: number, seed: boolean, index = 0): THREE.Texture {
+  /** Per-world multiplier so shared prop art sits in each world's palette. */
+  private propTint(): string {
+    const world = this.state?.world ?? 0;
+    return ['#ffffff', '#dceeff', '#fff2d8', '#e6d8ff'][world] ?? '#ffffff';
+  }
+
+  private propTexture(decor: Decor, step: number, world: number, index: number): THREE.Texture {
     const art = this.art;
-    if (seed) return restored ? art.money : art.seed;
     if (decor === 'tree') {
-      if (!restored) return (art.deadTree[world] ?? art.deadTree[0])!;
-      return art.grove[(index + world * 3) % art.grove.length] ?? art.liveTree[0]!;
+      if (step === 2) return art.grove[(index + world * 3) % art.grove.length] ?? art.liveTree[0]!;
+      if (step === 1) return art.sapling;
+      return art.deadTree[world] ?? art.deadTree[0]!;
     }
-    if (decor === 'bush') return restored ? art.bushLive : art.bushDead;
+    if (decor === 'bush') return step === 2 ? art.bushLive : step === 1 ? art.bushSprout : art.bushDead;
     if (decor === 'rock') {
-      if (world === 3 && !restored) return art.barrel;
-      return restored ? art.rockMoss : art.rock;
+      if (world === 3 && step === 0) return art.barrel;
+      return step === 1 ? art.rockMoss : art.rock;
     }
-    return restored ? art.flowers : art.twig;
+    return step === 1 ? art.flowers : art.twig;
   }
 
-  private glowTexture(kind: 'shaft' | 'soft'): THREE.CanvasTexture {
+  private glowTexture(kind: 'shaft' | 'soft' | 'mist' | 'halo'): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 256;
+    canvas.width = kind === 'mist' ? 256 : kind === 'halo' ? 128 : 64;
+    canvas.height = kind === 'mist' ? 64 : kind === 'halo' ? 128 : 256;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      const g = ctx.createLinearGradient(0, 0, 0, 256);
-      if (kind === 'shaft') {
-        g.addColorStop(0, 'rgba(255, 248, 220, 0)');
-        g.addColorStop(0.35, 'rgba(255, 240, 200, 0.55)');
-        g.addColorStop(0.7, 'rgba(255, 230, 180, 0.2)');
-        g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      if (kind === 'halo') {
+        const rg = ctx.createRadialGradient(64, 64, 6, 64, 64, 64);
+        rg.addColorStop(0, 'rgba(255,255,255,0.6)');
+        rg.addColorStop(0.42, 'rgba(255,255,255,0.2)');
+        rg.addColorStop(0.72, 'rgba(255,255,255,0.05)');
+        rg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = rg;
+        ctx.fillRect(0, 0, 128, 128);
+      } else if (kind === 'mist') {
+        for (let y = 0; y < 64; y += 1) {
+          const vy = 1 - Math.abs(y / 63 - 0.5) * 2;
+          const band = Math.pow(Math.max(0, vy), 1.6);
+          const g = ctx.createLinearGradient(0, 0, 256, 0);
+          g.addColorStop(0, 'rgba(255,255,255,0)');
+          g.addColorStop(0.28, `rgba(255,255,255,${(0.42 * band).toFixed(3)})`);
+          g.addColorStop(0.62, `rgba(240,250,255,${(0.5 * band).toFixed(3)})`);
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(0, y, 256, 1);
+        }
       } else {
-        g.addColorStop(0, 'rgba(255,255,255,0)');
-        g.addColorStop(0.5, 'rgba(255,255,255,0.35)');
-        g.addColorStop(1, 'rgba(255,255,255,0)');
+        const g = ctx.createLinearGradient(0, 0, 0, 256);
+        if (kind === 'shaft') {
+          g.addColorStop(0, 'rgba(255, 248, 220, 0)');
+          g.addColorStop(0.32, 'rgba(255, 243, 205, 0.9)');
+          g.addColorStop(0.7, 'rgba(255, 232, 182, 0.34)');
+          g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        } else {
+          g.addColorStop(0, 'rgba(255,255,255,0)');
+          g.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+        }
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, 64, 256);
+        // Soften the beam's sides so shafts read as light, not rectangles.
+        ctx.globalCompositeOperation = 'destination-in';
+        const sideMask = ctx.createLinearGradient(0, 0, 64, 0);
+        sideMask.addColorStop(0, 'rgba(0,0,0,0)');
+        sideMask.addColorStop(0.5, 'rgba(0,0,0,1)');
+        sideMask.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = sideMask;
+        ctx.fillRect(0, 0, 64, 256);
+        ctx.globalCompositeOperation = 'source-over';
       }
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, 64, 256);
     }
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -2428,8 +3169,26 @@ export class RainGame {
       new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest, side: THREE.DoubleSide }),
     );
     mesh.userData['ph'] = h;
+    mesh.userData['gw'] = w;
     mesh.userData['s'] = 1;
     mesh.userData['bb'] = 1;
+    return mesh;
+  }
+
+  /** Sets a billboard's world size (its geometry has its own base size). */
+  private sizeTo(mesh: THREE.Mesh, w: number, h: number): void {
+    const gw = Number(mesh.userData['gw']) || 1;
+    const gh = Number(mesh.userData['ph']) || 1;
+    mesh.scale.set(w / gw, h / gh, 1);
+  }
+
+  /** Plane sprite meant to live inside a billboarded group (inherits the group's facing). */
+  private sprite(map: THREE.Texture, w: number, h: number, alphaTest: number, z: number): THREE.Mesh {
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest, side: THREE.DoubleSide }),
+    );
+    mesh.position.z = z;
     return mesh;
   }
 
@@ -2439,7 +3198,7 @@ export class RainGame {
     let pond: number | null = null;
     const center = this.nearestTile();
     if (state.spec(center).kind === 'pond' && !state.isRestored(center)) {
-      pond = state.current()[center]?.pond ?? 0;
+      pond = state.pondFill(center);
     }
     const sleepy = state.tank <= 0.01;
     if (force || this.hudAcc >= 0) {
