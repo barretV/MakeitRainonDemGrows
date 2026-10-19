@@ -38,33 +38,28 @@ let lastWorkshopFocusId: NodeId = 'puff';
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-function WorkshopStatus({ node, onBuy }: { node: TreeNodeView; onBuy: () => void }) {
-  let kind = 'owned';
-  let text = 'Owned';
+function statusBadge(node: TreeNodeView): { kind: string; text: string } {
   if (node.ghost) {
-    kind = 'lock';
-    text =
-      node.parent === 'puff' && node.level === 0
-        ? 'Locked · buy Cloud Puff first'
-        : 'Locked · unlock parent first';
-  } else if (node.maxed) {
-    kind = 'max';
-    text = 'Maxed';
-  } else if (node.afford) {
-    kind = 'buy';
-    text = 'Tap to buy';
-  } else if (node.level === 0) {
-    kind = 'lock';
-    text = 'Need more dew';
+    return {
+      kind: 'lock',
+      text:
+        node.parent === 'puff' && node.level === 0 ? 'Locked · puff first' : 'Locked · parent first',
+    };
   }
-  if (node.afford && !node.maxed && !node.ghost) {
-    return (
-      <button type="button" className={`workshop-status workshop-status--${kind} pixel`} onClick={onBuy}>
-        {text}
-      </button>
-    );
-  }
-  return <div className={`workshop-status workshop-status--${kind} pixel`}>{text}</div>;
+  if (node.maxed) return { kind: 'max', text: 'Max rank' };
+  if (node.afford) return { kind: 'buy', text: 'Ready' };
+  if (node.level > 0) return { kind: 'owned', text: `Rank ${node.level}/${node.max}` };
+  return { kind: 'lock', text: 'Need more dew' };
+}
+
+function primaryBuyLabel(node: TreeNodeView): string {
+  if (node.maxed) return 'Maxed out';
+  if (node.ghost) return 'Not unlocked yet';
+  if (!node.afford) return 'Need more dew';
+  const cost = formatDew(node.cost);
+  if (node.kind === 'gate') return `Unlock · ${cost} dew`;
+  if (node.level === 0) return `Buy · ${cost} dew`;
+  return `Rank up to ${node.level + 1} · ${cost} dew`;
 }
 
 function vinePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -104,9 +99,11 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   );
   const [picked, setPicked] = useState<NodeId>('puff');
   const [tab, setTab] = useState<'power' | 'petals'>('power');
+  const [buyPulse, setBuyPulse] = useState(0);
   const [affordPingIds, setAffordPingIds] = useState<Set<NodeId>>(() => new Set());
   const pickedId = shown.some((n) => n.id === picked) ? picked : (nextBuy?.id ?? shown[0]?.id ?? 'puff');
   const selected = model.tree.find((node) => node.id === pickedId) ?? shown[0];
+  const badge = selected ? statusBadge(selected) : { kind: 'owned', text: '' };
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -369,6 +366,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     const ranksBefore = game.getRanks();
     if (!ranksBefore) return;
     if (!game.buy(id)) return;
+    setBuyPulse((n) => n + 1);
     const ranksAfter = game.getRanks();
     if (!ranksAfter) return;
 
@@ -429,18 +427,21 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
               const showEdge = !node.ghost || drawing;
               if (!showEdge && node.ghost) return null;
               const color = BRANCH_COLORS[node.branch];
+              const hot = !node.ghost && (node.afford || parent.afford);
               return (
                 <path
                   key={`${parent.id}-${node.id}`}
                   d={vinePath(parent.x, parent.y, node.x, node.y)}
                   fill="none"
                   stroke={node.ghost && !drawing ? '#5a5668' : color}
-                  strokeWidth={node.ghost && !drawing ? 2.5 : 3.5}
+                  strokeWidth={node.ghost && !drawing ? 2.5 : hot ? 4.5 : 3.5}
                   strokeLinecap="round"
-                  opacity={node.ghost && !drawing ? 0.35 : drawing ? 0.85 : 0.55}
+                  opacity={node.ghost && !drawing ? 0.35 : drawing ? 0.9 : hot ? 0.78 : 0.52}
                   strokeDasharray={node.ghost && !drawing ? '6 9' : undefined}
                   pathLength={drawing ? 1 : undefined}
-                  className={drawing ? 'workshop-vine--draw' : undefined}
+                  className={
+                    drawing ? 'workshop-vine--draw' : hot ? 'workshop-vine--hot' : undefined
+                  }
                   onAnimationEnd={drawing ? () => onEdgeDrawEnd(node.id) : undefined}
                 />
               );
@@ -488,7 +489,10 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       </div>
 
       {selected && (
-        <aside className="workshop-panel">
+        <aside
+          className="workshop-panel"
+          style={{ ['--panel-branch' as string]: BRANCH_COLORS[selected.branch] }}
+        >
           <div className="workshop-tabs pixel">
             <button
               type="button"
@@ -509,45 +513,52 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
             <PetalShop model={model} game={game} />
           ) : (
             <>
-              {nextBuy && (
+              {nextBuy && nextBuy.id !== selected.id && (
                 <button
                   type="button"
-                  className="workshop-next workshop-next--buy pixel"
-                  onClick={() => purchase(nextBuy.id)}
+                  className="workshop-jump pixel"
+                  onClick={() => {
+                    setPicked(nextBuy.id);
+                    focusNode(nextBuy.id, true, viewRef.current.s);
+                  }}
                 >
-                  {nextBuy.id === selected.id ? 'Buy now' : 'Next up'}: <span>{nextBuy.name}</span> ·{' '}
-                  {formatDew(nextBuy.cost)} dew
+                  <span className="workshop-jump__label">Recommended</span>
+                  <span className="workshop-jump__name">{nextBuy.name}</span>
+                  <span className="workshop-jump__cost">{formatDew(nextBuy.cost)} dew</span>
                 </button>
               )}
-              <WorkshopStatus node={selected} onBuy={() => purchase(selected.id)} />
-              <div className="workshop-panel__title pixel">{selected.name}</div>
+              <div className="workshop-panel__head">
+                <div className="workshop-panel__title pixel">{selected.name}</div>
+                <span className={`workshop-status workshop-status--${badge.kind} pixel`}>{badge.text}</span>
+              </div>
+              {selected.max > 1 && (
+                <div className="workshop-rank-meter" aria-hidden>
+                  <div
+                    className="workshop-rank-meter__fill"
+                    style={{ width: `${(selected.level / selected.max) * 100}%` }}
+                  />
+                  <span className="workshop-rank-meter__text tabular-nums">
+                    {selected.level}/{selected.max}
+                  </span>
+                </div>
+              )}
               {totalRanks === 0 && (
                 <p className="workshop-panel__desc pixel">Rain first. Bloom a patch. Spend dew on Cloud Puff to grow.</p>
               )}
               <p className="workshop-panel__desc">{selected.desc}</p>
               <p className="workshop-panel__effect">{selected.effect}</p>
-              {!selected.maxed && !selected.ghost && (
-                <p className="workshop-panel__cost pixel">
-                  Cost <span>{formatDew(selected.cost)}</span> dew
-                </p>
-              )}
               <button
                 type="button"
                 disabled={!selected.afford}
                 onClick={() => purchase(selected.id)}
-                className={`workshop-buy pixel${selected.afford ? ' workshop-buy--go' : ''}`}
+                className={`workshop-buy pixel${selected.afford ? ' workshop-buy--go' : ''}${buyPulse ? ' workshop-buy--pulse' : ''}`}
+                key={buyPulse ? `buy-${buyPulse}` : 'buy'}
               >
-                {selected.maxed
-                  ? 'Maxed out'
-                  : selected.ghost
-                    ? 'Not unlocked yet'
-                    : selected.kind === 'gate'
-                      ? `Unlock`
-                      : `Rank up`}
+                {primaryBuyLabel(selected)}
               </button>
-          <button type="button" onClick={() => game.returnFromWorkshop()} className="workshop-back pixel">
-            Back to rain
-          </button>
+              <button type="button" onClick={() => game.returnFromWorkshop()} className="workshop-back pixel">
+                Back to rain
+              </button>
             </>
           )}
         </aside>
