@@ -49,9 +49,12 @@ def enforce_one_buy(costs: dict[str, list[int]]) -> None:
         changed = False
         for world in range(5):
             total = mask_count(world)
+            restored = 0.0
             for _ in range(500):
-                cells, income, _seconds = cells_per_run(state, world, 0.0)
-                if total <= 0 or cells / total >= 0.98:
+                ratio = restored / total if total else 1.0
+                cells, income, _seconds = cells_per_run(state, world, ratio)
+                restored = min(float(total), restored + cells)
+                if total <= 0 or restored / total >= 0.98:
                     break
                 spendable = dew + income
                 dew += income
@@ -92,10 +95,13 @@ def reprice():
     report: list[dict] = []
 
     for world in range(5):
+        restored = 0.0
+        total = mask_count(world)
         for _ in range(400):
-            cells, income, seconds = cells_per_run(state, world, 0.0)
-            total = mask_count(world)
-            if cells / total >= 0.98:
+            ratio = restored / total if total else 1.0
+            cells, income, seconds = cells_per_run(state, world, ratio)
+            restored = min(float(total), restored + cells)
+            if total <= 0 or restored / total >= 0.98:
                 report.append(
                     {
                         "world": world,

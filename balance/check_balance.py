@@ -11,14 +11,14 @@ ROOT = Path(__file__).resolve().parent
 FEEL_BASE = ROOT / "baseline_feel.txt"
 WORLD0_BASE = ROOT / "baseline_world0.txt"
 WORLD_NAMES = ["Dead Forest", "Frostbite", "Desert", "Toxic", "Globe"]
-# Fresh island each bottle. Minutes are how long the priced tree takes
-# before one bottle can restore that island. World 0 is the long climb.
+# Growth stays between bottles. Minutes include the pour plus a short shop.
+# Each island is aimed at about 20 minutes of raining.
 ISLAND_WINDOWS = {
-    "Dead Forest": (50.0, 85.0),
-    "Frostbite": (5.0, 14.0),
-    "Desert": (4.0, 12.0),
-    "Toxic": (0.4, 4.0),
-    "Globe": (5.0, 14.0),
+    "Dead Forest": (22.0, 40.0),
+    "Frostbite": (18.0, 34.0),
+    "Desert": (18.0, 36.0),
+    "Toxic": (20.0, 42.0),
+    "Globe": (16.0, 36.0),
 }
 
 
@@ -56,8 +56,8 @@ def check_world0() -> None:
     if not m:
         raise SystemExit(f"sim world0: unexpected output:\n{out}")
     minutes = float(m.group(1))
-    if minutes < 50 or minutes > 85:
-        raise SystemExit(f"sim world0 FAIL: {minutes:.1f} min (want 50–85)")
+    if minutes < 22 or minutes > 40:
+        raise SystemExit(f"sim world0 FAIL: {minutes:.1f} min (want 22–40)")
     print(f"sim world0: PASS ({minutes:.1f} min, {m.group(2)} runs)")
 
 

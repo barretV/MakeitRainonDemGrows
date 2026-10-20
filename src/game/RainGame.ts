@@ -1451,7 +1451,13 @@ export class RainGame {
     curtainMat.uniforms['uTime']!.value = t;
     curtainMat.uniforms['uSilver']!.value = state.petals.trail >= 1 ? 1 : 0;
     this.curtain.visible = raining;
-    this.puddle.visible = raining;
+    this.puddle.visible = false;
+    for (const mat of this.maskMats) {
+      const disc = mat.uniforms['uRainDisc'];
+      if (!disc) continue;
+      (disc.value as THREE.Vector3).set(this.cloudX, this.cloudZ, state.reach());
+      mat.uniforms['uRainOn']!.value = raining ? 1 : 0;
+    }
     if (raining) {
       const reach = state.reach();
       const gy = this.globe ? this.cloud.position.y - 1.6 : this.groundY(this.cloudX, this.cloudZ);
@@ -1693,11 +1699,11 @@ export class RainGame {
     const hillTex = this.art.hills[world] ?? this.art.hills[0]!;
     const nearMat = this.hillsBackdrop.material as THREE.ShaderMaterial;
     setLitMap(nearMat, hillTex);
-    litColor(nearMat).setRGB(0.22, 0.1, 0.16);
+    litColor(nearMat).setRGB(0.46, 0.26, 0.34);
     litOpacity(nearMat).value = 1;
     const farMat = this.hillsFar.material as THREE.ShaderMaterial;
     setLitMap(farMat, hillTex);
-    litColor(farMat).setRGB(0.12, 0.06, 0.1);
+    litColor(farMat).setRGB(0.28, 0.16, 0.22);
     litOpacity(farMat).value = 0.72;
     for (const m of this.ambient) {
       m.mesh.position.set(

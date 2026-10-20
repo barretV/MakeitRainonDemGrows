@@ -21,12 +21,14 @@ def early_purchase_report(max_runs: int = 40, max_buys_per_run: int | None = Non
     best_cover = 0.0
 
     label = "shop until the wallet stops" if max_buys_per_run is None else f"{max_buys_per_run} buy/run"
-    print(f"=== EARLY RUN FEEL (world 0, fresh island, {label}, {max_runs} runs) ===")
+    print(f"=== EARLY RUN FEEL (world 0, saved growth, {label}, {max_runs} runs) ===")
     print("run  dew  bank  blooms  +land%  radius  liters  soak  bought")
+    restored = 0.0
     for run in range(1, max_runs + 1):
-        cells, gained, seconds = cells_per_run(state, 0, 0.0)
+        cells, gained, seconds = cells_per_run(state, 0, restored / total if total else 0.0)
+        restored = min(float(total), restored + cells)
         land_pct = cells / total * 100
-        best_cover = max(best_cover, land_pct)
+        best_cover = max(best_cover, restored / total * 100 if total else 0.0)
         dew += gained
         blooms += cells
         dew, blooms, bought = buy_all_affordable(state, dew, blooms, 0, max_buys=max_buys_per_run)

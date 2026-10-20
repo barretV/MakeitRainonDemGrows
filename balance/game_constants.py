@@ -7,15 +7,14 @@ GLOBE_WORLD = 4
 
 # cols, rows, mask cols, mask rows, cell hp, dew per cell.
 # Each island is a full arc: the mask is big, and hp sets how many bottles a cell needs.
-# hp is low enough that one bottle can finish the cells it waters.
-# A world clears when that bottle covers the island, not by saving partial paint.
-# Prices come from `python balance/reprice.py --write`.
+# hp is just under one bottle of soak when you arrive, so a pour finishes the
+# cells it waters. The island keeps that paint. Prices come from reprice.py.
 WORLDS = [
     (8, 6, 100, 75, 76, 3),
-    (13, 9, 130, 90, 4916, 2),
-    (15, 11, 150, 110, 6688, 3),
-    (17, 12, 170, 120, 6688, 4),
-    (14, 9, 800, 120, 6688, 4),
+    (18, 16, 180, 160, 400, 2),
+    (31, 24, 310, 240, 1500, 3),
+    (34, 26, 340, 260, 17000, 4),
+    (14, 9, 800, 120, 45000, 4),
 ]
 
 BASE_SCALE = 0.48

@@ -614,9 +614,7 @@ export class SaveState {
     this.runReached = 0;
     this.newBest = false;
     this.screen = 'play';
-    // A new bottle starts on bare ground. Upgrades are what let the next pour
-    // cover more; walking the same cloud over a saved island is not progress.
-    this.lands.delete(this.world);
+    // Growth stays. The next bottle picks up where this one left off.
     this.mountWorld(this.world);
     this.refillBottle();
     this.phase = 'play';

@@ -211,6 +211,8 @@ export class Terrain {
         uDusk: { value: linear(worldDef(this.world).skyBot) },
         uCloud: { value: cloud },
         uRain: rain,
+        uRainDisc: { value: new THREE.Vector3(0, 0, 1) },
+        uRainOn: { value: 0 },
       },
       vertexShader: VOXEL_VERT,
       fragmentShader: VOXEL_FRAG,
@@ -403,6 +405,8 @@ const VOXEL_FRAG = /* glsl */ `
   uniform vec3 uDusk;
   uniform vec3 uCloud;
   uniform float uRain;
+  uniform vec3 uRainDisc;
+  uniform float uRainOn;
   varying vec3 vWorld;
   varying vec3 vN;
   varying float vUp;
@@ -534,7 +538,7 @@ const VOXEL_FRAG = /* glsl */ `
     // Unrestored ground stays in the world's dusk. Restored ground is what the light finds.
     vec3 dusk = mix(uDusk, vec3(1.05, 0.38, 0.55), 0.72);
     col = mix(col * dusk, col * vec3(1.12, 1.06, 0.9), smoothstep(0.2, 0.9, life));
-    float exposure = mix(0.22, 1.75, life);
+    float exposure = mix(0.62, 1.48, life);
     exposure = mix(exposure, mix(0.55, 1.2, life), uGlobe);
     col *= exposure;
     col += vec3(1.0, 0.62, 0.7) * smoothstep(0.08, 0.32, life) * (1.0 - smoothstep(0.55, 0.9, life)) * 0.28;
@@ -544,6 +548,14 @@ const VOXEL_FRAG = /* glsl */ `
       float shadow = (1.0 - smoothstep(uCloud.z * 0.28, uCloud.z, cd)) * (1.0 - uGlobe);
       col *= 1.0 - shadow * 0.5 * (0.3 + life);
       col = mix(col, col * vec3(0.7, 0.58, 0.66), uRain * 0.22 * (1.0 - life * 0.7));
+      // The rain circle is drawn on the tops, so voxel steps cannot slice it.
+      float rd = length(vWorld.xz - uRainDisc.xy);
+      float reach = max(uRainDisc.z, 0.001);
+      float rim = smoothstep(reach * 1.04, reach * 0.9, rd) * smoothstep(reach * 0.7, reach * 0.9, rd);
+      float wash = smoothstep(reach, reach * 0.08, rd);
+      vec3 ring = vec3(0.62, 1.0, 0.82);
+      col += ring * wash * 0.2 * uRainOn;
+      col += ring * rim * 0.95 * uRainOn;
     }
     gl_FragColor = vec4(col, 1.0);
   }
