@@ -38,13 +38,13 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
   const [gear, setGear] = useState(false);
   const pct = model.restored * 100;
   const playing = model.screen === 'play';
-  const plantTotal = model.stats.tiles;
+  const blooms = model.spendableBlooms;
   const dewNow = walletDew(model.dew);
-  const bumpRef = useRef({ dew: dewNow, plants: plantTotal, liters: model.liters });
+  const bumpRef = useRef({ dew: dewNow, blooms, liters: model.liters });
   const bumpDew = dewNow > bumpRef.current.dew;
-  const bumpPlants = plantTotal > bumpRef.current.plants;
+  const bumpBlooms = blooms > bumpRef.current.blooms;
   const bumpLiters = model.liters > bumpRef.current.liters;
-  bumpRef.current = { dew: dewNow, plants: plantTotal, liters: model.liters };
+  bumpRef.current = { dew: dewNow, blooms, liters: model.liters };
   const jugScale = 0.88 + Math.min(0.22, Math.max(0, (model.liters - 260) / 900) * 0.22);
 
   return (
@@ -73,10 +73,10 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                   bump={bumpDew}
                 />
                 <HudChip
-                  display={String(plantTotal)}
+                  display={String(blooms)}
                   icon={<HudPlantIcon />}
-                  ariaLabel={`${plantTotal} plants grown`}
-                  bump={bumpPlants}
+                  ariaLabel={`${blooms} blooms`}
+                  bump={bumpBlooms}
                 />
               </div>
             </div>
@@ -174,6 +174,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
       {model.screen === 'results' && <Results model={model} game={game} />}
       {model.screen === 'workshop' && <UpgradeTree model={model} game={game} />}
       {model.screen === 'worlds' && <Worlds model={model} game={game} />}
+      {model.screen === 'start' && <Worlds model={model} game={game} start />}
     </div>
   );
 }
@@ -336,12 +337,17 @@ function ResultsAction({
   );
 }
 
-function Worlds({ model, game }: { model: HudModel; game: RainGame }) {
+function Worlds({ model, game, start = false }: { model: HudModel; game: RainGame; start?: boolean }) {
+  const current = model.worlds.find((world) => world.current);
   return (
     <div className="menu-veil pointer-events-auto">
       <div className="menu-card menu-card--pop w-[min(480px,94%)]">
-        <div className="menu-card__title text-center">Worlds</div>
-        <p className="menu-card__sub text-center">A new land starts dead. You stay the size you earned.</p>
+        <div className="menu-card__title text-center">{start ? 'Where should it rain?' : 'Worlds'}</div>
+        <p className="menu-card__sub text-center">
+          {start
+            ? 'Pick a land. You keep the size you earned, and every island waits as you left it.'
+            : 'A new land starts dead. You stay the size you earned.'}
+        </p>
         <div className="mt-3 grid gap-2">
           {model.worlds.map((world) => (
             <button
@@ -359,7 +365,17 @@ function Worlds({ model, game }: { model: HudModel; game: RainGame }) {
           ))}
         </div>
         <div className="mt-3 text-center">
-          <Mini onClick={() => game.showResults()}>Back</Mini>
+          {start ? (
+            <button
+              type="button"
+              className="menu-btn pixel w-full"
+              onClick={() => game.goto(current?.index ?? model.worldIndex)}
+            >
+              Rain on {current?.name ?? model.worldName}
+            </button>
+          ) : (
+            <Mini onClick={() => game.showResults()}>Back</Mini>
+          )}
         </div>
       </div>
     </div>

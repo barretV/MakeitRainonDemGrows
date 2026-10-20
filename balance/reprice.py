@@ -24,7 +24,10 @@ from game_constants import (
     PRIORITY_UNIQUE,
     bottle_seconds,
 )
-from sim import cells_per_run, mask_count, new_state, next_buy
+from sim import cells_per_run, island_blooms, mask_count, new_state, next_buy
+
+# Nodes bought with blooms only: their dew price stays at zero.
+BLOOM_ONLY = ("blush", "bow", "trail", "buddy", "sparkle", "hum", "press")
 
 ROOT = Path(__file__).resolve().parents[1]
 TREE = ROOT / "src" / "game" / "tree.ts"
@@ -46,6 +49,7 @@ def enforce_one_buy(costs: dict[str, list[int]]) -> None:
         state = new_state()
         dew = 0.0
         bloom_wallet = 0.0
+        bloom_awarded = 0
         changed = False
         for world in range(5):
             total = mask_count(world)
@@ -58,7 +62,10 @@ def enforce_one_buy(costs: dict[str, list[int]]) -> None:
                     break
                 spendable = dew + income
                 dew += income
-                bloom_wallet += cells
+                restored_ratio = restored / total if total else 1.0
+                earned_blooms = island_blooms(restored, total)
+                bloom_wallet += max(0, earned_blooms - bloom_awarded)
+                bloom_awarded = earned_blooms
                 first_cost = None
                 while True:
                     pick, cost, bloom_cost = next_buy(state, dew, bloom_wallet, world)
@@ -92,6 +99,7 @@ def reprice():
     state = new_state()
     dew = 0.0
     bloom_wallet = 0.0
+    bloom_awarded = 0
     report: list[dict] = []
 
     for world in range(5):
@@ -101,6 +109,10 @@ def reprice():
             ratio = restored / total if total else 1.0
             cells, income, seconds = cells_per_run(state, world, ratio)
             restored = min(float(total), restored + cells)
+            earned_blooms = island_blooms(restored, total)
+            if earned_blooms > bloom_awarded:
+                bloom_wallet += earned_blooms - bloom_awarded
+                bloom_awarded = earned_blooms
             if total <= 0 or restored / total >= 0.98:
                 report.append(
                     {
@@ -128,9 +140,8 @@ def reprice():
                 break
 
             spendable_dew = dew + income
-            spendable_blooms = bloom_wallet + cells
+            spendable_blooms = bloom_wallet
             dew_price = min(nice(income * 0.85), max(1, int(spendable_dew * 0.85)))
-            bloom_price = min(nice(cells * 0.5), max(0, int(spendable_blooms * 0.55)))
             # Every rank on the shelf this bottle, not only the one we take.
             for candidate in PRIORITY_UNIQUE:
                 level = state[candidate]
@@ -202,14 +213,11 @@ def reprice():
                 if prev and priced < int(prev * 1.15):
                     priced = int(prev * 1.15)
                 priced = min(priced, max(1, int(spendable_dew * 0.9)))
-                costs[candidate][level] = max(1, priced)
-                if original_blooms[candidate][level] > 0:
-                    prev_b = blooms[candidate][level - 1] if level else 0
-                    bpriced = bloom_price
-                    if prev_b and bpriced < int(prev_b * 1.15):
-                        bpriced = int(prev_b * 1.15)
-                    bpriced = min(max(bpriced, 1), max(1, int(spendable_blooms * 0.9)))
-                    blooms[candidate][level] = bpriced
+                if candidate in BLOOM_ONLY or original_costs[candidate][level] == 0:
+                    # A bloom-only node stays free in dew.
+                    costs[candidate][level] = 0
+                else:
+                    costs[candidate][level] = max(1, priced)
 
             dew += income
             bloom_wallet += cells
@@ -242,17 +250,19 @@ def reprice():
     for key, curve in costs.items():
         last = 0
         for index, price in enumerate(curve):
+            if key in BLOOM_ONLY or original_costs[key][index] == 0:
+                # A bloom-only node stays free in dew.
+                curve[index] = 0
+                continue
             if index < state[key]:
                 last = price
                 continue
             last = nice(max(price, last * 2.15))
             curve[index] = last
-        for index in range(state[key], len(blooms[key])):
-            if original_blooms[key][index] <= 0:
-                blooms[key][index] = 0
-                continue
-            prev_b = blooms[key][index - 1] if index else 0
-            blooms[key][index] = nice(max(blooms[key][index], (prev_b or 1) * 2.15))
+    # Bloom prices are hand designed: blooms are a rare currency, not an income.
+    for key in blooms:
+        for index in range(len(blooms[key])):
+            blooms[key][index] = original_blooms[key][index]
 
     return state, costs, blooms, report
 

@@ -1,4 +1,7 @@
-"""Load upgrade costs and priority from balance/upgrades.json (run: npm run dump-upgrades)."""
+"""Load upgrade costs, bloom costs, island gates and priority from balance/upgrades.json.
+
+Run: npm run dump-upgrades   (after editing src/game/tree.ts)
+"""
 from __future__ import annotations
 
 import json
@@ -19,6 +22,22 @@ def build_costs() -> dict[str, list[int]]:
     for node in data["nodes"]:
         costs[node["id"]] = list(node["costs"])
     return costs
+
+
+def build_bloom_costs() -> dict[str, list[int]]:
+    """Bloom petals per rank. Empty list / zeros = dew-only node."""
+    data = load_catalog()
+    blooms: dict[str, list[int]] = {}
+    for node in data["nodes"]:
+        raw = list(node.get("blooms") or [])
+        padded = raw + [0] * (len(node["costs"]) - len(raw))
+        blooms[node["id"]] = padded[: len(node["costs"])]
+    return blooms
+
+
+def build_world_min() -> dict[str, int]:
+    data = load_catalog()
+    return {node["id"]: int(node.get("worldMin", 0)) for node in data["nodes"]}
 
 
 def build_priority_unique() -> list[str]:

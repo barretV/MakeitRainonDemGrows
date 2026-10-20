@@ -7,13 +7,14 @@ no affordable upgrade (a dry run) and how many buys a player gets per bottle.
 from __future__ import annotations
 
 from game_constants import BLOOM_COSTS, COSTS, OVERHEAD_SEC, bottle_seconds, cloud_scale, max_liters, rain_radius, soak_per_tick
-from sim import buy_all_affordable, cells_per_run, mask_count, new_state
+from sim import buy_all_affordable, cells_per_run, island_blooms, mask_count, new_state
 
 
 def early_purchase_report(max_runs: int = 40, max_buys_per_run: int | None = None) -> None:
     state = new_state()
     dew = 0.0
     blooms = 0.0
+    awarded = 0
     total = mask_count(0)
     dry_streak = 0
     dry_zones: list[tuple[int, int]] = []
@@ -30,7 +31,10 @@ def early_purchase_report(max_runs: int = 40, max_buys_per_run: int | None = Non
         land_pct = cells / total * 100
         best_cover = max(best_cover, restored / total * 100 if total else 0.0)
         dew += gained
-        blooms += cells
+        earned = island_blooms(restored, total)
+        if earned > awarded:
+            blooms += earned - awarded
+            awarded = earned
         dew, blooms, bought = buy_all_affordable(state, dew, blooms, 0, max_buys=max_buys_per_run)
         n = len(bought)
         purchases_per_run.append(n)

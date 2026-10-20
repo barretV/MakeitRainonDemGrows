@@ -31,36 +31,29 @@ from game_constants import (
     rain_radius,
     soak_per_tick,
 )
-from sim import WORLD_NAMES, cells_per_run, mask_count, new_state, next_buy
-
-
-# Petal shop, same order and prices as src/game/petal.ts. Bought with leftover blooms
-# after the tree, so cosmetics and Pressed Petals compete with island ranks.
-PETAL_COSTS = [40, 100, 220, 480, 900, 1600, 120, 280, 600, 1200, 2400, 5000, 10000, 18000]
-
-
-def buy_petals(blooms: float, petal_index: int) -> tuple[float, int]:
-    while petal_index < len(PETAL_COSTS) and blooms >= PETAL_COSTS[petal_index]:
-        blooms -= PETAL_COSTS[petal_index]
-        petal_index += 1
-    return blooms, petal_index
+from sim import WORLD_NAMES, cells_per_run, island_blooms, mask_count, new_state, next_buy
 
 
 def simulate(max_buys_per_bottle: int | None, from_world: int):
     state = new_state()
     dew = 0.0
     blooms = 0.0
-    petal_index = 0
+    awarded = 0
     unlocked = from_world
     islands: list[dict] = []
 
     for world in range(from_world, len(WORLDS)):
         total = mask_count(world)
+        restored = 0.0
         per_run: list[dict] = []
         while len(per_run) < 1200:
-            cells, earned, seconds = cells_per_run(state, world, 0.0)
+            cells, earned, seconds = cells_per_run(state, world, restored / total if total else 0.0)
+            restored = min(float(total), restored + cells)
             dew += earned
-            blooms += cells
+            earned_blooms = island_blooms(restored, total)
+            if earned_blooms > awarded:
+                blooms += earned_blooms - awarded
+                awarded = earned_blooms
 
             # What is the shop waiting on this bottle? (first priority node not affordable)
             blocked = ""
@@ -95,8 +88,6 @@ def simulate(max_buys_per_bottle: int | None, from_world: int):
                 state[node] += 1
                 bought.append(f"{node}{state[node]}")
 
-            blooms, petal_index = buy_petals(blooms, petal_index)
-
             per_run.append(
                 {
                     "run": len(per_run) + 1,
@@ -112,7 +103,7 @@ def simulate(max_buys_per_bottle: int | None, from_world: int):
                     "blocked": "" if bought else blocked,
                 }
             )
-            if cells / total >= 0.98:
+            if total <= 0 or restored / total >= 0.98:
                 break
 
         unlocked = max(unlocked, world)

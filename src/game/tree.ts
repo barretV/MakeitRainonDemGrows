@@ -12,9 +12,9 @@ export type NodeId =
   | 'specks'
   | 'mist'
   | 'soak'
+  | 'downpour'
   | 'flow'
   | 'spring'
-  | 'downpour'
   | 'reach'
   | 'circle'
   | 'wide'
@@ -37,9 +37,21 @@ export type NodeId =
   | 'mirage'
   | 'waterbomb'
   | 'purify'
-  | 'monsoon';
+  | 'monsoon'
+  | 'blush'
+  | 'bow'
+  | 'trail'
+  | 'buddy'
+  | 'sparkle'
+  | 'hum'
+  | 'press';
 
-export type Branch = 'core' | 'bottle' | 'drizzle' | 'reach' | 'charm';
+/**
+ * One spoke of the web. Every branch owns a direction so a player can read the
+ * shape of their build at a glance: pour, rain, growth, reach, fortune, storm
+ * and the rare bloom branch.
+ */
+export type Branch = 'core' | 'pour' | 'rain' | 'reach' | 'fortune' | 'storm' | 'spark' | 'bloom';
 
 export interface UpgradeNode {
   id: NodeId;
@@ -51,7 +63,7 @@ export interface UpgradeNode {
   max: number;
   color: string;
   costs: readonly number[];
-  /** Blooms (finished mask cells) required for each rank. Omitted ranks are dew-only. */
+  /** Blooms (rare currency) required for each rank. Omitted ranks are dew-only. */
   blooms?: readonly number[];
   /** Island index that must be unlocked before this rank can be bought. */
   worldMin?: number;
@@ -69,54 +81,71 @@ export const NODE_IDS: readonly NodeId[] = [
   'glacier',
   'drizzle',
   'specks',
-  'spore',
   'mist',
-  'hail',
   'soak',
+  'downpour',
   'flow',
   'spring',
-  'downpour',
+  'spore',
   'geyser',
   'monsoon',
   'reach',
   'circle',
-  'waterbomb',
   'wide',
-  'mirage',
   'horizon',
+  'waterbomb',
+  'mirage',
   'charm',
-  'rainbow',
   'dew',
   'bounty',
+  'crit',
   'harvest',
   'purify',
-  'crit',
   'sprinkler',
   'spin',
   'lightning',
   'zap',
   'tornado',
   'twist',
+  'rainbow',
+  'hail',
+  'blush',
+  'bow',
+  'trail',
+  'buddy',
+  'sparkle',
+  'hum',
+  'press',
 ];
 
-/** Workshop “next up” + sim buy order (mirrors balance/upgrades.json via dump-upgrades). */
+/**
+ * Workshop "next up" + sim buy order (mirrors balance/upgrades.json via dump-upgrades).
+ * The order is the recommended path: size, then the pour, the rain, the reach, the
+ * first abilities and a rare bloom treat, then the deep branches.
+ */
 export const PRIORITY: readonly NodeId[] = [
   'puff',
   'bottle',
   'flask',
-  'reservoir',
   'drizzle',
   'specks',
   'reach',
   'circle',
+  'sprinkler',
+  'spin',
+  'lightning',
+  'zap',
   'mist',
   'soak',
+  'blush',
+  'press',
   'charm',
   'dew',
   'wide',
   'bounty',
-  'linger',
   'crit',
+  'reservoir',
+  'linger',
   'flow',
   'spring',
   'geyser',
@@ -128,15 +157,16 @@ export const PRIORITY: readonly NodeId[] = [
   'glacier',
   'mirage',
   'waterbomb',
-  'sprinkler',
-  'spin',
-  'lightning',
-  'zap',
   'purify',
   'tornado',
   'twist',
   'monsoon',
   'harvest',
+  'bow',
+  'trail',
+  'buddy',
+  'sparkle',
+  'hum',
 ];
 
 const NODES: readonly UpgradeNode[] = [
@@ -149,194 +179,167 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Get bigger. A bigger cloud drinks a wider circle and the camera leans in.',
     max: 8,
     color: '#ffe56a',
-    costs: [27, 38, 51, 65, 81, 98, 112, 130],
+    costs: [45, 63, 83, 100, 130, 160, 190, 220],
     effect: (level) => `Size ${cloudScale({ ...emptyRanks(), puff: level }).toFixed(2)}`,
   },
+  // ---------------------------------------------------------------- pour
   {
     id: 'bottle',
     parent: 'puff',
-    branch: 'bottle',
+    branch: 'pour',
     kind: 'gate',
     name: 'Bottle',
-    desc: 'Open the bottle petal. The next ranks spend blooms for a longer pour.',
+    desc: 'Open the bottle. Every pour after this lasts longer.',
     max: 1,
     color: '#8fd4ff',
-    costs: [150],
-    effect: () => 'Bottle petal open',
+    costs: [260],
+    effect: () => 'Bottle open',
   },
   {
     id: 'flask',
     parent: 'bottle',
-    branch: 'bottle',
+    branch: 'pour',
     kind: 'upgrade',
     name: 'Flask',
-    desc: 'Spend blooms for a longer pour. Each rank is one more second of rain.',
+    desc: 'A deeper bottle. Each rank is one more second of rain.',
     max: 5,
     color: '#8fd4ff',
-    costs: [40, 48, 56, 64, 72],
-    blooms: [30, 80, 180, 360, 700],
+    costs: [250, 298, 330, 379, 435],
     effect: (level) => `+${(level * 1.25).toFixed(1)}s pour`,
   },
   {
     id: 'reservoir',
     parent: 'flask',
-    branch: 'bottle',
+    branch: 'pour',
     kind: 'upgrade',
     name: 'Reservoir',
-    desc: 'Blooms deepen the bottle. Another second of rain on every rank.',
+    desc: 'The bottle never empties early. Another second of rain on every rank.',
     max: 5,
     color: '#8fd4ff',
-    costs: [80, 90, 100, 110, 120],
-    blooms: [1100, 1600, 2300, 3400, 4800],
+    costs: [107465, 169797, 114999, 132248, 139709],
     effect: (level) => `+${(level * 1.25).toFixed(1)}s pour`,
   },
   {
     id: 'linger',
     parent: 'reservoir',
-    branch: 'bottle',
+    branch: 'pour',
     kind: 'upgrade',
     name: 'Linger',
     desc: 'The last sip lasts a little longer.',
     max: 5,
     color: '#8fd4ff',
-    costs: [33000, 37950, 37700, 30450, 303720],
+    costs: [100000, 114999, 130737, 481150, 508893],
     effect: (level) => `+${(level * 0.35).toFixed(1)}s sip`,
   },
   {
     id: 'glacier',
     parent: 'linger',
-    branch: 'bottle',
+    branch: 'pour',
     kind: 'upgrade',
     name: 'Glacier',
     desc: 'A final sip for the long islands.',
     max: 4,
     color: '#8fd4ff',
-    costs: [1750289, 2353294, 2289930, 2136621],
+    costs: [83000, 135666, 297114, 340000],
     effect: (level) => `+${(level * 0.25).toFixed(1)}s sip`,
   },
+  // ---------------------------------------------------------------- rain
   {
     id: 'drizzle',
     parent: 'puff',
-    branch: 'drizzle',
+    branch: 'rain',
     kind: 'gate',
     name: 'Drizzle',
-    desc: 'Open the rain petal. The first cloud only leaks.',
+    desc: 'Open the rain. The first cloud only leaks.',
     max: 1,
     color: '#7eb6ff',
-    costs: [187],
-    effect: () => 'Drizzle petal open',
+    costs: [304],
+    effect: () => 'Rain open',
   },
   {
     id: 'specks',
     parent: 'drizzle',
-    branch: 'drizzle',
+    branch: 'rain',
     kind: 'upgrade',
     name: 'Specks',
     desc: 'More drops in the circle. Still patchy.',
     max: 5,
     color: '#7eb6ff',
-    costs: [150, 220, 290, 360, 430],
+    costs: [250, 350, 450, 530, 609],
     effect: (level) => `${Math.round(patchFraction({ ...emptyRanks(), drizzle: 1, specks: level }) * 100)}% of the circle`,
   },
   {
     id: 'mist',
     parent: 'specks',
-    branch: 'drizzle',
+    branch: 'rain',
     kind: 'upgrade',
     name: 'Mist',
     desc: 'The dry holes in the circle close up.',
     max: 5,
     color: '#7eb6ff',
-    costs: [1800, 2070, 2380, 2737, 3019],
+    costs: [2950, 4114, 3861, 3583, 3266],
     effect: (level) => `Patches +${level}`,
   },
   {
     id: 'soak',
     parent: 'mist',
-    branch: 'drizzle',
+    branch: 'rain',
     kind: 'upgrade',
     name: 'Soak',
     desc: 'Each drop sinks deeper. Patches fill instead of only darkening.',
     max: 5,
     color: '#7eb6ff',
-    costs: [1990, 1839, 1838, 1332, 1128],
+    costs: [4114, 2591, 396, 1874, 1756],
     effect: (level) => `Soak x${(1.42 ** level).toFixed(2)}`,
   },
   {
     id: 'downpour',
     parent: 'soak',
-    branch: 'drizzle',
+    branch: 'rain',
     kind: 'upgrade',
     name: 'Downpour',
     desc: 'The circle finally means it.',
     max: 4,
     color: '#7eb6ff',
-    costs: [303475, 126499, 317053, 313249],
+    costs: [223201, 210064, 1262930, 1150000],
     effect: (level) => `Soak x${(1.36 ** level).toFixed(2)}`,
-  },
-  {
-    id: 'geyser',
-    parent: 'soak',
-    branch: 'drizzle',
-    kind: 'upgrade',
-    name: 'Geyser Burst',
-    desc: 'Auto geysers punch through dry ground when you pour.',
-    max: 4,
-    color: '#5ec8ff',
-    costs: [324126, 447665, 420027, 420027],
-    blooms: [0, 900, 1035, 1190],
-    effect: (level) => `Geyser rank ${level}`,
   },
   {
     id: 'flow',
     parent: 'soak',
-    branch: 'drizzle',
+    branch: 'rain',
     kind: 'upgrade',
     name: 'Cascade',
     desc: 'The bottle tips harder and every drop sinks further.',
     max: 4,
     color: '#5ec8ff',
-    costs: [303475, 310500, 344342, 271043],
-    blooms: [1300, 1494, 1718, 1975],
+    costs: [120226, 700000, 804999, 679168],
     effect: (level) => `Pour x${(1.3 ** level).toFixed(2)}`,
   },
   {
     id: 'spring',
     parent: 'mist',
-    branch: 'drizzle',
+    branch: 'rain',
     kind: 'upgrade',
     name: 'Meadow Spring',
     desc: 'Finished ground holds a pool that seeps into thirsty neighbours.',
     max: 3,
     color: '#8ee0a0',
-    costs: [303475, 229999, 264498],
-    blooms: [1000, 1150, 1322],
+    costs: [500000, 575000, 591703],
     effect: (level) => `Pools ${Math.round((0.72 + 0.22 * level) * 100)}%`,
   },
-  {
-    id: 'spore',
-    parent: 'specks',
-    branch: 'drizzle',
-    kind: 'upgrade',
-    name: 'Spore Drizzle',
-    desc: 'Green spores wake moss in a wide arc.',
-    max: 3,
-    color: '#7ddf6a',
-    costs: [303475, 161000, 164605],
-    blooms: [0, 680, 781],
-    effect: (level) => `Spore +${level}`,
-  },
+  // --------------------------------------------------------------- reach
   {
     id: 'reach',
     parent: 'puff',
     branch: 'reach',
     kind: 'gate',
     name: 'Reach',
-    desc: 'Open the reach petal. Grow your bottle first — then widen the rain circle.',
+    desc: 'Open the reach. Grow your bottle first, then widen the rain circle.',
     max: 1,
     color: '#b6e86a',
-    costs: [490],
-    effect: () => 'Reach petal open',
+    costs: [640],
+    effect: () => 'Reach open',
   },
   {
     id: 'circle',
@@ -347,7 +350,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A wider rain circle.',
     max: 5,
     color: '#b6e86a',
-    costs: [494, 720, 990, 1200, 1500],
+    costs: [630, 950, 1300, 1700, 2100],
     effect: (level) => `Radius x${(1 + 0.32 * level).toFixed(2)}`,
   },
   {
@@ -359,7 +362,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The circle covers a meadow, not a puddle.',
     max: 5,
     color: '#b6e86a',
-    costs: [4600, 6600, 8800, 11000, 13000],
+    costs: [4114, 2708, 2500, 5000, 3500],
     effect: (level) => `Radius x${(1 + 0.28 * level).toFixed(2)}`,
   },
   {
@@ -371,22 +374,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Big enough to walk a whole land in one bottle.',
     max: 4,
     color: '#b6e86a',
-    costs: [399512, 480000, 570000, 1427255],
+    costs: [540000, 760000, 362040, 225296],
     effect: (level) => `Radius x${(1 + 0.26 * level).toFixed(2)}`,
-  },
-  {
-    id: 'mirage',
-    parent: 'wide',
-    branch: 'reach',
-    kind: 'upgrade',
-    name: 'Mirage Wave',
-    desc: 'Rolling heat-waves carry water across the dunes.',
-    max: 3,
-    color: '#f5d27a',
-    costs: [2196843, 2069999, 2013066],
-    blooms: [6900, 7934, 9124],
-    worldMin: 2,
-    effect: (level) => `Wave +${level}`,
   },
   {
     id: 'waterbomb',
@@ -397,212 +386,343 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Lobs a soaking splash ahead of the cloud.',
     max: 3,
     color: '#7ec8f0',
-    costs: [2065947, 1265000, 1191716],
-    blooms: [4500, 5175, 5951],
+    costs: [520000, 598000, 687700],
+    blooms: [3, 3, 4],
     worldMin: 2,
     effect: (level) => `Bomb +${level}`,
   },
   {
+    id: 'mirage',
+    parent: 'wide',
+    branch: 'reach',
+    kind: 'upgrade',
+    name: 'Mirage Wave',
+    desc: 'Rolling heat-waves carry water across the dunes.',
+    max: 3,
+    color: '#f5d27a',
+    costs: [400000, 459999, 528998],
+    blooms: [4, 4, 5],
+    worldMin: 2,
+    effect: (level) => `Wave +${level}`,
+  },
+  // ------------------------------------------------------------- fortune
+  {
     id: 'charm',
     parent: 'puff',
-    branch: 'charm',
+    branch: 'fortune',
     kind: 'gate',
     name: 'Charm',
-    desc: 'Open the charm petal. The cloud gets loud about it.',
+    desc: 'Open the charm. The land starts paying you back.',
     max: 1,
     color: '#ff9bb8',
-    costs: [1989],
-    effect: () => 'Charm petal open',
+    costs: [4114],
+    effect: () => 'Charm open',
   },
   {
     id: 'dew',
     parent: 'charm',
-    branch: 'charm',
+    branch: 'fortune',
     kind: 'upgrade',
     name: 'Dew',
     desc: 'Every finished patch pays more.',
     max: 5,
     color: '#ff9bb8',
-    costs: [700, 804, 2079, 3200, 3800],
+    costs: [807, 790, 950, 1100, 1300],
     effect: (level) => `Dew x${(1.22 ** level).toFixed(2)}`,
-  },
-  {
-    id: 'rainbow',
-    parent: 'charm',
-    branch: 'charm',
-    kind: 'upgrade',
-    name: 'Rainbow Arc',
-    desc: 'A shimmering arc paints frost into bloom.',
-    max: 3,
-    color: '#ffb4e8',
-    costs: [313249, 246215, 420027],
-    blooms: [540, 621, 1400],
-    worldMin: 1,
-    effect: (level) => `Arc +${level}`,
-  },
-  {
-    id: 'hail',
-    parent: 'mist',
-    branch: 'drizzle',
-    kind: 'upgrade',
-    name: 'Hail Melt',
-    desc: 'Ice shatters into instant growth.',
-    max: 3,
-    color: '#d8f4ff',
-    costs: [303475, 211716, 313249],
-    blooms: [530, 609, 700],
-    worldMin: 1,
-    effect: (level) => `Melt +${level}`,
-  },
-  {
-    id: 'purify',
-    parent: 'bounty',
-    branch: 'charm',
-    kind: 'upgrade',
-    name: 'Purify Rain',
-    desc: 'Toxic crust melts under a green wash.',
-    max: 3,
-    color: '#b8ff9a',
-    costs: [6000000, 12000000, 25000000],
-    blooms: [22000, 47000, 100000],
-    worldMin: 3,
-    effect: (level) => `Purify +${level}`,
-  },
-  {
-    id: 'monsoon',
-    parent: 'downpour',
-    branch: 'drizzle',
-    kind: 'upgrade',
-    name: 'Monsoon Band',
-    desc: 'A latitude belt of rain wraps the globe.',
-    max: 2,
-    color: '#6ec8ff',
-    costs: [9600000, 20000000],
-    blooms: [36000, 77000],
-    worldMin: 4,
-    effect: (level) => `Band +${level}`,
   },
   {
     id: 'bounty',
     parent: 'dew',
-    branch: 'charm',
+    branch: 'fortune',
     kind: 'upgrade',
     name: 'Bounty',
     desc: 'The meadow tips extra.',
     max: 12,
     color: '#ff9bb8',
-    costs: [15000, 17250, 19837, 22812, 26233, 30167, 29971, 28711, 30358, 32418, 34650, 37038],
+    costs: [3900, 4485, 5157, 12189, 16903, 19100, 57135, 24574, 27780, 31411, 74497, 46650],
     effect: (level) => `Dew x${(1.18 ** level).toFixed(2)}`,
+  },
+  {
+    id: 'crit',
+    parent: 'bounty',
+    branch: 'fortune',
+    kind: 'upgrade',
+    name: 'Sunshower',
+    desc: 'Some patches bloom on contact and pay triple.',
+    max: 4,
+    color: '#ff9bb8',
+    costs: [45032, 72802, 49646, 48424],
+    effect: (level) => `${Math.round(critChance({ ...emptyRanks(), crit: level }) * 100)}% crit`,
   },
   {
     id: 'harvest',
     parent: 'bounty',
-    branch: 'charm',
+    branch: 'fortune',
     kind: 'upgrade',
     name: 'Heavy Harvest',
     desc: 'A wider rain on the last world. Each rank is a globe bottle well spent.',
     max: 24,
     color: '#ff9bb8',
     worldMin: 4,
-    costs: [9800000, 21000000, 45000000, 96000000, 200000000, 430000000, 920000000, 1900000000, 4000000000, 8600000000, 18000000000, 38000000000, 81000000000, 170000000000, 360000000000, 770000000000, 1600000000000, 3400000000000, 7300000000000, 15000000000000, 32000000000000, 68000000000000, 140000000000000, 300000000000000],
-    blooms: [1800, 3800, 8100, 17000, 36000, 77000, 160000, 340000, 730000, 1500000, 3200000, 6800000, 14000000, 30000000, 64000000, 130000000, 270000000, 580000000, 1200000000, 2500000000, 5300000000, 11000000000, 23000000000, 49000000000],
+    costs: [3900000, 8300000, 17000000, 36000000, 77000000, 160000000, 340000000, 730000000, 1500000000, 3200000000, 6800000000, 14000000000, 30000000000, 64000000000, 130000000000, 270000000000, 580000000000, 1200000000000, 2500000000000, 5300000000000, 11000000000000, 23000000000000, 49000000000000, 100000000000000],
+    blooms: [2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7],
     effect: (level) => `Radius +${level * 2}%`,
   },
   {
-    id: 'crit',
+    id: 'purify',
     parent: 'bounty',
-    branch: 'charm',
+    branch: 'fortune',
     kind: 'upgrade',
-    name: 'Sunshower',
-    desc: 'Some patches bloom on contact and pay triple.',
-    max: 4,
-    color: '#ff9bb8',
-    costs: [20000, 23000, 26449, 303603],
-    effect: (level) => `${Math.round(critChance({ ...emptyRanks(), crit: level }) * 100)}% crit`,
+    name: 'Purify Rain',
+    desc: 'Toxic crust melts under a green wash.',
+    max: 3,
+    color: '#b8ff9a',
+    costs: [540000, 621000, 714150],
+    blooms: [4, 5, 6],
+    worldMin: 3,
+    effect: (level) => `Purify +${level}`,
   },
+  // --------------------------------------------------------------- storm
   {
     id: 'sprinkler',
-    parent: 'crit',
-    branch: 'charm',
+    parent: 'puff',
+    branch: 'storm',
     kind: 'gate',
     name: 'Sprinkler',
-    desc: 'The cloud spins and paints a ring. Off until you buy it.',
+    desc: 'The cloud spins and paints a ring of rain behind it.',
     max: 1,
     color: '#ff9bb8',
-    costs: [2034609],
-    blooms: [2700],
-    worldMin: 1,
+    costs: [2500],
+    blooms: [2],
     effect: () => 'Sprinkler unlocked',
   },
   {
     id: 'spin',
     parent: 'sprinkler',
-    branch: 'charm',
+    branch: 'storm',
     kind: 'upgrade',
     name: 'Spin',
     desc: 'The ring reaches further.',
     max: 3,
     color: '#ff9bb8',
-    costs: [960000, 2500000, 5300000],
-    blooms: [3800, 13000, 27000],
-    worldMin: 1,
+    costs: [3200, 3679, 4230],
+    blooms: [1, 2, 3],
     effect: (level) => `Ring +${level}`,
   },
   {
     id: 'lightning',
     parent: 'sprinkler',
-    branch: 'charm',
+    branch: 'storm',
     kind: 'gate',
-    name: 'Lightning',
+    name: 'Water Bolt',
     desc: 'A bolt finishes a tight circle of patches.',
     max: 1,
     color: '#ffd56a',
-    costs: [2200000],
-    blooms: [8500],
-    worldMin: 2,
-    effect: () => 'Lightning unlocked',
+    costs: [3400],
+    blooms: [3],
+    effect: () => 'Bolt unlocked',
   },
   {
     id: 'zap',
     parent: 'lightning',
-    branch: 'charm',
+    branch: 'storm',
     kind: 'upgrade',
     name: 'Zap',
     desc: 'The bolt covers more patches.',
     max: 3,
     color: '#ffd56a',
-    costs: [4800000, 10000000, 21000000],
-    blooms: [18000, 38000, 81000],
-    worldMin: 2,
+    costs: [3800, 4370, 5025],
+    blooms: [1, 2, 3],
     effect: (level) => `Bolt +${level}`,
   },
   {
     id: 'tornado',
     parent: 'lightning',
-    branch: 'charm',
+    branch: 'storm',
     kind: 'gate',
-    name: 'Tornado',
+    name: 'Water Spout',
     desc: 'A twister walks ahead and greens what it touches.',
     max: 1,
     color: '#d7c4ff',
-    costs: [6000000],
-    blooms: [22000],
-    worldMin: 3,
-    effect: () => 'Tornado unlocked',
+    costs: [460000],
+    blooms: [4],
+    worldMin: 1,
+    effect: () => 'Spout unlocked',
   },
   {
     id: 'twist',
     parent: 'tornado',
-    branch: 'charm',
+    branch: 'storm',
     kind: 'upgrade',
     name: 'Twist',
     desc: 'A fatter twister.',
     max: 3,
     color: '#d7c4ff',
-    costs: [7600000, 16000000, 34000000],
-    blooms: [28000, 60000, 120000],
-    worldMin: 3,
+    costs: [590000, 680000, 1400000],
+    blooms: [1, 2, 3],
+    worldMin: 1,
     effect: (level) => `Twister +${level}`,
+  },
+  // ---------------------------------------------------------------- spark
+  {
+    id: 'geyser',
+    parent: 'soak',
+    branch: 'spark',
+    kind: 'upgrade',
+    name: 'Geyser Burst',
+    desc: 'Auto geysers punch through dry ground when you pour.',
+    max: 4,
+    color: '#5ec8ff',
+    costs: [530000, 609500, 306124, 161414],
+    blooms: [1, 1, 2, 2],
+    effect: (level) => `Geyser rank ${level}`,
+  },
+  {
+    id: 'spore',
+    parent: 'specks',
+    branch: 'spark',
+    kind: 'upgrade',
+    name: 'Spore Drizzle',
+    desc: 'Green spores wake moss in a wide arc.',
+    max: 3,
+    color: '#7ddf6a',
+    costs: [474080, 172500, 198374],
+    blooms: [1, 2, 2],
+    effect: (level) => `Spore +${level}`,
+  },
+  {
+    id: 'rainbow',
+    parent: 'charm',
+    branch: 'spark',
+    kind: 'upgrade',
+    name: 'Rainbow Arc',
+    desc: 'A shimmering arc paints frost into bloom.',
+    max: 3,
+    color: '#ffb4e8',
+    costs: [630000, 724500, 744092],
+    blooms: [2, 2, 3],
+    worldMin: 1,
+    effect: (level) => `Arc +${level}`,
+  },
+  {
+    id: 'hail',
+    parent: 'mist',
+    branch: 'spark',
+    kind: 'upgrade',
+    name: 'Hail Melt',
+    desc: 'Ice shatters into instant growth.',
+    max: 3,
+    color: '#d8f4ff',
+    costs: [860000, 988999, 1137348],
+    blooms: [2, 2, 3],
+    worldMin: 1,
+    effect: (level) => `Melt +${level}`,
+  },
+  {
+    id: 'monsoon',
+    parent: 'downpour',
+    branch: 'spark',
+    kind: 'upgrade',
+    name: 'Monsoon Band',
+    desc: 'A latitude belt of rain wraps the globe.',
+    max: 2,
+    color: '#6ec8ff',
+    costs: [780000, 2300000],
+    blooms: [5, 7],
+    worldMin: 4,
+    effect: (level) => `Band +${level}`,
+  },
+  // --------------------------------------------------------------- bloom
+  {
+    id: 'blush',
+    parent: 'puff',
+    branch: 'bloom',
+    kind: 'upgrade',
+    name: 'Rosy Cheeks',
+    desc: 'The cloud blushes when it rains. One bloom.',
+    max: 1,
+    color: '#ff9ec8',
+    costs: [0],
+    blooms: [1],
+    effect: () => 'Rosy cheeks',
+  },
+  {
+    id: 'bow',
+    parent: 'blush',
+    branch: 'bloom',
+    kind: 'upgrade',
+    name: 'Rain Bow',
+    desc: 'A little ribbon on your fluff.',
+    max: 1,
+    color: '#ff9ec8',
+    costs: [0],
+    blooms: [1],
+    effect: () => 'Rain bow',
+  },
+  {
+    id: 'trail',
+    parent: 'bow',
+    branch: 'bloom',
+    kind: 'upgrade',
+    name: 'Silver Drops',
+    desc: 'Rain streaks catch the light.',
+    max: 1,
+    color: '#ff9ec8',
+    costs: [0],
+    blooms: [2],
+    effect: () => 'Silver drops',
+  },
+  {
+    id: 'buddy',
+    parent: 'trail',
+    branch: 'bloom',
+    kind: 'upgrade',
+    name: 'Meadow Friend',
+    desc: 'One more critter wanders the green.',
+    max: 1,
+    color: '#ff9ec8',
+    costs: [0],
+    blooms: [2],
+    effect: () => '+1 critter',
+  },
+  {
+    id: 'sparkle',
+    parent: 'buddy',
+    branch: 'bloom',
+    kind: 'upgrade',
+    name: 'Bloom Sparkle',
+    desc: 'Tiny glints when tiles pop green.',
+    max: 1,
+    color: '#ff9ec8',
+    costs: [0],
+    blooms: [2],
+    effect: () => 'Bloom sparkle',
+  },
+  {
+    id: 'hum',
+    parent: 'sparkle',
+    branch: 'bloom',
+    kind: 'upgrade',
+    name: 'Happy Hum',
+    desc: 'Soft hum while the bottle drains.',
+    max: 1,
+    color: '#ff9ec8',
+    costs: [0],
+    blooms: [3],
+    effect: () => 'Happy hum',
+  },
+  {
+    id: 'press',
+    parent: 'blush',
+    branch: 'bloom',
+    kind: 'upgrade',
+    name: 'Pressed Petals',
+    desc: 'Press every drop harder. +4% dew each rank.',
+    max: 8,
+    color: '#ff9ec8',
+    costs: [0, 0, 0, 0, 0, 0, 0, 0],
+    blooms: [1, 1, 1, 2, 2, 2, 2, 2],
+    effect: (level) => `Dew +${level * 4}%`,
   },
 ];
 
@@ -656,6 +776,13 @@ export function emptyRanks(): Ranks {
     waterbomb: 0,
     purify: 0,
     monsoon: 0,
+    blush: 0,
+    bow: 0,
+    trail: 0,
+    buddy: 0,
+    sparkle: 0,
+    hum: 0,
+    press: 0,
   };
 }
 
@@ -732,15 +859,15 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
     case 'crit':
       return ranks.bounty >= 1;
     case 'sprinkler':
-      return ranks.crit >= 2;
+      return ranks.drizzle >= 1;
     case 'spin':
       return ranks.sprinkler >= 1;
     case 'lightning':
-      return ranks.sprinkler >= 1 && ranks.crit >= 3;
+      return ranks.sprinkler >= 1 && ranks.specks >= 2;
     case 'zap':
       return ranks.lightning >= 1;
     case 'tornado':
-      return ranks.lightning >= 1 && ranks.zap >= 2;
+      return ranks.lightning >= 1 && ranks.zap >= 1;
     case 'twist':
       return ranks.tornado >= 1;
     case 'geyser':
@@ -759,6 +886,20 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
       return ranks.bounty >= 1;
     case 'monsoon':
       return ranks.downpour >= 1;
+    case 'blush':
+      return ranks.puff >= 1;
+    case 'bow':
+      return ranks.blush >= 1;
+    case 'trail':
+      return ranks.bow >= 1;
+    case 'buddy':
+      return ranks.trail >= 1;
+    case 'sparkle':
+      return ranks.buddy >= 1;
+    case 'hum':
+      return ranks.sparkle >= 1;
+    case 'press':
+      return ranks.blush >= 1;
     default:
       return false;
   }
@@ -839,14 +980,14 @@ export function critChance(ranks: Ranks): number {
 }
 
 export function dewMultiplier(ranks: Ranks): number {
-  return 1.22 ** ranks.dew * 1.18 ** ranks.bounty;
+  return 1.22 ** ranks.dew * 1.18 ** ranks.bounty * (1 + 0.04 * ranks.press);
 }
 
 export function maskOf(world: number): { cols: number; rows: number } {
   const table = [
-    { cols: 100, rows: 75 },
-    { cols: 180, rows: 160 },
-    { cols: 310, rows: 240 },
+    { cols: 133, rows: 97 },
+    { cols: 244, rows: 217 },
+    { cols: 355, rows: 275 },
     { cols: 340, rows: 260 },
     { cols: 140, rows: 90 },
   ];
@@ -862,8 +1003,8 @@ export function boardSpan(world: number): { w: number; h: number } {
   return { w: cols * TILE, h: rows * TILE };
 }
 
-export function cellDew(world: number, ranks: Ranks, petalPress = 0): number {
-  return worldDef(world).pay * dewMultiplier(ranks) * (1 + 0.04 * petalPress);
+export function cellDew(world: number, ranks: Ranks): number {
+  return worldDef(world).pay * dewMultiplier(ranks);
 }
 
 export interface TreePoint {
@@ -872,65 +1013,121 @@ export interface TreePoint {
   y: number;
 }
 
-export const TREE_CANVAS = { w: 900, h: 720 };
+export const TREE_CANVAS = { w: 1240, h: 900 };
 
 export const BRANCH_COLORS: Record<Branch, string> = {
   core: '#ffe56a',
-  bottle: '#8fd4ff',
-  drizzle: '#7eb6ff',
+  pour: '#8fd4ff',
+  rain: '#7eb6ff',
   reach: '#c9a0ff',
-  charm: '#ff9ec8',
+  fortune: '#ff9ec8',
+  storm: '#ffb3d0',
+  spark: '#7ddf6a',
+  bloom: '#ffd9f0',
 };
 
-/** Pixel layout for the flower. Center puff, four petals. Charm is two columns on the left. */
+/** One spoke of the web: a chain of nodes radiating from the cloud. */
+interface Spoke {
+  /** Direction in radians (0 = right, -PI/2 = up). */
+  angle: number;
+  /** Node ids, first one nearest the centre. */
+  ids: readonly NodeId[];
+  /** Distance between two nodes on this spoke. */
+  step: number;
+  /** How much the spoke curls as it goes outward. */
+  drift: number;
+  /** Nodes that hang beside their parent instead of continuing the chain. */
+  buds?: ReadonlyArray<{ id: NodeId; after: NodeId; turn: number }>;
+}
+
+/**
+ * The upgrade web: Cloud Puff sits in the middle and every kind of power runs
+ * out along its own spoke, so a finished build reads like a flower.
+ */
+const SPOKES: readonly Spoke[] = [
+  {
+    angle: -Math.PI / 2,
+    ids: ['bottle', 'flask', 'reservoir', 'linger', 'glacier'],
+    step: 74,
+    drift: 0.012,
+  },
+  {
+    angle: -Math.PI / 2 + 0.92,
+    ids: ['drizzle', 'specks', 'mist', 'soak', 'downpour'],
+    step: 72,
+    drift: 0.03,
+    buds: [
+      { id: 'flow', after: 'soak', turn: -0.42 },
+      { id: 'spring', after: 'mist', turn: -0.4 },
+    ],
+  },
+  {
+    angle: 0.12,
+    ids: ['geyser', 'spore', 'rainbow', 'hail', 'monsoon'],
+    step: 76,
+    drift: -0.028,
+  },
+  {
+    angle: Math.PI / 2 + 0.22,
+    ids: ['reach', 'circle', 'wide', 'horizon'],
+    step: 80,
+    drift: -0.03,
+    buds: [
+      { id: 'waterbomb', after: 'circle', turn: 0.4 },
+      { id: 'mirage', after: 'wide', turn: 0.38 },
+    ],
+  },
+  {
+    angle: Math.PI - 0.28,
+    ids: ['charm', 'dew', 'bounty', 'crit', 'harvest'],
+    step: 78,
+    drift: 0.03,
+    buds: [{ id: 'purify', after: 'bounty', turn: 0.42 }],
+  },
+  {
+    angle: Math.PI + 0.42,
+    ids: ['sprinkler', 'lightning', 'zap', 'tornado', 'twist'],
+    step: 76,
+    drift: 0.034,
+    buds: [{ id: 'spin', after: 'sprinkler', turn: -0.42 }],
+  },
+  {
+    angle: -Math.PI + 0.42,
+    ids: ['blush', 'bow', 'trail', 'buddy', 'sparkle', 'hum'],
+    step: 70,
+    drift: -0.03,
+    buds: [{ id: 'press', after: 'blush', turn: 0.44 }],
+  },
+];
+
+/** Pixel layout for the upgrade web: a hub with seven spokes. */
 export function layoutTree(): TreePoint[] {
-  const center = { x: TREE_CANVAS.w / 2, y: TREE_CANVAS.h / 2 + 8 };
+  const center = { x: TREE_CANVAS.w / 2, y: TREE_CANVAS.h / 2 };
   const points: TreePoint[] = [{ id: 'puff', x: center.x, y: center.y }];
-  const petals: Array<{ angle: number; ids: NodeId[]; step: number }> = [
-    { angle: -Math.PI / 2, ids: ['bottle', 'flask', 'reservoir', 'linger', 'glacier'], step: 68 },
-    {
-      angle: 0.05,
-      ids: ['drizzle', 'specks', 'spore', 'mist', 'hail', 'soak', 'flow', 'spring', 'downpour', 'geyser', 'monsoon'],
-      step: 52,
-    },
-    { angle: Math.PI / 2, ids: ['reach', 'circle', 'waterbomb', 'wide', 'mirage', 'horizon'], step: 64 },
-    {
-      angle: Math.PI,
-      ids: [
-        'charm',
-        'rainbow',
-        'dew',
-        'bounty',
-        'purify',
-        'crit',
-        'sprinkler',
-        'spin',
-        'lightning',
-        'zap',
-        'tornado',
-        'twist',
-        'harvest',
-      ],
-      step: 0,
-    },
-  ];
-  for (const petal of petals) {
-    if (petal.step === 0) {
-      petal.ids.forEach((id, i) => {
-        const col = i < 5 ? 0 : 1;
-        const row = i % 5;
-        points.push({ id, x: center.x - 160 - col * 108, y: 88 + row * 78 });
-      });
-      continue;
-    }
-    petal.ids.forEach((id, i) => {
-      const dist = 92 + i * petal.step;
-      points.push({
-        id,
-        x: center.x + Math.cos(petal.angle) * dist,
-        y: center.y + Math.sin(petal.angle) * dist,
+  // The web is a little wider than tall so it fills a 16:9 workshop panel.
+  const squash = 0.82;
+  for (const spoke of SPOKES) {
+    const place = new Map<NodeId, { x: number; y: number }>();
+    spoke.ids.forEach((id, i) => {
+      const angle = spoke.angle + spoke.drift * i;
+      const dist = 118 + i * spoke.step;
+      place.set(id, {
+        x: center.x + Math.cos(angle) * dist,
+        y: center.y + Math.sin(angle) * dist * squash,
       });
     });
+    for (const [id, p] of place) points.push({ id, x: p.x, y: p.y });
+    for (const bud of spoke.buds ?? []) {
+      const parent = place.get(bud.after);
+      if (!parent) continue;
+      const angle = spoke.angle + spoke.drift * (spoke.ids.indexOf(bud.after) + 1) + bud.turn;
+      const dist = 118 + (spoke.ids.indexOf(bud.after) + 1) * spoke.step;
+      points.push({
+        id: bud.id,
+        x: center.x + Math.cos(angle) * dist,
+        y: center.y + Math.sin(angle) * dist * squash,
+      });
+    }
   }
   return points;
 }

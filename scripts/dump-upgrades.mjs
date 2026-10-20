@@ -7,10 +7,12 @@ const nodes = allNodes().map((n) => ({
   kind: n.kind,
   max: n.max,
   costs: [...n.costs],
+  blooms: n.blooms ? [...n.blooms] : [],
+  worldMin: n.worldMin ?? 0,
 }));
 
 const catalog = {
-  version: 1,
+  version: 2,
   nodeIds: [...NODE_IDS],
   priority: [...PRIORITY],
   nodes,

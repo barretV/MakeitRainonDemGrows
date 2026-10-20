@@ -1,12 +1,25 @@
 import { formatDew } from '../game/state';
+import { HudPlantIcon } from './HudCurrencyIcons';
 
-export function DewWallet({ amount }: { amount: number }) {
+/** Workshop wallet: dew fills the bottle tree, blooms unlock its island toys. */
+export function DewWallet({ amount, blooms }: { amount: number; blooms: number }) {
   return (
-    <div className="workshop-wallet pixel" aria-label={`${formatDew(amount)} dew`}>
-      <DewDropIcon />
-      <div className="workshop-wallet__text">
-        <span className="workshop-wallet__label">Dew</span>
-        <span className="workshop-wallet__amount">{formatDew(amount)}</span>
+    <div className="workshop-wallets">
+      <div className="workshop-wallet pixel" aria-label={`${formatDew(amount)} dew`}>
+        <DewDropIcon />
+        <div className="workshop-wallet__text">
+          <span className="workshop-wallet__label">Dew</span>
+          <span className="workshop-wallet__amount">{formatDew(amount)}</span>
+        </div>
+      </div>
+      <div className="workshop-wallet workshop-wallet--blooms pixel" aria-label={`${blooms} blooms`}>
+        <span className="workshop-wallet__icon workshop-wallet__icon--bloom">
+          <HudPlantIcon className="workshop-wallet__sprite" />
+        </span>
+        <div className="workshop-wallet__text">
+          <span className="workshop-wallet__label">Blooms</span>
+          <span className="workshop-wallet__amount">{blooms.toLocaleString()}</span>
+        </div>
       </div>
     </div>
   );

@@ -11,9 +11,9 @@ const DROP =
 type NodeShape = 'cloud' | 'drop';
 type Visual = 'ghost' | 'maxed' | 'ready' | 'owned' | 'locked';
 
-/** Bottle + reach + core = fluffy clouds; drizzle + charm = rain drops. */
+/** Rain and fortune read as drops; everything else is a little cloud. */
 function nodeShape(branch: Branch): NodeShape {
-  if (branch === 'drizzle' || branch === 'charm') return 'drop';
+  if (branch === 'rain' || branch === 'fortune') return 'drop';
   return 'cloud';
 }
 
@@ -244,6 +244,51 @@ function NodeSymbol({
       <>
         <path d="M0 6 V-2" fill="none" />
         <path d="M0 -2 C-6 -2 -7 -8 -2 -8 C-2 -4 0 -2 0 -2 C0 -2 2 -4 2 -8 C7 -8 6 -2 0 -2" fill="none" />
+      </>
+    ),
+    blush: (
+      <>
+        <circle cx={-5} cy={2} r={2.2} fill="none" />
+        <circle cx={5} cy={2} r={2.2} fill="none" />
+        <path d="M-3 -4q3 -3 6 0" fill="none" />
+      </>
+    ),
+    bow: (
+      <>
+        <path d="M0 0C-8-6-9 4 0 0c9 4 8-6 0 0z" fill="none" />
+        <path d="M0 -3v6" fill="none" />
+      </>
+    ),
+    trail: (
+      <>
+        <path d="M-4 -7c1.6 2.4 2.4 4.6 2.4 6a2.4 2.4 0 1 1-4.8 0c0-1.4.8-3.6 2.4-6z" fill="none" />
+        <path d="M4 -3c1.6 2.4 2.4 4.6 2.4 6a2.4 2.4 0 1 1-4.8 0c0-1.4.8-3.6 2.4-6z" fill="none" />
+      </>
+    ),
+    buddy: (
+      <>
+        <ellipse cx={0} cy={2} rx={6} ry={5} fill="none" />
+        <path d="M-4 -3l-1 -4 4 2M4 -3l1 -4-4 2" fill="none" />
+      </>
+    ),
+    sparkle: (
+      <>
+        <path d="M0 -9l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="none" />
+        <path d="M7 -7l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" fill="none" strokeWidth={1.1} />
+      </>
+    ),
+    hum: (
+      <>
+        <path d="M-3 6V-6l7-2v8" fill="none" />
+        <circle cx={-5} cy={6} r={2.2} fill="none" />
+        <circle cx={2} cy={-2} r={2.2} fill="none" />
+      </>
+    ),
+    press: (
+      <>
+        <path d="M0 8V0" fill="none" />
+        <path d="M0 0C-7 0-8-7-2-6C-2-3 0 0 0 0C0 0 2-3 2-6C8-7 7 0 0 0" fill="none" />
+        <path d="M-6 8h12" fill="none" />
       </>
     ),
   };

@@ -8,16 +8,6 @@ import {
   tileSpec,
   worldDef,
 } from './balance';
-import {
-  buildPetalTree,
-  emptyPetals,
-  petalCost,
-  petalNode,
-  spendableBlooms,
-  type PetalId,
-  type PetalNodeView,
-  type PetalRanks,
-} from './petal';
 import { abilityCooldown, pickAutoAbility, type AbilityId, ABILITIES } from './abilities';
 import {
   growthStage,
@@ -48,6 +38,7 @@ import {
   prereqMet,
   rainRadius,
   soakPerTick,
+  treeBloomsSpent,
   upgradeNode,
   worldCount,
   worldMet,
@@ -58,10 +49,44 @@ import {
 
 const REVIVAL_MILESTONES = [10, 25, 50, 75, 100] as const;
 
+/**
+ * Blooms are the rare currency: one for every tenth of an island you restore
+ * and one more when the island comes back to life. Ten per island, fifty over
+ * the whole campaign, so every bloom spent has to be worth it.
+ */
+export const BLOOM_STEPS = 10;
+
+/** Blooms a restored island is worth. */
+export function islandBlooms(ratio: number, cleared: boolean): number {
+  if (ratio <= 0) return 0;
+  return Math.min(BLOOM_STEPS - 1, Math.floor(ratio * BLOOM_STEPS)) + (cleared ? 1 : 0);
+}
+
 export interface TileState {
   hp: number;
   pond: number;
   cracked: boolean;
+}
+
+export interface RunLogEntry {
+  /** Island the bottle was poured on. */
+  world: number;
+  /** Bottle number inside that island. */
+  run: number;
+  /** Seconds the bottle poured for. */
+  seconds: number;
+  /** Dew earned during the bottle. */
+  dew: number;
+  /** Mask cells finished during the bottle. */
+  cells: number;
+  /** Blooms earned during the bottle. */
+  blooms: number;
+  /** Rain radius the bottle had. */
+  radius: number;
+  /** Island restored fraction after the bottle. */
+  ratio: number;
+  /** Upgrades bought right after the bottle. */
+  buys: string[];
 }
 
 export interface Stats {
@@ -83,7 +108,8 @@ export interface SoakResult {
 }
 
 export type RunPhase = 'play' | 'finale' | 'dry' | 'clear';
-export type Screen = 'play' | 'results' | 'workshop' | 'worlds';
+/** 'start' is the world picker shown the moment the game boots. */
+export type Screen = 'start' | 'play' | 'results' | 'workshop' | 'worlds';
 
 export interface WorldChip {
   index: number;
@@ -130,7 +156,6 @@ export interface HudModel {
   stats: Stats;
   achievements: Array<AchievementDef & { done: boolean; current: number; goal: number }>;
   spendableBlooms: number;
-  petalTree: PetalNodeView[];
   nextAbility: string;
   abilityCdNorm: number;
   revivalGlow: number;
@@ -146,11 +171,26 @@ interface PersistedLand {
   waterPool?: number[];
 }
 
+interface PersistedV6 {
+  v: 6;
+  dew: number;
+  ranks: Partial<Ranks>;
+  world: number;
+  unlocked: number;
+  best: number[];
+  stats: Stats;
+  achievements: string[];
+  lands: PersistedLand[];
+  sfx: boolean;
+  music: boolean;
+  lastSave: number;
+}
+
 interface PersistedV5 {
   v: 5;
   dew: number;
   ranks: Partial<Ranks>;
-  petals: Partial<PetalRanks>;
+  petals: Partial<Record<string, number>>;
   world: number;
   unlocked: number;
   best: number[];
@@ -166,7 +206,7 @@ interface PersistedV4 {
   v: 4;
   dew: number;
   ranks: Partial<Ranks>;
-  petals: Partial<PetalRanks>;
+  petals: Partial<Record<string, number>>;
   world: number;
   unlocked: number;
   best: number[];
@@ -267,7 +307,6 @@ export class SaveState {
   tiles: TileState[][] = [];
   stats: Stats = emptyStats();
   achievements: string[] = [];
-  petals: PetalRanks = emptyPetals();
   sfx = true;
   music = false;
   lastSave = Date.now();
@@ -278,6 +317,19 @@ export class SaveState {
   spinCd = 5;
   phase: RunPhase = 'play';
   screen: Screen = 'play';
+  /** Rare currency earned from restoring land. */
+  blooms = 0;
+  /** Blooms already paid out per island, so a milestone is never paid twice. */
+  private bloomAwarded = new Map<number, number>();
+  /**
+   * Dev-only ledger of every bottle the player pours. The balance simulator is
+   * only a guess; this is what the game actually paid out.
+   */
+  runLog: RunLogEntry[] = [];
+  private runBuys: string[] = [];
+  private runBlooms = 0;
+  private runIndex = 0;
+  private runOpen = false;
   runDew = 0;
   /** Tree ranks bought since the last refill. Two per bottle. */
   runTiles = 0;
@@ -297,6 +349,8 @@ export class SaveState {
   finaleProgress = 0;
   newBest = false;
   private filled = 0;
+  /** Running total of the mask progress, so the ratio never scans every cell. */
+  private progressSum = 0;
   private green: boolean[] = [];
   private justGreen: number[] = [];
   private ripples = 0;
@@ -313,7 +367,6 @@ export class SaveState {
     s.unlocked = 0;
     s.stats = emptyStats();
     s.achievements = [];
-    s.petals = emptyPetals();
     s.best = [0, 0, 0, 0, 0];
     s.toast = 'A little cloud. A little drizzle.';
     s.lands.clear();
@@ -324,8 +377,15 @@ export class SaveState {
 
   static fromJSON(raw: string): SaveState | null {
     try {
-      const data = JSON.parse(raw) as PersistedV5 | PersistedV4 | PersistedV3 | PersistedV2 | PersistedV1;
-      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3 && data.v !== 4 && data.v !== 5)) return null;
+      const data = JSON.parse(raw) as
+        | PersistedV6
+        | PersistedV5
+        | PersistedV4
+        | PersistedV3
+        | PersistedV2
+        | PersistedV1;
+      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3 && data.v !== 4 && data.v !== 5 && data.v !== 6))
+        return null;
       const s = new SaveState();
       s.sfx = data.sfx !== false;
       s.music = data.music === true;
@@ -337,10 +397,9 @@ export class SaveState {
         s.stats = emptyStats();
         s.achievements = [];
         s.best = [0, 0, 0, 0, 0];
-      } else if (data.v === 2 || data.v === 3 || data.v === 4 || data.v === 5) {
+      } else if (data.v >= 2) {
         s.dew = Number.isFinite(data.dew) ? Number(data.dew) : 0;
         s.ranks = { ...emptyRanks(), ...data.ranks };
-        s.petals = { ...emptyPetals(), ...(data.v === 4 || data.v === 5 ? data.petals : {}) };
         s.world = Math.max(0, Math.min(GLOBE_WORLD, data.world | 0));
         s.unlocked = Math.max(s.world, Math.max(0, Math.min(GLOBE_WORLD, data.unlocked | 0)));
         s.stats = { ...emptyStats(), ...data.stats };
@@ -349,14 +408,22 @@ export class SaveState {
           const n = data.best?.[i];
           return typeof n === 'number' && n >= 0 ? Math.min(1, n) : 0;
         });
-        if ((data.v === 3 || data.v === 4 || data.v === 5) && Array.isArray(data.lands)) {
+        if (
+          (data.v === 3 || data.v === 4 || data.v === 5 || data.v === 6) &&
+          Array.isArray(data.lands)
+        ) {
           s.importLands(data.lands);
+        }
+        if (data.v === 4 || data.v === 5) {
+          // The petal shop is gone: its purchases become bloom branch ranks.
+          s.migratePetals(data.petals);
         }
       }
       s.screen = 'play';
       s.phase = 'play';
       s.beginWorld(s.world, false);
       sanitizeLoadedState(s);
+      s.syncBloomsFromLands();
       s.syncPhaseAfterLoad();
       s.lastSave = Date.now();
       return s;
@@ -366,11 +433,10 @@ export class SaveState {
   }
 
   toJSON(): string {
-    const data: PersistedV5 = {
-      v: 5,
+    const data: PersistedV6 = {
+      v: 6,
       dew: this.dew,
       ranks: this.ranks,
-      petals: this.petals,
       world: this.world,
       unlocked: this.unlocked,
       best: this.best,
@@ -385,12 +451,98 @@ export class SaveState {
     return JSON.stringify(data);
   }
 
+  /** Old petal purchases become ranks on the bloom branch of the tree. */
+  private migratePetals(petals: Partial<Record<string, number>> | undefined): void {
+    if (!petals) return;
+    const map: Array<[string, NodeId]> = [
+      ['blush', 'blush'],
+      ['bow', 'bow'],
+      ['trail', 'trail'],
+      ['buddy', 'buddy'],
+      ['sparkle', 'sparkle'],
+      ['hum', 'hum'],
+      ['press', 'press'],
+    ];
+    for (const [petal, node] of map) {
+      const level = Math.max(0, Math.min(8, Math.floor(Number(petals[petal]) || 0)));
+      if (level > this.ranks[node]) this.ranks[node] = level;
+    }
+  }
+
   maxLiters(): number {
     return maxLiters(this.ranks);
   }
 
   scale(): number {
     return cloudScale(this.ranks);
+  }
+
+  /** Blooms left in the wallet after everything bought on the tree. */
+  spendableBlooms(): number {
+    return Math.max(0, this.blooms - treeBloomsSpent(this.ranks));
+  }
+
+  /**
+   * Dev-only export of what the player actually earned, bottle by bottle.
+   * `balance/analytics.py` compares this against the simulator.
+   */
+  analytics(): { version: number; runs: RunLogEntry[] } {
+    return { version: 1, runs: this.runLog };
+  }
+
+  /**
+   * Pay out the blooms this island has earned. One for every tenth of the land
+   * that is green again, and one more when the island itself is whole.
+   */
+  private syncBlooms(): void {
+    const world = this.world;
+    const earned = islandBlooms(this.ratio(), this.islandRestored());
+    const had = this.bloomAwarded.get(world) ?? 0;
+    if (earned <= had) return;
+    this.bloomAwarded.set(world, earned);
+    this.blooms += earned - had;
+    this.runBlooms += earned - had;
+    this.toast = earned - had > 1 ? 'Blooms open!' : 'A bloom opens!';
+  }
+
+  /**
+   * Dev-only: close the books on the bottle that just ended. The simulator is
+   * only a guess, this is what the game really paid.
+   */
+  private logRun(): void {
+    if (!import.meta.env.DEV || !this.runOpen) return;
+    this.runOpen = false;
+    this.runIndex += 1;
+    this.runLog.push({
+      world: this.world,
+      run: this.runIndex,
+      seconds: Math.round(this.bottleTime() * 10) / 10,
+      dew: Math.round(this.runDew),
+      cells: this.runTiles,
+      blooms: this.runBlooms,
+      radius: Math.round(this.reach() * 100) / 100,
+      ratio: Math.round(this.ratio() * 1000) / 1000,
+      buys: [...this.runBuys],
+    });
+    this.runBuys = [];
+    this.runBlooms = 0;
+  }
+
+  /** Recompute the whole bloom wallet from the saved land (used after a load). */
+  private syncBloomsFromLands(): void {
+    let total = 0;
+    for (const [world, pack] of this.lands) {
+      const hp = cellHp(world);
+      let full = 0;
+      for (let i = 0; i < pack.progress.length; i += 1) {
+        if ((pack.progress[i] ?? 0) >= hp) full += 1;
+      }
+      const ratio = pack.progress.length ? full / pack.progress.length : 0;
+      const earned = islandBlooms(ratio, ratio >= 0.98);
+      this.bloomAwarded.set(world, earned);
+      total += earned;
+    }
+    this.blooms = total;
   }
 
   liters(): number {
@@ -428,15 +580,21 @@ export class SaveState {
         this.phase = 'dry';
         this.screen = 'results';
         this.noteBest();
+        this.logRun();
         this.toast = 'The bottle is empty.';
       }
     }
+    this.syncBlooms();
     this.finishIfDone();
   }
 
   /** Attach this world's saved mask + tiles, or create empty land. */
   beginWorld(world: number, forceFresh: boolean): void {
     this.world = world;
+    this.runIndex = 0;
+    this.runOpen = true;
+    this.runBuys = [];
+    this.runBlooms = 0;
     if (forceFresh) {
       this.lands.delete(world);
     }
@@ -470,6 +628,17 @@ export class SaveState {
     this.pulse.fill(0);
     this.rebuildMaskPixels();
     this.refreshGreenFromProgress();
+    // Cache the mask totals so the ratio never walks every cell.
+    const hp = cellHp(world);
+    let sum = 0;
+    let full = 0;
+    for (let i = 0; i < this.progress.length; i += 1) {
+      const value = Math.min(hp, this.progress[i] ?? 0);
+      sum += value;
+      if (value >= hp) full += 1;
+    }
+    this.progressSum = sum;
+    this.filled = full;
   }
 
   private createLandPack(world: number): LandPack {
@@ -617,6 +786,9 @@ export class SaveState {
     this.runReached = 0;
     this.newBest = false;
     this.screen = 'play';
+    this.runBuys = [];
+    this.runBlooms = 0;
+    this.runOpen = true;
     // Growth stays. The next bottle picks up where this one left off.
     this.mountWorld(this.world);
     this.refillBottle();
@@ -633,6 +805,11 @@ export class SaveState {
   openWorlds(): void {
     if (this.phase !== 'clear') return;
     this.screen = 'worlds';
+  }
+
+  /** World picker on the title screen: shown every time the game boots. */
+  openStart(): void {
+    this.screen = 'start';
   }
 
   showResults(): void {
@@ -679,27 +856,16 @@ export class SaveState {
       return false;
     }
     const bloomCost = nodeBloomCost(id, level);
-    const blooms = spendableBlooms(this.stats.tiles, this.petals, this.ranks);
+    const blooms = this.spendableBlooms();
     if (blooms < bloomCost) {
       this.toast = `Need ${bloomCost} blooms (you have ${blooms}).`;
       return false;
     }
     this.dew -= cost;
     this.ranks[id] += 1;
+    this.runBuys.push(`${id}${this.ranks[id]}`);
     this.toast = node.kind === 'gate' ? `${node.name} unlocked.` : `${node.name} rank ${this.ranks[id]}.`;
     this.claim();
-    return true;
-  }
-
-  buyPetal(id: PetalId): boolean {
-    if (this.screen !== 'workshop') return false;
-    const node = petalNode(id);
-    const level = this.petals[id];
-    if (level >= node.max) return false;
-    const cost = petalCost(id, level);
-    if (spendableBlooms(this.stats.tiles, this.petals, this.ranks) < cost) return false;
-    this.petals[id] += 1;
-    this.toast = `${node.name} unlocked.`;
     return true;
   }
 
@@ -840,7 +1006,7 @@ export class SaveState {
       const hp = cellHp(this.world);
       const was = this.progress[center] ?? 0;
       if (was < hp) {
-        this.progress[center] = Math.min(hp, was + gathered * 0.9);
+        this.setProgress(center, Math.min(hp, was + gathered * 0.9));
         this.applySoak(center, cc, cr, cols, rows, 0, hp, false, 0);
       }
     }
@@ -1087,7 +1253,7 @@ export class SaveState {
         const t = d < radius - 2.5 ? 1 : Math.max(0, 1 - (d - (radius - 2.5)) / 5);
         const value = Math.min(1, Math.max(0, t * wobble)) * hp;
         const idx = r * cols + c;
-        if ((this.progress[idx] ?? 0) < value) this.progress[idx] = value;
+        if ((this.progress[idx] ?? 0) < value) this.setProgress(idx, value);
       }
     }
     this.rebuildMaskPixels();
@@ -1101,21 +1267,14 @@ export class SaveState {
     const count = this.progress.length;
     if (count === 0) return 0;
     const hp = cellHp(this.world);
-    let sum = 0;
-    for (let i = 0; i < count; i += 1) sum += Math.min(hp, this.progress[i] ?? 0);
-    return sum / (count * hp);
+    return this.progressSum / (count * hp);
   }
 
   /** Match the balance sim (~98% cells full) and HUD rounding to 100%. */
   islandRestored(): boolean {
     const count = this.progress.length;
     if (count === 0) return false;
-    const hp = cellHp(this.world);
-    let full = 0;
-    for (let i = 0; i < count; i += 1) {
-      if ((this.progress[i] ?? 0) >= hp) full += 1;
-    }
-    return full / count >= 0.98 || this.ratio() >= 0.995;
+    return this.filled / count >= 0.98 || this.ratio() >= 0.995;
   }
 
   isRestored(index: number, world = this.world): boolean {
@@ -1261,9 +1420,9 @@ export class SaveState {
     for (let i = 0; i < cols * rows; i += 1) {
       if (this.green[i] || this.hillBloomLevel(i) >= 3.6) lush += 1;
     }
-    const cap = 8 + (this.petals.buddy >= 1 ? 2 : 0);
+    const cap = 8 + (this.ranks.buddy >= 1 ? 2 : 0);
     const fromTiles = Math.floor(lush * 0.45);
-    return Math.min(cap, Math.max(0, fromTiles) + (this.petals.buddy >= 1 ? 1 : 0));
+    return Math.min(cap, Math.max(0, fromTiles) + (this.ranks.buddy >= 1 ? 1 : 0));
   }
 
   helperCount(): number {
@@ -1304,7 +1463,7 @@ export class SaveState {
   snapshot(extra: { raining: boolean; sleepy: boolean; slosh: number; music: boolean; pond: number | null }): HudModel {
     const wallet = {
       dew: walletDew(this.dew),
-      blooms: spendableBlooms(this.stats.tiles, this.petals, this.ranks),
+      blooms: this.spendableBlooms(),
     };
     return {
       ready: true,
@@ -1328,7 +1487,12 @@ export class SaveState {
       boost: false,
       pond: extra.pond,
       phase: this.phase,
-      screen: this.phase === 'play' || this.phase === 'finale' ? 'play' : this.screen,
+      screen:
+        this.screen === 'start'
+          ? 'start'
+          : this.phase === 'play' || this.phase === 'finale'
+            ? 'play'
+            : this.screen,
       runDew: this.runDew,
       runTiles: this.runTiles,
       runReached: this.runReached,
@@ -1349,7 +1513,6 @@ export class SaveState {
         return { ...a, done: this.achievements.includes(a.id), current: track.current, goal: track.goal };
       }),
       spendableBlooms: wallet.blooms,
-      petalTree: buildPetalTree(this.stats.tiles, this.petals, this.ranks),
       nextAbility: this.abilityTelegraph().id,
       abilityCdNorm: this.abilityTelegraph().cdNorm,
       revivalGlow: this.phase === 'finale' ? Math.max(this.revivalGlow, 0.85 + this.finaleProgress * 0.4) : this.revivalGlow,
@@ -1466,6 +1629,14 @@ export class SaveState {
     return this.applySoak(best, nc, nr, cols, rows, amount, hp, respectPatches, gate);
   }
 
+  /** Write a cell's progress and keep the cached mask total in step. */
+  private setProgress(index: number, value: number): void {
+    const was = this.progress[index] ?? 0;
+    if (value === was) return;
+    this.progress[index] = value;
+    this.progressSum += value - was;
+  }
+
   private applySoak(
     index: number,
     c: number,
@@ -1487,6 +1658,7 @@ export class SaveState {
       this.progress[index] = Math.min(hp, was + amount);
     }
     const now = this.progress[index] ?? 0;
+    this.progressSum += now - was;
     if (now > was) {
       const st0 = growthStage(was, hp);
       const st1 = growthStage(now, hp);
@@ -1507,7 +1679,7 @@ export class SaveState {
     let filled = 0;
     let hill = -1;
     if (now > was && !done) {
-      const drip = cellDew(this.world, this.ranks, this.petals.press) * ((now - was) / hp) * 0.22;
+      const drip = cellDew(this.world, this.ranks) * ((now - was) / hp) * 0.22;
       if (drip >= 0.001) dew += this.addDew(drip);
     }
     if (done) {
@@ -1515,7 +1687,7 @@ export class SaveState {
       this.ripples += 1;
       this.filled += 1;
       filled = 1;
-      dew += this.addDew(cellDew(this.world, this.ranks, this.petals.press) * (crit ? 3 : 1));
+      dew += this.addDew(cellDew(this.world, this.ranks) * (crit ? 3 : 1));
       this.stats.tiles += 1;
       this.runTiles += 1;
       hill = this.hillIndex(c, r, cols, rows);
@@ -1574,7 +1746,7 @@ export class SaveState {
       const cap = hp * 0.94;
       const next = Math.min(cap, was + amount);
       if (next <= was) continue;
-      this.progress[i] = next;
+      this.setProgress(i, next);
       const byte = Math.min(254, Math.floor((next / hp) * 254));
       const pixel = i * 4;
       this.pixels[pixel] = byte;
@@ -1733,6 +1905,7 @@ export class SaveState {
   beginFinale(): void {
     if (this.phase !== 'play') return;
     this.captureRunPeak();
+    this.logRun();
     this.phase = 'finale';
     this.screen = 'play';
     this.finaleProgress = 0;

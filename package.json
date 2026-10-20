@@ -1,7 +1,7 @@
 {
   "name": "make-it-rain-on-them-grows",
   "version": "1.0.0",
-  "description": "Make it Rain on Them Grows — a kawaii HD-2D restoration incremental",
+  "description": "Make it Rain on Them Grows \u2014 a kawaii HD-2D restoration incremental",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,11 +13,12 @@
     "format": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --write",
     "format:check": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --check",
     "dump-upgrades": "npx tsx scripts/dump-upgrades.mjs",
+    "assets:build": "npx -y @series-inc/stowkit-cli@0.6.42 build",
     "balance:sim": "python balance/sim.py",
     "balance:feel": "python balance/feel.py",
     "balance:diagnose": "python balance/diagnose.py",
     "balance:check": "python balance/check_balance.py",
-    "balance:petal": "python balance/petal_feel.py"
+    "balance:bloom": "python balance/bloom_feel.py"
   },
   "keywords": [
     "react",
@@ -37,6 +38,7 @@
     "cross-env": "^7.0.3",
     "firebase": "^12.12.1",
     "prettier": "^3.4.2",
+    "puppeteer-core": "^25.14.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3",
     "vite": "^6.3.5"

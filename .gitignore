@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-ssr/
+shots/
 *.log
 .env*
 .DS_Store

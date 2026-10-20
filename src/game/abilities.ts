@@ -165,11 +165,11 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   },
   whirlpool: {
     id: 'whirlpool',
-    worldMin: 3,
+    worldMin: 0,
     baseCd: CD.whirlpool,
     label: 'Whirlpool',
     rank: (r) => Math.max(r.spin, r.sprinkler >= 1 ? 1 : 0),
-    enabled: (r, w) => w >= 3 && r.sprinkler >= 1,
+    enabled: (r, w) => w >= 0 && r.sprinkler >= 1,
     execute: (s, ctx) => {
       s.siphonPoolToCenter(ctx.cloudX, ctx.cloudZ, s.reach() * (1.05 + s.ranks.spin * 0.22));
       s.burst(ctx.cloudX, ctx.cloudZ, s.reach() * 0.45, 10 + s.ranks.spin * 6);
@@ -202,11 +202,11 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   },
   lifestorm: {
     id: 'lifestorm',
-    worldMin: 4,
+    worldMin: 1,
     baseCd: CD.lifestorm,
     label: 'Life Storm',
     rank: (r) => Math.max(r.twist, r.tornado >= 1 ? 1 : 0),
-    enabled: (r, w) => w === GLOBE_WORLD && r.tornado >= 1,
+    enabled: (r, w) => w >= 1 && r.tornado >= 1,
     execute: (s, ctx) => {
       s.burst(ctx.cloudX, ctx.cloudZ, 1.1 + s.ranks.twist * 0.35, 8 + s.ranks.twist * 5);
       s.stampWaveAt(ctx.cloudX, ctx.cloudZ, 1.8);
@@ -238,11 +238,11 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   },
   tornado: {
     id: 'tornado',
-    worldMin: 0,
+    worldMin: 1,
     baseCd: CD.tornado,
     label: 'Water Spout',
     rank: (r) => r.twist,
-    enabled: (r, w) => w >= 0 && r.tornado >= 1,
+    enabled: (r, w) => w >= 1 && r.tornado >= 1,
     execute: (s, ctx) => {
       void s;
       void ctx;

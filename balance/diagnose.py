@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Upgrade cadence, power curve, gate shocks, restoration (Chimney Fisher style)."""
+"""Upgrade cadence, power curve, gate shocks, restoration (Chimney Fisher style).
+
+    python balance/diagnose.py --runs 60 --max-buys 1
+
+Tracks both wallets so bloom-starved stalls show up as dead zones too.
+"""
 from __future__ import annotations
 
 import argparse
 
-from game_constants import bottle_seconds, max_liters, rain_radius
+from game_constants import bottle_seconds, max_liters, rain_radius, soak_per_tick
 from sim import buy_all_affordable, cells_per_run, mask_count, new_state
 
 GATE_NODES = ("bottle", "drizzle", "reach", "charm")
@@ -13,6 +18,7 @@ GATE_NODES = ("bottle", "drizzle", "reach", "charm")
 def run_campaign(runs: int, max_buys_per_run: int):
     state = new_state()
     dew = 0.0
+    blooms = 0.0
     restored = 0.0
     total = mask_count(0)
     history = []
@@ -25,7 +31,8 @@ def run_campaign(runs: int, max_buys_per_run: int):
         restored += cells
         land_pct = restored / total
         dew += gained
-        dew, bought = buy_all_affordable(state, dew, max_buys=max_buys_per_run)
+        blooms += cells
+        dew, blooms, bought = buy_all_affordable(state, dew, blooms, 0, max_buys=max_buys_per_run)
         for tag in bought:
             node = tag.rstrip("0123456789")
             lvl = state[node]
@@ -35,11 +42,13 @@ def run_campaign(runs: int, max_buys_per_run: int):
                 "run": run,
                 "dew": gained,
                 "bank": dew,
+                "blooms": blooms,
                 "land_pct": land_pct,
                 "land_delta": (land_pct - prev_land) * 100,
                 "radius": rain_radius(state),
                 "liters": max_liters(state),
                 "bottle_s": bottle_seconds(state),
+                "soak": soak_per_tick(state),
                 "bought": bought,
             }
         )
@@ -92,9 +101,9 @@ def main() -> None:
     zones = dead_zones(args.runs, purchased_runs)
     land_curve = [h["land_pct"] * 100 for h in history]
 
-    print("=" * 72)
-    print(f"  PROGRESSION DIAGNOSTIC  ({args.runs} runs, max {args.max_buys} buy/run)")
-    print("=" * 72)
+    print("=" * 76)
+    print(f"  PROGRESSION DIAGNOSTIC  (world 0, {args.runs} runs, max {args.max_buys} buy/run)")
+    print("=" * 76)
     print(f"  upgrades bought     : {len(purchases)}")
     print(f"  land restored       : {land_curve[-1]:.1f}%")
     print(f"  dead zones (3+ runs): {zones[:5] or 'none'}")
@@ -103,11 +112,11 @@ def main() -> None:
         print(f"  WARNING early dead  : {early_dead}")
 
     print("\n  power sample (first 12 runs):")
-    print("  run   dew  bank  dLand%  radius  liters  bottle_s  bought")
+    print("  run   dew  bank  blooms  dLand%  radius  liters  bottle_s  soak  bought")
     for h in history[:12]:
         print(
-            f"  {h['run']:3}  {h['dew']:4.0f}  {h['bank']:4.0f}  {h['land_delta']:6.2f}  "
-            f"{h['radius']:5.2f}  {h['liters']:5.0f}L  {h['bottle_s']:6.1f}s  "
+            f"  {h['run']:3}  {h['dew']:4.0f}  {h['bank']:4.0f}  {h['blooms']:6.0f}  {h['land_delta']:6.2f}  "
+            f"{h['radius']:5.2f}  {h['liters']:5.0f}L  {h['bottle_s']:6.1f}s  {h['soak']:4.2f}  "
             f"{','.join(h['bought']) if h['bought'] else '-'}"
         )
 

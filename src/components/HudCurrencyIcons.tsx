@@ -12,9 +12,9 @@ export function HudDewIcon() {
   );
 }
 
-export function HudPlantIcon() {
+export function HudPlantIcon({ className = 'hud-chip__sprite' }: { className?: string } = {}) {
   return (
-    <svg viewBox="0 0 14 14" className="hud-chip__sprite" shapeRendering="crispEdges" aria-hidden>
+    <svg viewBox="0 0 14 14" className={className} shapeRendering="crispEdges" aria-hidden>
       <rect x="3" y="9" width="8" height="3" fill="#8a5a36" />
       <rect x="2" y="10" width="10" height="2" fill="#6b4428" />
       <rect x="6" y="5" width="2" height="5" fill="#4caf3a" />

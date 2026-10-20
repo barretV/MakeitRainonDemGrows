@@ -14,39 +14,46 @@ export class AbilityVfx {
   play(id: AbilityId, x: number, y: number, z: number, reach: number): void {
     switch (id) {
       case 'geyser':
-        this.column(x, y, z, '#6ec8ff', reach * 0.9, 1.4);
+        this.column(x, y, z, '#6ec8ff', reach * 1.5, 0.9);
+        this.splash(x, y, z, '#bfe9ff', reach * 0.7, 0.8);
         break;
       case 'spore':
         this.ring(x, y, z, '#7ddf6a', reach * 1.1, 0.55);
+        this.ring(x, y, z, '#c8ff9a', reach * 0.7, 0.4);
         break;
       case 'rainbow':
         this.arc(x, y, z, reach * 1.3);
         break;
       case 'hail':
         this.burst(x, y, z, '#d8f4ff', reach * 0.8, 0.45);
+        this.ring(x, y, z, '#eaf9ff', reach * 0.6, 0.5);
         break;
       case 'mirage':
         this.band(x, y, z, '#f5d27a', reach * 1.2, 0.7);
         break;
       case 'waterbomb':
         this.burst(x, y, z, '#4aa8e8', reach * 1.1, 0.65);
+        this.splash(x, y, z, '#9fdcff', reach * 0.8, 0.6);
         break;
       case 'whirlpool':
       case 'sprinkler':
         this.spiral(x, y, z, '#7ec8f0', reach, 0.5);
+        this.ring(x, y, z, '#bfe9ff', reach * 0.55, 0.45);
         break;
       case 'purify':
         this.ring(x, y, z, '#b8ff9a', reach, 0.6);
+        this.ring(x, y, z, '#e8ffd0', reach * 0.6, 0.45);
         break;
       case 'monsoon':
         this.band(x, y, z, '#6ec8ff', reach * 2, 0.9);
         break;
       case 'lifestorm':
       case 'tornado':
-        this.spiral(x, y, z, '#9ef0b4', reach * 1.2, 0.85);
+        this.twister(x, y, z, '#9ef0b4', reach * 1.2, 0.85);
         break;
       case 'lightning':
-        this.column(x, y, z, '#b6f0ff', reach * 0.7, 0.35);
+        this.column(x, y, z, '#b6f0ff', reach * 1.3, 0.3);
+        this.splash(x, y, z, '#eaf9ff', reach * 0.8, 0.45);
         break;
       default:
         this.ring(x, y, z, '#ffffff', reach * 0.6, 0.35);
@@ -108,6 +115,39 @@ export class AbilityVfx {
     mesh.rotation.x = Math.PI / 2;
     mesh.position.set(x, y + 0.5, z);
     mesh.userData['spin'] = 1;
+    this.push(mesh, life);
+  }
+
+  /** A rising cone of water: the spout and the life storm. */
+  private twister(x: number, y: number, z: number, color: string, r: number, life: number): void {
+    const geo = new THREE.CylinderGeometry(r * 0.16, r * 0.5, 2.6, 12, 3, true);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.55,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y + 1.3, z);
+    mesh.userData['spin'] = 1;
+    this.push(mesh, life);
+    this.ring(x, y, z, color, r * 0.5, life * 0.8);
+  }
+
+  /** A flat splash where something hits the ground. */
+  private splash(x: number, y: number, z: number, color: string, r: number, life: number): void {
+    const geo = new THREE.CircleGeometry(r, 24);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, y + 0.12, z);
     this.push(mesh, life);
   }
 

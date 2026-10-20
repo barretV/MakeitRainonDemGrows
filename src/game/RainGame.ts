@@ -12,8 +12,8 @@ import { AbilityVfx } from './abilityVfx';
 import { BASE_SCALE, maskOf, upgradeNode, type NodeId, type Ranks } from './tree';
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
-import type { PetalId } from './petal';
 import { SaveState, formatDew, walletDew, type HudModel, type RunPhase, type SoakResult } from './state';
+import { loadStowKitPack } from '../loadStowKitPack';
 
 function formatSplashDew(n: number): string {
   return formatDew(walletDew(n));
@@ -29,20 +29,122 @@ const STEER = 0.042;
 /** 1 = default framing (closest). Larger values pull the camera back. */
 const CAM_ZOOM_MIN = 1;
 const CAM_ZOOM_MAX = 1.85;
+/**
+ * Katamari framing: the rig keeps a close patch of land in frame and follows the
+ * cloud over it. Islands stay big in the world, so they run past the frame
+ * instead of shrinking the cloud into a speck.
+ */
+const CAM_FRAME_SPAN = 19.2;
+/** Where the rig aims relative to the ground it is over: just under the surface. */
+const CAM_LOOK = -0.92;
+/** How high the cloud hovers over the ground, and how much of that is size. */
+const CLOUD_CLEARANCE = 1.35;
+const CLOUD_LIFT = 2.1;
 const FINALE_DURATION = 5.4;
+/** Metres from root to crown top in the exported hero-tree GLB. */
+const HERO_HEIGHT = 4.889;
+/** The pack strips the armature scale, so fit the measured canopy slightly inside the billboard height. */
+const HERO_FIT = 0.88;
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
 
+/** The rain ring is a plane: its face is +Z, and it lies flat when tipped -90° about X. */
+const RING_FACE = new THREE.Vector3(0, 0, 1);
+const RING_AXIS = new THREE.Vector3(1, 0, 0);
+
+/** A jagged lightning ribbon, built in the XY plane so the billboard faces the camera. */
+function boltGeometry(height: number, width: number): THREE.BufferGeometry {
+  const segments = 7;
+  const points: THREE.Vector2[] = [];
+  for (let i = 0; i <= segments; i += 1) {
+    const t = i / segments;
+    const edge = i === 0 || i === segments;
+    const zig = edge ? 0 : (i % 2 === 0 ? 1 : -1) * width * (1.1 + (i % 3) * 0.6);
+    points.push(new THREE.Vector2(zig, height * (0.5 - t)));
+  }
+  const positions = new Float32Array((segments + 1) * 2 * 3);
+  const uvs = new Float32Array((segments + 1) * 2 * 2);
+  const index: number[] = [];
+  for (let i = 0; i < points.length; i += 1) {
+    const p = points[i]!;
+    const prev = points[Math.max(0, i - 1)]!;
+    const next = points[Math.min(points.length - 1, i + 1)]!;
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const w = i === 0 || i === points.length - 1 ? width * 0.5 : width;
+    const base = i * 6;
+    positions[base] = p.x + nx * w;
+    positions[base + 1] = p.y + ny * w;
+    positions[base + 2] = 0;
+    positions[base + 3] = p.x - nx * w;
+    positions[base + 4] = p.y - ny * w;
+    positions[base + 5] = 0;
+    const u = i * 4;
+    uvs[u] = 0;
+    uvs[u + 1] = i / segments;
+    uvs[u + 2] = 1;
+    uvs[u + 3] = i / segments;
+    if (i < segments) {
+      const a = i * 2;
+      index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(index);
+  return geo;
+}
+
+/** Bright core with a soft halo around the bolt. */
+function boltMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    uniforms: {},
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        float edge = abs(vUv.x - 0.5) * 2.0;
+        float core = 1.0 - smoothstep(0.0, 0.45, edge);
+        float glow = 1.0 - smoothstep(0.2, 1.0, edge);
+        vec3 col = mix(vec3(0.55, 0.85, 1.0), vec3(1.0), core);
+        gl_FragColor = vec4(col, (core * 0.95 + glow * 0.45) * (0.55 + 0.45 * (1.0 - vUv.y)));
+      }
+    `,
+  });
+}
+
+/**
+ * Camera pull-back vs puff size. Kept gentle on purpose: the cloud has to keep
+ * reading as bigger after an upgrade, so the rig barely steps back for it.
+ */
 function growPullForScale(scale: number): number {
-  return Math.pow(Math.max(BASE_SCALE, scale) / BASE_SCALE, 0.62);
+  return Math.pow(Math.max(BASE_SCALE, scale) / BASE_SCALE, 0.35);
 }
 
 const TiltShiftShader = {
   name: 'TiltShift',
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    uFocus: { value: 0.34 },
+    /** Screen height (0 = bottom) where the far-distance blur starts. */
+    uFocus: { value: 0.84 },
+    /** The cloud on screen, so the blur never smears the player's own avatar. */
+    uCloud: { value: new THREE.Vector2(0.5, 0.5) },
+    uCloudSize: { value: new THREE.Vector2(0.08, 0.05) },
     uTexel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
   },
   vertexShader: /* glsl */ `
@@ -55,9 +157,16 @@ const TiltShiftShader = {
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
     uniform vec2 uTexel;
+    uniform float uFocus;
+    uniform vec2 uCloud;
+    uniform vec2 uCloudSize;
     varying vec2 vUv;
     void main() {
-      float amt = smoothstep(0.84, 0.99, vUv.y);
+      // The blur band hugs the top of the frame, but it opens up around the cloud
+      // so the rain you are pouring always stays crisp.
+      vec2 cd = (vUv - uCloud) / max(uCloudSize, vec2(0.001));
+      float near = 1.0 - smoothstep(0.75, 1.6, length(cd));
+      float amt = smoothstep(uFocus, uFocus + 0.15, vUv.y) * (1.0 - near);
       vec4 col = vec4(0.0);
       float wsum = 0.0;
       for (int i = -4; i <= 4; i++) {
@@ -248,6 +357,7 @@ export class RainGame {
   private readonly clock = new THREE.Clock();
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
+  private readonly cloudProbe = new THREE.Vector3();
   private readonly keys = new Set<string>();
   private readonly art: ArtSet;
   private readonly timeU = { value: 0 };
@@ -322,6 +432,7 @@ export class RainGame {
   private views: TileView[] = [];
   private cloud: THREE.Mesh;
   private curtain: THREE.Mesh;
+  private rainRing: THREE.Mesh;
   private puddle: THREE.Mesh;
   private mountain: THREE.Mesh;
   private spaceDome!: THREE.Mesh;
@@ -346,6 +457,13 @@ export class RainGame {
   private rainMix = 0;
   private birds: SkyBird[] = [];
   private farTrees: THREE.Mesh[] = [];
+  private heroGroup: THREE.Group | null = null;
+  private heroMixer: THREE.AnimationMixer | null = null;
+  private heroMaterials: THREE.MeshStandardMaterial[] = [];
+  private heroIndex = -1;
+  private heroLoadStarted = false;
+  private heroHeight = HERO_HEIGHT;
+  private heroSun!: THREE.DirectionalLight;
   private parallaxIslands: ParallaxIsland[] = [];
   private animals: Critter[] = [];
   private helpers: THREE.Mesh[] = [];
@@ -382,6 +500,15 @@ export class RainGame {
     this.scene.fog = new THREE.Fog('#4a2038', 24, 52);
     this.scene.add(this.track);
     this.scene.add(this.camera);
+    // The procedural pixel sprites are pre-lit. These lights only touch the
+    // StowKit hero tree's PBR materials.
+    const heroAmbient = new THREE.AmbientLight('#ffe9d6', 1.15);
+    const heroHemi = new THREE.HemisphereLight('#fff1e4', '#3a2030', 1.1);
+    this.heroSun = new THREE.DirectionalLight('#fff1e4', 2.5);
+    this.heroSun.position.set(-7, 11, 6);
+    const heroFill = new THREE.DirectionalLight('#ffe2b8', 0.9);
+    heroFill.position.set(6, 4, 9);
+    this.scene.add(heroAmbient, heroHemi, this.heroSun, heroFill);
     this.abilityVfx = new AbilityVfx(this.track);
 
     this.mountain = this.litBillboard(this.art.mountain, 15, 9.2, 0.12);
@@ -836,6 +963,10 @@ export class RainGame {
     this.cloud = this.litBillboard(this.art.cloud.idle, 4.6, 3.0, 0.12);
     const cloudMat = this.cloud.material as THREE.ShaderMaterial;
     cloudMat.toneMapped = false;
+    // The cloud is the player's avatar: a tree, the hero canopy or a ridge must
+    // never hide the thing that is pouring the rain.
+    cloudMat.depthTest = false;
+    cloudMat.depthWrite = false;
     this.cloud.renderOrder = 25;
     this.scene.add(this.cloud);
     this.curtain = new THREE.Mesh(
@@ -891,6 +1022,53 @@ export class RainGame {
     this.curtain.renderOrder = 3;
     this.curtain.visible = false;
     this.scene.add(this.curtain);
+
+    // The rain ring is a flat marker that hovers at the height of the tallest
+    // block under the cloud, so it reads as one clean circle on any island.
+    this.rainRing = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        // The ring is a marker, not scenery: it stays whole even when a tree
+        // or a ridge stands between it and the camera.
+        depthTest: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        uniforms: {
+          uHalf: { value: 1 },
+          uReach: { value: 1 },
+          uOn: { value: 0 },
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform float uHalf;
+          uniform float uReach;
+          uniform float uOn;
+          varying vec2 vUv;
+          void main() {
+            vec2 p = (vUv - 0.5) * 2.0;
+            float d = length(p) * uHalf;
+            float reach = max(uReach, 0.001);
+            float rim = smoothstep(reach * 1.04, reach * 0.9, d) * smoothstep(reach * 0.7, reach * 0.9, d);
+            float wash = smoothstep(reach, reach * 0.08, d);
+            vec3 ring = vec3(0.62, 1.0, 0.82);
+            float a = (wash * 0.16 + rim * 0.95) * uOn;
+            if (a <= 0.002) discard;
+            gl_FragColor = vec4(ring * a, a);
+          }
+        `,
+      }),
+    );
+    this.rainRing.renderOrder = 6;
+    this.rainRing.visible = false;
+    this.scene.add(this.rainRing);
 
     this.puddle = new THREE.Mesh(
       new THREE.CircleGeometry(1, 28),
@@ -951,6 +1129,7 @@ export class RainGame {
     if (import.meta.env.DEV) {
       (window as unknown as { __rain?: RainGame }).__rain = this;
     }
+    void this.loadHeroTree();
     void this.boot();
   }
 
@@ -1102,17 +1281,6 @@ export class RainGame {
     return true;
   }
 
-  buyPetal(id: PetalId): void {
-    if (!this.state) return;
-    if (!this.state.buyPetal(id)) this.state.toast = 'Need more blooms for that.';
-    else {
-      this.audio.chime();
-      this.cloudPop = 1.14;
-      void this.saveNow();
-    }
-    this.pushHud(true);
-  }
-
   private fireAbility(cast: AbilityId, state: SaveState): void {
     this.abilityVfx.play(cast, this.cloudX, this.hoverY, this.cloudZ, state.reach());
     if (cast === 'lightning') {
@@ -1175,10 +1343,16 @@ export class RainGame {
   async reset(): Promise<void> {
     await clearProgress();
     this.state = SaveState.fresh();
+    this.state.openStart();
     this.audio.setMuted(!this.state.sfx);
     this.rebuild();
     this.dropCloud(this.spawnAt());
     this.pushHud(true);
+  }
+
+  /** Dev-only: what the player really earned, bottle by bottle. */
+  analytics(): { version: number; runs: unknown[] } {
+    return this.state ? this.state.analytics() : { version: 1, runs: [] };
   }
 
   /** Dev-only visual QA hooks (scripts/shot.mjs); no-ops in production builds. */
@@ -1186,6 +1360,7 @@ export class RainGame {
     if (!import.meta.env.DEV || !this.state) return;
     this.skipSave = true;
     this.state.unlocked = Math.max(this.state.unlocked, world);
+    this.state.screen = 'play';
     if (world !== this.state.world) this.goto(world);
     this.devSoak(soak);
   }
@@ -1211,6 +1386,8 @@ export class RainGame {
     const loaded = raw ? SaveState.fromJSON(raw) : null;
     this.state = loaded ?? SaveState.fresh();
     this.skipSave = false;
+    // Every boot opens on the world picker: the player picks a land, then it rains.
+    this.state.openStart();
     if (fresh) await this.saveNow();
     this.lastPhase = this.state.phase;
     this.audio.setMuted(!this.state.sfx);
@@ -1247,6 +1424,11 @@ export class RainGame {
   private simulate(dt: number): void {
     const state = this.state;
     if (!state) return;
+    if (state.screen === 'start') {
+      // The world picker holds the world still until a land is chosen.
+      this.audio.rainStop();
+      return;
+    }
     if (state.phase !== 'play') {
       this.audio.rainStop();
       return;
@@ -1300,7 +1482,7 @@ export class RainGame {
     if (this.syncRunPhase()) return;
     if (raining && !this.audio.muted) {
       this.audio.rainStart();
-      this.audio.setRainHum(state.petals.hum >= 1);
+      this.audio.setRainHum(state.ranks.hum >= 1);
     } else {
       this.audio.rainStop();
     }
@@ -1428,7 +1610,7 @@ export class RainGame {
       setLitMap(mat, this.art.cloud[mood]);
       this.mood = mood;
     }
-    const bow = state.petals.bow >= 1;
+    const bow = state.ranks.bow >= 1;
     litColor(mat).set(sleepy ? '#c5c9d4' : bow ? '#fff4fc' : '#ffffff');
     let grown = state.scale();
     if (this.introActive) {
@@ -1448,7 +1630,7 @@ export class RainGame {
     }
     const speed = Math.hypot(vx, vz) / Math.max(dt, 0.016);
     const stretch = 1 + Math.min(0.2, speed * 0.012);
-    const blush = state.petals.blush >= 1 ? 1.06 : 1;
+    const blush = state.ranks.blush >= 1 ? 1.06 : 1;
     const cheek =
       (raining ? 1 + Math.sin(t * 9) * 0.05 : 1 + Math.sin(t * 2.1) * 0.025) * blush;
     const pop = this.cloudPop;
@@ -1467,7 +1649,7 @@ export class RainGame {
       const lift = 1 - Math.exp(-dt * 1.35);
       this.cloud.position.x += (this.cloudX - this.cloud.position.x) * glide;
       this.cloud.position.z += (this.cloudZ - this.cloud.position.z) * glide;
-      const targetY = gy + 1.35 + 2.1 * grown;
+      const targetY = gy + CLOUD_CLEARANCE + CLOUD_LIFT * grown;
       this.hoverY += (targetY - this.hoverY) * lift;
       this.camGroundY += (gy - this.camGroundY) * (1 - Math.exp(-dt * 2.4));
       this.cloud.position.y = this.hoverY + bob;
@@ -1478,16 +1660,13 @@ export class RainGame {
 
     const curtainMat = this.curtain.material as THREE.ShaderMaterial;
     curtainMat.uniforms['uTime']!.value = t;
-    curtainMat.uniforms['uSilver']!.value = state.petals.trail >= 1 ? 1 : 0;
+    curtainMat.uniforms['uSilver']!.value = state.ranks.trail >= 1 ? 1 : 0;
     this.curtain.visible = raining;
     this.puddle.visible = false;
     for (const mat of this.maskMats) {
-      const disc = mat.uniforms['uRainDisc'];
-      if (!disc) continue;
-      (disc.value as THREE.Vector3).set(this.cloudX, this.cloudZ, state.reach());
-      mat.uniforms['uRainOn']!.value = raining ? 1 : 0;
       if (mat.uniforms['uSeek']) mat.uniforms['uSeek'].value = clamp((state.ratio() - 0.68) / 0.16, 0, 1);
     }
+    this.updateRainRing(raining, state.reach());
     if (raining) {
       const reach = state.reach();
       const gy = this.globe ? this.cloud.position.y - 1.6 : this.groundY(this.cloudX, this.cloudZ);
@@ -1506,6 +1685,8 @@ export class RainGame {
 
     this.placeCamera(dt);
     this.dressSky(t);
+    this.updateHeroLights();
+    this.updateTiltCloudMask();
 
     this.dropAcc += dt;
     if (raining && this.dropAcc > state.dropEvery() * 0.5) {
@@ -1555,6 +1736,7 @@ export class RainGame {
     this.applySkyLift(dt);
     this.faceAll();
     this.syncProps(t);
+    if (this.heroGroup?.visible) this.heroMixer?.update(dt);
     this.syncCritters(dt, t);
     this.stepAmbient(dt, t);
     this.stepFx(dt);
@@ -1669,6 +1851,182 @@ export class RainGame {
       fog.color.copy(c);
     }
     this.skyMat.uniforms['uRain']!.value = this.rainMix;
+  }
+
+  private async loadHeroTree(): Promise<void> {
+    if (this.heroLoadStarted) return;
+    this.heroLoadStarted = true;
+    try {
+      const pack = await loadStowKitPack('default', this.renderer);
+      const hero = await pack.loadSkinnedMesh('vibrant_billboard_tree_mesh');
+      hero.name = 'hero-tree';
+      hero.visible = false;
+      let skin: THREE.SkinnedMesh | null = (hero.getObjectByProperty('isSkinnedMesh', true) as THREE.SkinnedMesh | undefined) ?? null;
+      hero.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.frustumCulled = false;
+      });
+      if (!skin) throw new Error('skinned mesh missing from pack');
+
+      // StowKit's skinned-mesh parser collapses a multi-material GLB to one
+      // material. The six textures are packed separately, so rebuild the six
+      // slots here and restore the primitive -> material mapping.
+      const textureIds = ['texture_0', 'texture_1', 'texture_2', 'texture_3', 'texture_4', 'texture_5'];
+      const maps = await Promise.all(textureIds.map((id) => pack.loadTexture(id)));
+      const materials = maps.map((map, index) => {
+        map.colorSpace = THREE.SRGBColorSpace;
+        map.magFilter = THREE.NearestFilter;
+        map.minFilter = THREE.NearestFilter;
+        map.generateMipmaps = false;
+        const clamp = index >= 4;
+        const leaf = index < 4;
+        map.wrapS = clamp ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+        map.wrapT = clamp ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+        map.needsUpdate = true;
+        return new THREE.MeshStandardMaterial({
+          map,
+          side: THREE.DoubleSide,
+          alphaTest: 0.05,
+          transparent: false,
+          depthWrite: true,
+          metalness: 0,
+          roughness: 1,
+          emissive: new THREE.Color(leaf ? '#ffffff' : '#000000'),
+          emissiveMap: leaf ? map : null,
+          emissiveIntensity: leaf ? 0.35 : 0,
+        });
+      });
+      const previous = skin.material;
+      skin.material = materials;
+      // Primitive material order from the exported GLB (24 primitives).
+      const slots = [
+        0, 1, 0, 1, 0, 1, 2, 0, 1, 2, 0, 1,
+        2, 1, 2, 1, 2, 1, 2, 3, 1, 4, 5, 1,
+      ];
+      skin.geometry.groups.forEach((group, index) => {
+        group.materialIndex = slots[index] ?? 0;
+      });
+      if (Array.isArray(previous)) previous.forEach((mat) => mat.dispose());
+      else previous?.dispose();
+      this.heroMaterials = materials;
+      // The packer bakes the armature scale away: measure the rest mesh so the
+      // 3D tree matches the billboard height it replaces.
+      const bounds = new THREE.Box3().setFromObject(hero);
+      const measured = bounds.max.y - bounds.min.y;
+      if (measured > 0.1) this.heroHeight = measured;
+
+      this.heroGroup = hero;
+      this.scene.add(hero);
+      this.syncHero();
+      try {
+        const clip = await pack.loadAnimationClip('vibrant_billboard_tree_sway');
+        // The packed clip loses the node/property dot ("canopyquaternion").
+        for (const track of clip.tracks) {
+          const match = /^(.*?)(quaternion|position|scale)$/.exec(track.name);
+          if (!match) continue;
+          const node = match[1] ?? '';
+          const prop = match[2] ?? '';
+          if (node && !node.endsWith('.')) track.name = `${node}.${prop}`;
+        }
+        const mixer = new THREE.AnimationMixer(hero);
+        const action = mixer.clipAction(clip);
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        action.play();
+        this.heroMixer = mixer;
+      } catch (error) {
+        console.warn('[hero-tree] sway animation failed', error);
+      }
+    } catch (error) {
+      console.warn('[hero-tree] load failed', error);
+    }
+  }
+
+  /** Choose the largest healthy oak tree on the current island as the 3D landmark. */
+  private pickHeroTree(world: number): number {
+    const state = this.state;
+    if (!state || this.globe) return -1;
+    const cx = this.terrain ? this.terrain.originX + this.terrain.width * 0.5 : this.camX;
+    const cz = this.terrain ? this.terrain.originZ + this.terrain.depth * 0.5 : this.camZ;
+    let best = -1;
+    let bestScore = -Infinity;
+    for (let i = 0; i < this.views.length; i += 1) {
+      const view = this.views[i];
+      if (!view || !view.prop || view.offIsland) continue;
+      const spec = state.spec(i);
+      if (spec.kind !== 'ground' || spec.decor !== 'tree') continue;
+      const y0 = this.groundY(view.x, view.z);
+      const y1 = this.groundY(view.x + 0.28, view.z);
+      const y2 = this.groundY(view.x, view.z + 0.28);
+      if (Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0)) >= 0.32) continue;
+      const variant = (i + world * 3) % 6;
+      // Favour a large tree on the camera-facing side of the island: on wide
+      // fields a perfectly central tree gets buried behind the tree line.
+      const front = view.z - cz;
+      const depth = front > 0 ? Math.min(front, 10) * 0.02 - Math.max(0, front - 10) * 0.02 : front * 0.03;
+      const side = Math.abs(view.x - cx) * 0.03;
+      const score = this.propBase('tree', 2, i) + (variant === 0 || variant === 4 ? 0.08 : 0) + depth - side;
+      if (score > bestScore) {
+        bestScore = score;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** Keep the hero GLB attached to its mature tree tile, scaled like the old billboard. */
+  private syncHero(): void {
+    const hero = this.heroGroup;
+    if (!hero) return;
+    const state = this.state;
+    const view = this.heroIndex >= 0 ? this.views[this.heroIndex] : null;
+    if (!state || !view || !view.prop || this.globe) {
+      hero.visible = false;
+      return;
+    }
+    const spec = state.spec(this.heroIndex);
+    const wet = state.hillWet(this.heroIndex);
+    const restored = state.isRestored(this.heroIndex);
+    let slopeOk = true;
+    if (this.terrain) {
+      const y0 = this.groundY(view.x, view.z);
+      const y1 = this.groundY(view.x + 0.28, view.z);
+      const y2 = this.groundY(view.x, view.z + 0.28);
+      slopeOk = Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0)) < 0.32;
+    }
+    if (
+      spec.kind !== 'ground' ||
+      spec.decor !== 'tree' ||
+      view.offIsland ||
+      !slopeOk ||
+      view.stage < 2 ||
+      !(restored || wet > 0.14)
+    ) {
+      hero.visible = false;
+      return;
+    }
+    if (hero.parent !== this.scene) this.scene.add(hero);
+    const base = Number(view.prop.userData['s']) || 1.25;
+    const billboardH = Number(view.prop.userData['ph']) || 3.6;
+    const grow = view.growStart > 0 ? easeOutBack(clamp(view.growT, 0, 1)) : 1;
+    hero.scale.setScalar(Math.max(0.001, (base * billboardH * HERO_FIT * grow) / this.heroHeight));
+    hero.position.set(view.x, view.y, view.z);
+    hero.rotation.y = 0.18;
+    hero.visible = true;
+    view.prop.visible = false;
+    const life = restored ? 1 : clamp((wet - 0.12) / 0.72, 0, 1);
+    const tint = this.propDusk.clone().lerp(this.propSun, life);
+    for (let i = 0; i < this.heroMaterials.length; i += 1) {
+      const mat = this.heroMaterials[i]!;
+      mat.color.copy(tint);
+      if (i < 4) mat.emissiveIntensity = 0.35 * life;
+    }
+  }
+
+  private updateHeroLights(): void {
+    this.heroSun.position.copy(this.sunDir).multiplyScalar(12);
+    this.heroSun.color.copy(this.sunColor);
+    this.heroSun.intensity = 2.5 * (1 - this.rainMix * 0.22);
   }
 
   private rebuild(): void {
@@ -1897,6 +2255,8 @@ export class RainGame {
       tree.visible = false;
     });
 
+    this.heroIndex = this.pickHeroTree(world);
+    this.syncHero();
     this.syncBoxes(true);
     this.syncCritters(0, 0, true);
   }
@@ -2027,6 +2387,7 @@ export class RainGame {
       view.pondStage = 2;
     }
     if (view.koi) view.koi.visible = spec.kind === 'pond';
+    if (index === this.heroIndex) this.syncHero();
   }
 
   private onBloom(index: number, result: SoakResult): void {
@@ -2177,6 +2538,7 @@ export class RainGame {
         view.pond.rotation.z = Math.sin(t * 1.1 + i) * 0.02;
       }
     }
+    this.syncHero();
   }
 
   /** 0–1 gust intensity sweeping across the board; shared by shaders, props and wind trails. */
@@ -2489,7 +2851,7 @@ export class RainGame {
   /** The bottle pours on its own while a run is live. Steering does not start or stop it. */
   private wantsRain(): boolean {
     const state = this.state;
-    return !!state && state.phase === 'play' && !this.introActive;
+    return !!state && state.phase === 'play' && state.screen === 'play' && !this.introActive;
   }
 
   private pointerSpan(): number {
@@ -2548,21 +2910,27 @@ export class RainGame {
     }
     const gy = this.camGroundY;
     if (this.terrain) {
-      const boardX = this.terrain.originX + this.terrain.width * 0.5;
-      const boardZ = this.terrain.originZ + this.terrain.depth * 0.5;
-      const span = Math.min(this.terrain.width, this.terrain.depth);
-      const panX = (this.camX - boardX) * 0.35;
-      const panZ = (this.camZ - boardZ) * 0.35;
+      // Close follow rig: the cloud stays the subject of the shot and the land
+      // scrolls past it. A bigger island means more to cross, not a tinier cloud.
+      const span = CAM_FRAME_SPAN;
       const pull = this.cameraGrowPull(dt);
       const lift = span * 0.42 * this.camZoom * pull;
       const back = span * 0.92 * this.camZoom * pull;
       const yaw = this.camYaw;
       const camOffX = Math.sin(yaw);
       const camOffZ = Math.cos(yaw);
-      const targetX = boardX + panX * 0.45;
-      const targetZ = boardZ + panZ * 0.35;
-      const targetY = 1.35 + span * 0.04;
-      this.camera.position.set(targetX + camOffX * back + jx, 2.05 + lift + jy, targetZ + camOffZ * back);
+      const targetX = this.camX;
+      const targetZ = this.camZ;
+      // The rig rides the ground it is over, so a hill lifts the shot instead of
+      // swallowing the cloud behind the crest. The aim rises with the cloud so a
+      // big cloud keeps the same spot in frame instead of drifting off the top.
+      const grown = this.state?.scale() ?? BASE_SCALE;
+      const targetY = gy + CAM_LOOK + CLOUD_LIFT * (grown - BASE_SCALE);
+      this.camera.position.set(
+        targetX + camOffX * back + jx,
+        targetY + lift + jy,
+        targetZ + camOffZ * back,
+      );
       this.camera.lookAt(targetX, targetY, targetZ);
       return;
     }
@@ -2573,6 +2941,54 @@ export class RainGame {
       this.camZ + Math.cos(yaw) * Math.cos(PITCH) * dist,
     );
     this.camera.lookAt(this.camX + jx * 0.2, gy + 0.35, this.camZ);
+  }
+
+  /**
+   * Tell the tilt-shift pass where the cloud sits on screen. The far-distance
+   * blur opens up around it, so a big cloud near the top of the frame never
+   * smears into a fuzzy smear.
+   */
+  private updateTiltCloudMask(): void {
+    const cloud = this.cloud.position;
+    this.cloudProbe.set(cloud.x, cloud.y, cloud.z).project(this.camera);
+    const uv = this.tilt.uniforms['uCloud']!.value as THREE.Vector2;
+    const size = this.tilt.uniforms['uCloudSize']!.value as THREE.Vector2;
+    uv.set(this.cloudProbe.x * 0.5 + 0.5, this.cloudProbe.y * 0.5 + 0.5);
+    // Half the sprite on screen, in UV, at the cloud's distance.
+    const dist = Math.max(1, this.camera.position.distanceTo(cloud));
+    const visible = 2 * dist * Math.tan((this.camera.fov * 0.5 * Math.PI) / 180);
+    size.set(
+      (2.3 * Math.abs(this.cloud.scale.x)) / Math.max(0.001, visible * this.camera.aspect),
+      (1.5 * Math.abs(this.cloud.scale.y)) / Math.max(0.001, visible),
+    );
+  }
+
+  /**
+   * Park the rain ring on a flat plane at the height of the tallest block under
+   * the cloud. One level, one clean circle, and nothing slices it.
+   */
+  private updateRainRing(raining: boolean, reach: number): void {
+    const mat = this.rainRing.material as THREE.ShaderMaterial;
+    const half = Math.max(0.25, reach * 1.14);
+    mat.uniforms['uHalf']!.value = half;
+    mat.uniforms['uReach']!.value = reach;
+    mat.uniforms['uOn']!.value = raining ? 1 : 0;
+    this.rainRing.visible = raining;
+    this.rainRing.scale.set(half * 2, half * 2, 1);
+    if (this.globe) {
+      const at = this.lonLatPoint(this.cloudX, this.cloudZ, 6.9);
+      this.rainRing.position.set(at.x, at.y, at.z);
+      this.rainRing.quaternion.setFromUnitVectors(
+        RING_FACE,
+        new THREE.Vector3(at.x, at.y, at.z).normalize(),
+      );
+      return;
+    }
+    const top = this.terrain
+      ? this.terrain.maxHeightNear(this.cloudX, this.cloudZ, reach)
+      : this.groundY(this.cloudX, this.cloudZ);
+    this.rainRing.position.set(this.cloudX, top + 0.08, this.cloudZ);
+    this.rainRing.quaternion.setFromAxisAngle(RING_AXIS, -Math.PI / 2);
   }
 
   private makeMask(data: Uint8Array, cols: number, rows: number): THREE.DataTexture {
@@ -2643,14 +3059,10 @@ export class RainGame {
   }
 
   private frameDist(dt = 0): number {
-    const state = this.state;
     const pull = this.cameraGrowPull(dt);
     if (this.globe) return (9 + 6 / pull) * Math.pow(pull, 0.35);
-    const world = state?.world ?? 0;
-    const { cols, rows } = state ? gridOf(world) : { cols: 8, rows: 6 };
-    const span = Math.max(cols * TILE, rows * TILE);
-    const worldPad = 1 + world * 0.055;
-    return clamp(span * 0.35 * worldPad * pull, 8, 34);
+    // Local rig: the fog band follows the close framing, not the whole island.
+    return clamp(CAM_FRAME_SPAN * 0.42 * pull, 8, 20);
   }
 
   /** Point on a virtual sky shell at the given screen NDC position (sun, clouds, distant islands). */
@@ -2674,7 +3086,6 @@ export class RainGame {
     camUp.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
     let anchorX = this.camX;
     let anchorZ = this.camZ;
-    let span = 22;
     const ratio = state?.ratio() ?? 0;
     this.skyMat.uniforms['uTime']!.value = t;
     this.skyMat.uniforms['uLife']!.value = ratio;
@@ -2684,7 +3095,6 @@ export class RainGame {
     if (this.terrain && state && !this.globe) {
       anchorX = this.terrain.originX + this.terrain.width * 0.5;
       anchorZ = this.terrain.originZ + this.terrain.depth * 0.5;
-      span = Math.max(this.terrain.width, this.terrain.depth);
       this.skyDome.position.set(anchorX, 6, anchorZ);
       this.skyMotes.position.set(anchorX, 0, anchorZ);
       this.skyMotes.rotation.y = t * 0.035;
@@ -2773,8 +3183,8 @@ export class RainGame {
       const mistMat = this.mist.material as THREE.MeshBasicMaterial;
       mistMat.opacity = this.rainMix * 0.2;
       this.mist.visible = mistMat.opacity > 0.01;
-      this.mist.position.set(anchorX - backX * span * 0.05, 1.15, anchorZ - backZ * span * 0.05);
-      this.sizeTo(this.mist, span * 1.15, span * 0.18);
+      this.mist.position.set(this.camX - backX * 5, 1.15, this.camZ - backZ * 5);
+      this.sizeTo(this.mist, CAM_FRAME_SPAN * 1.1, CAM_FRAME_SPAN * 0.2);
     } else {
       this.hillsFar.visible = false;
       this.sunHalo.visible = false;
@@ -2817,7 +3227,7 @@ export class RainGame {
       bird.mesh.visible = visible && !this.globe;
     }
 
-    this.stepWinds(t, anchorX, anchorZ, span);
+    this.stepWinds(t, this.camX, this.camZ, CAM_FRAME_SPAN);
     for (let i = 0; i < this.parallaxIslands.length; i += 1) {
       const isl = this.parallaxIslands[i]!;
       if (this.globe) {
@@ -2957,7 +3367,7 @@ export class RainGame {
     const gy = this.groundY(at.x, at.z);
     this.camGroundY = gy;
     // keep the cloud clearly airborne so the pour reads as a column of rain
-    this.hoverY = gy + 2.8 + 3.1 * (this.state?.scale() ?? 0.48);
+    this.hoverY = gy + 1.8 + 2.5 * (this.state?.scale() ?? 0.48);
     this.cloud.position.set(at.x, this.hoverY, at.z);
     this.placeCamera(0);
   }
@@ -3006,17 +3416,16 @@ export class RainGame {
   }
 
   private flashBolt(center: number): void {
-    const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.22, 6),
-      new THREE.MeshBasicMaterial({ color: '#b8f3ff', transparent: true, opacity: 1, depthWrite: false }),
-    );
     const at = this.views[center] ?? this.tilePos(center);
     const x = 'x' in at ? at.x : 0;
     const z = 'z' in at ? at.z : 0;
-    mesh.position.set(x, 3.1, z);
+    const mesh = new THREE.Mesh(boltGeometry(6.4, 0.13), boltMaterial());
+    mesh.position.set(x, 3.2, z);
     mesh.userData['bb'] = 1;
     this.scene.add(mesh);
-    this.bolts.push({ mesh, life: 0.22 });
+    this.bolts.push({ mesh, life: 0.24 });
+    // The strike lands with a flash on the ground.
+    this.rippleAt(x, z, '#dff4ff');
   }
 
   private rippleAt(x: number, z: number, color: string): void {

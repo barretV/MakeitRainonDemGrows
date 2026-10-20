@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "stringId": "tree-src/tree_leaf_mid",
+  "tags": [],
+  "pack": "default",
+  "type": "texture",
+  "quality": "fastest",
+  "resize": "full",
+  "filtering": "linear",
+  "generateMipmaps": false,
+  "cache": {
+    "sourceSize": 3015,
+    "sourceLastModified": 1792486116374.5393,
+    "settingsHash": "2|q=0|r=0|f=0|m=false"
+  }
+}

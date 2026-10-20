@@ -152,6 +152,26 @@ export class Terrain {
     return this.heights[r * this.cols + c] ?? 1;
   }
 
+  /**
+   * Tallest column inside a circle. Overlays (the rain ring) sit on this so a
+   * flat marker clears the whole island instead of being sliced by voxel steps.
+   */
+  maxHeightNear(x: number, z: number, radius: number): number {
+    if (this.spherical) return 0;
+    const c0 = Math.max(0, Math.min(this.cols - 1, Math.floor((x - radius - this.originX) / VOX)));
+    const c1 = Math.max(0, Math.min(this.cols - 1, Math.ceil((x + radius - this.originX) / VOX)));
+    const r0 = Math.max(0, Math.min(this.rows - 1, Math.floor((z - radius - this.originZ) / VOX)));
+    const r1 = Math.max(0, Math.min(this.rows - 1, Math.ceil((z + radius - this.originZ) / VOX)));
+    let max = 0;
+    for (let r = r0; r <= r1; r += 1) {
+      for (let c = c0; c <= c1; c += 1) {
+        const h = this.heights[r * this.cols + c] ?? 0;
+        if (h > max) max = h;
+      }
+    }
+    return max;
+  }
+
   /** Bilinear blend between column tops so the cloud does not snap on voxel steps. */
   heightAtSmooth(x: number, z: number): number {
     const fx = (x - this.originX) / VOX - 0.5;
@@ -211,8 +231,6 @@ export class Terrain {
         uDusk: { value: linear(worldDef(this.world).skyBot) },
         uCloud: { value: cloud },
         uRain: rain,
-        uRainDisc: { value: new THREE.Vector3(0, 0, 1) },
-        uRainOn: { value: 0 },
         uSeek: { value: 0 },
       },
       vertexShader: VOXEL_VERT,
@@ -406,8 +424,6 @@ const VOXEL_FRAG = /* glsl */ `
   uniform vec3 uDusk;
   uniform vec3 uCloud;
   uniform float uRain;
-  uniform vec3 uRainDisc;
-  uniform float uRainOn;
   uniform float uSeek;
   varying vec3 vWorld;
   varying vec3 vN;
@@ -553,14 +569,6 @@ const VOXEL_FRAG = /* glsl */ `
       float shadow = (1.0 - smoothstep(uCloud.z * 0.28, uCloud.z, cd)) * (1.0 - uGlobe);
       col *= 1.0 - shadow * 0.5 * (0.3 + life);
       col = mix(col, col * vec3(0.7, 0.58, 0.66), uRain * 0.22 * (1.0 - life * 0.7));
-      // The rain circle is drawn on the tops, so voxel steps cannot slice it.
-      float rd = length(vWorld.xz - uRainDisc.xy);
-      float reach = max(uRainDisc.z, 0.001);
-      float rim = smoothstep(reach * 1.04, reach * 0.9, rd) * smoothstep(reach * 0.7, reach * 0.9, rd);
-      float wash = smoothstep(reach, reach * 0.08, rd);
-      vec3 ring = vec3(0.62, 1.0, 0.82);
-      col += ring * wash * 0.2 * uRainOn;
-      col += ring * rim * 0.95 * uRainOn;
     }
     gl_FragColor = vec4(col, 1.0);
   }

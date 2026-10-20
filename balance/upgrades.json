@@ -9,52 +9,65 @@
     "glacier",
     "drizzle",
     "specks",
-    "spore",
     "mist",
-    "hail",
     "soak",
+    "downpour",
     "flow",
     "spring",
-    "downpour",
+    "spore",
     "geyser",
     "monsoon",
     "reach",
     "circle",
-    "waterbomb",
     "wide",
-    "mirage",
     "horizon",
+    "waterbomb",
+    "mirage",
     "charm",
-    "rainbow",
     "dew",
     "bounty",
+    "crit",
     "harvest",
     "purify",
-    "crit",
     "sprinkler",
     "spin",
     "lightning",
     "zap",
     "tornado",
-    "twist"
+    "twist",
+    "rainbow",
+    "hail",
+    "blush",
+    "bow",
+    "trail",
+    "buddy",
+    "sparkle",
+    "hum",
+    "press"
   ],
   "priority": [
     "puff",
     "bottle",
     "flask",
-    "reservoir",
     "drizzle",
     "specks",
     "reach",
     "circle",
+    "sprinkler",
+    "spin",
+    "lightning",
+    "zap",
     "mist",
     "soak",
+    "blush",
+    "press",
     "charm",
     "dew",
     "wide",
     "bounty",
-    "linger",
     "crit",
+    "reservoir",
+    "linger",
     "flow",
     "spring",
     "geyser",
@@ -66,15 +79,16 @@
     "glacier",
     "mirage",
     "waterbomb",
-    "sprinkler",
-    "spin",
-    "lightning",
-    "zap",
     "purify",
     "tornado",
     "twist",
     "monsoon",
-    "harvest"
+    "harvest",
+    "bow",
+    "trail",
+    "buddy",
+    "sparkle",
+    "hum"
   ],
   "nodes": [
     {
@@ -83,14 +97,14 @@
       "kind": "upgrade",
       "max": 8,
       "costs": [
-        27,
-        38,
-        51,
-        65,
-        81,
-        98,
-        112,
-        130
+        45,
+        63,
+        83,
+        100,
+        130,
+        160,
+        190,
+        220
       ],
       "blooms": [],
       "worldMin": 0
@@ -101,7 +115,7 @@
       "kind": "gate",
       "max": 1,
       "costs": [
-        150
+        260
       ],
       "blooms": [],
       "worldMin": 0
@@ -112,19 +126,13 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        40,
-        48,
-        56,
-        64,
-        72
+        250,
+        298,
+        330,
+        379,
+        435
       ],
-      "blooms": [
-        30,
-        80,
-        180,
-        360,
-        700
-      ],
+      "blooms": [],
       "worldMin": 0
     },
     {
@@ -133,19 +141,13 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        80,
-        90,
-        100,
-        110,
-        120
+        107465,
+        169797,
+        114999,
+        132248,
+        139709
       ],
-      "blooms": [
-        1100,
-        1600,
-        2300,
-        3400,
-        4800
-      ],
+      "blooms": [],
       "worldMin": 0
     },
     {
@@ -154,11 +156,11 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        33000,
-        37950,
-        37700,
-        30450,
-        303720
+        100000,
+        114999,
+        130737,
+        481150,
+        508893
       ],
       "blooms": [],
       "worldMin": 0
@@ -169,10 +171,10 @@
       "kind": "upgrade",
       "max": 4,
       "costs": [
-        1750289,
-        2353294,
-        2289930,
-        2136621
+        83000,
+        135666,
+        297114,
+        340000
       ],
       "blooms": [],
       "worldMin": 0
@@ -183,7 +185,7 @@
       "kind": "gate",
       "max": 1,
       "costs": [
-        187
+        304
       ],
       "blooms": [],
       "worldMin": 0
@@ -194,11 +196,11 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        150,
-        220,
-        290,
-        360,
-        430
+        250,
+        350,
+        450,
+        530,
+        609
       ],
       "blooms": [],
       "worldMin": 0
@@ -209,11 +211,11 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        1800,
-        2070,
-        2380,
-        2737,
-        3019
+        2950,
+        4114,
+        3861,
+        3583,
+        3266
       ],
       "blooms": [],
       "worldMin": 0
@@ -224,11 +226,11 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        1990,
-        1839,
-        1838,
-        1332,
-        1128
+        4114,
+        2591,
+        396,
+        1874,
+        1756
       ],
       "blooms": [],
       "worldMin": 0
@@ -239,31 +241,12 @@
       "kind": "upgrade",
       "max": 4,
       "costs": [
-        303475,
-        126499,
-        317053,
-        313249
+        223201,
+        210064,
+        1262930,
+        1150000
       ],
       "blooms": [],
-      "worldMin": 0
-    },
-    {
-      "id": "geyser",
-      "parent": "soak",
-      "kind": "upgrade",
-      "max": 4,
-      "costs": [
-        324126,
-        447665,
-        420027,
-        420027
-      ],
-      "blooms": [
-        0,
-        900,
-        1035,
-        1190
-      ],
       "worldMin": 0
     },
     {
@@ -272,17 +255,12 @@
       "kind": "upgrade",
       "max": 4,
       "costs": [
-        303475,
-        310500,
-        344342,
-        271043
+        120226,
+        700000,
+        804999,
+        679168
       ],
-      "blooms": [
-        1300,
-        1494,
-        1718,
-        1975
-      ],
+      "blooms": [],
       "worldMin": 0
     },
     {
@@ -291,32 +269,11 @@
       "kind": "upgrade",
       "max": 3,
       "costs": [
-        303475,
-        229999,
-        264498
+        500000,
+        575000,
+        591703
       ],
-      "blooms": [
-        1000,
-        1150,
-        1322
-      ],
-      "worldMin": 0
-    },
-    {
-      "id": "spore",
-      "parent": "specks",
-      "kind": "upgrade",
-      "max": 3,
-      "costs": [
-        303475,
-        161000,
-        164605
-      ],
-      "blooms": [
-        0,
-        680,
-        781
-      ],
+      "blooms": [],
       "worldMin": 0
     },
     {
@@ -325,7 +282,7 @@
       "kind": "gate",
       "max": 1,
       "costs": [
-        490
+        640
       ],
       "blooms": [],
       "worldMin": 0
@@ -336,11 +293,11 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        494,
-        720,
-        990,
-        1200,
-        1500
+        630,
+        950,
+        1300,
+        1700,
+        2100
       ],
       "blooms": [],
       "worldMin": 0
@@ -351,11 +308,11 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        4600,
-        6600,
-        8800,
-        11000,
-        13000
+        4114,
+        2708,
+        2500,
+        5000,
+        3500
       ],
       "blooms": [],
       "worldMin": 0
@@ -366,30 +323,13 @@
       "kind": "upgrade",
       "max": 4,
       "costs": [
-        399512,
-        480000,
-        570000,
-        1427255
+        540000,
+        760000,
+        362040,
+        225296
       ],
       "blooms": [],
       "worldMin": 0
-    },
-    {
-      "id": "mirage",
-      "parent": "wide",
-      "kind": "upgrade",
-      "max": 3,
-      "costs": [
-        2196843,
-        2069999,
-        2013066
-      ],
-      "blooms": [
-        6900,
-        7934,
-        9124
-      ],
-      "worldMin": 2
     },
     {
       "id": "waterbomb",
@@ -397,14 +337,31 @@
       "kind": "upgrade",
       "max": 3,
       "costs": [
-        2065947,
-        1265000,
-        1191716
+        520000,
+        598000,
+        687700
       ],
       "blooms": [
-        4500,
-        5175,
-        5951
+        3,
+        3,
+        4
+      ],
+      "worldMin": 2
+    },
+    {
+      "id": "mirage",
+      "parent": "wide",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        400000,
+        459999,
+        528998
+      ],
+      "blooms": [
+        4,
+        4,
+        5
       ],
       "worldMin": 2
     },
@@ -414,7 +371,7 @@
       "kind": "gate",
       "max": 1,
       "costs": [
-        1989
+        4114
       ],
       "blooms": [],
       "worldMin": 0
@@ -425,80 +382,14 @@
       "kind": "upgrade",
       "max": 5,
       "costs": [
-        700,
-        804,
-        2079,
-        3200,
-        3800
+        807,
+        790,
+        950,
+        1100,
+        1300
       ],
       "blooms": [],
       "worldMin": 0
-    },
-    {
-      "id": "rainbow",
-      "parent": "charm",
-      "kind": "upgrade",
-      "max": 3,
-      "costs": [
-        313249,
-        246215,
-        420027
-      ],
-      "blooms": [
-        540,
-        621,
-        1400
-      ],
-      "worldMin": 1
-    },
-    {
-      "id": "hail",
-      "parent": "mist",
-      "kind": "upgrade",
-      "max": 3,
-      "costs": [
-        303475,
-        211716,
-        313249
-      ],
-      "blooms": [
-        530,
-        609,
-        700
-      ],
-      "worldMin": 1
-    },
-    {
-      "id": "purify",
-      "parent": "bounty",
-      "kind": "upgrade",
-      "max": 3,
-      "costs": [
-        6000000,
-        12000000,
-        25000000
-      ],
-      "blooms": [
-        22000,
-        47000,
-        100000
-      ],
-      "worldMin": 3
-    },
-    {
-      "id": "monsoon",
-      "parent": "downpour",
-      "kind": "upgrade",
-      "max": 2,
-      "costs": [
-        9600000,
-        20000000
-      ],
-      "blooms": [
-        36000,
-        77000
-      ],
-      "worldMin": 4
     },
     {
       "id": "bounty",
@@ -506,18 +397,32 @@
       "kind": "upgrade",
       "max": 12,
       "costs": [
-        15000,
-        17250,
-        19837,
-        22812,
-        26233,
-        30167,
-        29971,
-        28711,
-        30358,
-        32418,
-        34650,
-        37038
+        3900,
+        4485,
+        5157,
+        12189,
+        16903,
+        19100,
+        57135,
+        24574,
+        27780,
+        31411,
+        74497,
+        46650
+      ],
+      "blooms": [],
+      "worldMin": 0
+    },
+    {
+      "id": "crit",
+      "parent": "bounty",
+      "kind": "upgrade",
+      "max": 4,
+      "costs": [
+        45032,
+        72802,
+        49646,
+        48424
       ],
       "blooms": [],
       "worldMin": 0
@@ -528,85 +433,88 @@
       "kind": "upgrade",
       "max": 24,
       "costs": [
-        9800000,
-        21000000,
-        45000000,
-        96000000,
-        200000000,
-        430000000,
-        920000000,
-        1900000000,
-        4000000000,
-        8600000000,
-        18000000000,
-        38000000000,
-        81000000000,
-        170000000000,
-        360000000000,
-        770000000000,
-        1600000000000,
-        3400000000000,
-        7300000000000,
-        15000000000000,
-        32000000000000,
-        68000000000000,
-        140000000000000,
-        300000000000000
+        3900000,
+        8300000,
+        17000000,
+        36000000,
+        77000000,
+        160000000,
+        340000000,
+        730000000,
+        1500000000,
+        3200000000,
+        6800000000,
+        14000000000,
+        30000000000,
+        64000000000,
+        130000000000,
+        270000000000,
+        580000000000,
+        1200000000000,
+        2500000000000,
+        5300000000000,
+        11000000000000,
+        23000000000000,
+        49000000000000,
+        100000000000000
       ],
       "blooms": [
-        1800,
-        3800,
-        8100,
-        17000,
-        36000,
-        77000,
-        160000,
-        340000,
-        730000,
-        1500000,
-        3200000,
-        6800000,
-        14000000,
-        30000000,
-        64000000,
-        130000000,
-        270000000,
-        580000000,
-        1200000000,
-        2500000000,
-        5300000000,
-        11000000000,
-        23000000000,
-        49000000000
+        2,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3,
+        3,
+        4,
+        4,
+        4,
+        4,
+        5,
+        5,
+        5,
+        5,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7
       ],
       "worldMin": 4
     },
     {
-      "id": "crit",
+      "id": "purify",
       "parent": "bounty",
       "kind": "upgrade",
-      "max": 4,
+      "max": 3,
       "costs": [
-        20000,
-        23000,
-        26449,
-        303603
+        540000,
+        621000,
+        714150
       ],
-      "blooms": [],
-      "worldMin": 0
+      "blooms": [
+        4,
+        5,
+        6
+      ],
+      "worldMin": 3
     },
     {
       "id": "sprinkler",
-      "parent": "crit",
+      "parent": "puff",
       "kind": "gate",
       "max": 1,
       "costs": [
-        2034609
+        2500
       ],
       "blooms": [
-        2700
+        2
       ],
-      "worldMin": 1
+      "worldMin": 0
     },
     {
       "id": "spin",
@@ -614,16 +522,16 @@
       "kind": "upgrade",
       "max": 3,
       "costs": [
-        960000,
-        2500000,
-        5300000
+        3200,
+        3679,
+        4230
       ],
       "blooms": [
-        3800,
-        13000,
-        27000
+        1,
+        2,
+        3
       ],
-      "worldMin": 1
+      "worldMin": 0
     },
     {
       "id": "lightning",
@@ -631,12 +539,12 @@
       "kind": "gate",
       "max": 1,
       "costs": [
-        2200000
+        3400
       ],
       "blooms": [
-        8500
+        3
       ],
-      "worldMin": 2
+      "worldMin": 0
     },
     {
       "id": "zap",
@@ -644,16 +552,16 @@
       "kind": "upgrade",
       "max": 3,
       "costs": [
-        4800000,
-        10000000,
-        21000000
+        3800,
+        4370,
+        5025
       ],
       "blooms": [
-        18000,
-        38000,
-        81000
+        1,
+        2,
+        3
       ],
-      "worldMin": 2
+      "worldMin": 0
     },
     {
       "id": "tornado",
@@ -661,12 +569,12 @@
       "kind": "gate",
       "max": 1,
       "costs": [
-        6000000
+        460000
       ],
       "blooms": [
-        22000
+        4
       ],
-      "worldMin": 3
+      "worldMin": 1
     },
     {
       "id": "twist",
@@ -674,16 +582,206 @@
       "kind": "upgrade",
       "max": 3,
       "costs": [
-        7600000,
-        16000000,
-        34000000
+        590000,
+        680000,
+        1400000
       ],
       "blooms": [
-        28000,
-        60000,
-        120000
+        1,
+        2,
+        3
       ],
-      "worldMin": 3
+      "worldMin": 1
+    },
+    {
+      "id": "geyser",
+      "parent": "soak",
+      "kind": "upgrade",
+      "max": 4,
+      "costs": [
+        530000,
+        609500,
+        306124,
+        161414
+      ],
+      "blooms": [
+        1,
+        1,
+        2,
+        2
+      ],
+      "worldMin": 0
+    },
+    {
+      "id": "spore",
+      "parent": "specks",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        474080,
+        172500,
+        198374
+      ],
+      "blooms": [
+        1,
+        2,
+        2
+      ],
+      "worldMin": 0
+    },
+    {
+      "id": "rainbow",
+      "parent": "charm",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        630000,
+        724500,
+        744092
+      ],
+      "blooms": [
+        2,
+        2,
+        3
+      ],
+      "worldMin": 1
+    },
+    {
+      "id": "hail",
+      "parent": "mist",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        860000,
+        988999,
+        1137348
+      ],
+      "blooms": [
+        2,
+        2,
+        3
+      ],
+      "worldMin": 1
+    },
+    {
+      "id": "monsoon",
+      "parent": "downpour",
+      "kind": "upgrade",
+      "max": 2,
+      "costs": [
+        780000,
+        2300000
+      ],
+      "blooms": [
+        5,
+        7
+      ],
+      "worldMin": 4
+    },
+    {
+      "id": "blush",
+      "parent": "puff",
+      "kind": "upgrade",
+      "max": 1,
+      "costs": [
+        0
+      ],
+      "blooms": [
+        1
+      ],
+      "worldMin": 0
+    },
+    {
+      "id": "bow",
+      "parent": "blush",
+      "kind": "upgrade",
+      "max": 1,
+      "costs": [
+        0
+      ],
+      "blooms": [
+        1
+      ],
+      "worldMin": 0
+    },
+    {
+      "id": "trail",
+      "parent": "bow",
+      "kind": "upgrade",
+      "max": 1,
+      "costs": [
+        0
+      ],
+      "blooms": [
+        2
+      ],
+      "worldMin": 0
+    },
+    {
+      "id": "buddy",
+      "parent": "trail",
+      "kind": "upgrade",
+      "max": 1,
+      "costs": [
+        0
+      ],
+      "blooms": [
+        2
+      ],
+      "worldMin": 0
+    },
+    {
+      "id": "sparkle",
+      "parent": "buddy",
+      "kind": "upgrade",
+      "max": 1,
+      "costs": [
+        0
+      ],
+      "blooms": [
+        2
+      ],
+      "worldMin": 0
+    },
+    {
+      "id": "hum",
+      "parent": "sparkle",
+      "kind": "upgrade",
+      "max": 1,
+      "costs": [
+        0
+      ],
+      "blooms": [
+        3
+      ],
+      "worldMin": 0
+    },
+    {
+      "id": "press",
+      "parent": "blush",
+      "kind": "upgrade",
+      "max": 8,
+      "costs": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "blooms": [
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "worldMin": 0
     }
   ]
 }

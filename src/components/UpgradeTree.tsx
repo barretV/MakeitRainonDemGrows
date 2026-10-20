@@ -12,14 +12,35 @@ import {
 } from '../game/tree';
 import { formatDew, walletDew, type HudModel } from '../game/state';
 import { DewWallet } from './DewWallet';
-import { PetalShop } from './PetalShop';
 import { TreeNodeCloud } from './TreeNodeCloud';
 
+const BRANCH_LABELS: Record<string, string> = {
+  core: 'Cloud',
+  pour: 'Pour',
+  rain: 'Rain',
+  reach: 'Reach',
+  fortune: 'Fortune',
+  storm: 'Storm',
+  spark: 'Spark',
+  bloom: 'Bloom',
+};
+
+const BRANCH_HINTS: Record<string, string> = {
+  core: 'Everything starts with size.',
+  pour: 'How long the bottle pours.',
+  rain: 'How hard the rain lands.',
+  reach: 'How much land one pour covers.',
+  fortune: 'What every finished patch pays.',
+  storm: 'Abilities that fire on their own.',
+  spark: 'Small wonders that trigger themselves.',
+  bloom: 'Rare bloom upgrades.',
+};
+
 const MIN_ZOOM = 0.42;
-const MAX_ZOOM = 1.35;
-const COMFORT_ZOOM = 0.9;
-/** First workshop visit when only Cloud Puff is on the tree. */
-const SOLO_PUFF_ZOOM = 1.28;
+const MAX_ZOOM = 1.7;
+const COMFORT_ZOOM = 1.05;
+/** Zoom that fits the whole upgrade web on screen. */
+const WEB_ZOOM = 0.95;
 const WORKSHOP_VIEW_KEY = 'mir-workshop-view-v1';
 
 type View = { x: number; y: number; s: number };
@@ -141,7 +162,6 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     (node) => node && node.afford,
   );
   const [picked, setPicked] = useState<NodeId>('puff');
-  const [tab, setTab] = useState<'power' | 'petals'>('power');
   const [buyPulse, setBuyPulse] = useState(0);
   const [affordPingIds, setAffordPingIds] = useState<Set<NodeId>>(() => new Set());
   const pickedId = shown.some((n) => n.id === picked) ? picked : (nextBuy?.id ?? shown[0]?.id ?? 'puff');
@@ -261,8 +281,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     const canvas = canvasRef.current;
     if (!node || !canvas) return;
     lastWorkshopFocusId = id;
-    const side = 268;
-    const w = canvas.clientWidth - side;
+    const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     const centerY = h * 0.46;
     const s = clamp(zoom ?? viewRef.current.s, MIN_ZOOM, MAX_ZOOM);
@@ -296,10 +315,9 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
         triggerAffordPing();
         return;
       }
-      const solo = totalRanks === 0;
-      const id = solo ? 'puff' : pickFocusId(model.tree);
-      const zoom = solo ? SOLO_PUFF_ZOOM : COMFORT_ZOOM;
-      focusNode(id, true, zoom);
+      // First look: the whole web, hub in the middle. The panel points at the
+      // next purchase from there.
+      focusNode('puff', true, WEB_ZOOM);
       window.setTimeout(() => triggerAffordPing(), 520);
     }, 120);
   };
@@ -528,26 +546,11 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
           className="workshop-panel"
           style={{ ['--panel-branch' as string]: BRANCH_COLORS[selected.branch] }}
         >
-          <div className="workshop-tabs pixel">
-            <button
-              type="button"
-              className={`workshop-tabs__btn${tab === 'power' ? ' workshop-tabs__btn--on' : ''}`}
-              onClick={() => setTab('power')}
-            >
-              Power
-            </button>
-            <button
-              type="button"
-              className={`workshop-tabs__btn${tab === 'petals' ? ' workshop-tabs__btn--on' : ''}`}
-              onClick={() => setTab('petals')}
-            >
-              Petals
-            </button>
+          <div className="workshop-branch-head pixel">
+            <span className="workshop-branch-head__name">{BRANCH_LABELS[selected.branch]}</span>
+            <span className="workshop-branch-head__hint">{BRANCH_HINTS[selected.branch]}</span>
           </div>
-          {tab === 'petals' ? (
-            <PetalShop model={model} game={game} />
-          ) : (
-            <>
+          <>
               {nextBuy && nextBuy.id !== selected.id && (
                 <button
                   type="button"
@@ -594,8 +597,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
               <button type="button" onClick={() => game.returnFromWorkshop()} className="workshop-back pixel">
                 Back to rain
               </button>
-            </>
-          )}
+          </>
         </aside>
       )}
     </div>

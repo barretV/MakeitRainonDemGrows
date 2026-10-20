@@ -10,16 +10,20 @@ GLOBE_WORLD = 4
 # A fresh bottle lasts 10s and Flask/Reservoir stretch it toward 20s.
 # hp is tuned so that pour still takes about twenty minutes to finish an island.
 WORLDS = [
-    (8, 6, 100, 75, 76, 3),
-    (18, 16, 180, 160, 1134, 2),
-    (31, 24, 310, 240, 1000, 3),
-    (34, 26, 340, 260, 11312, 4),
-    (14, 9, 800, 120, 47919, 4),
+    (11, 8, 133, 97, 76, 3),
+    (18, 16, 244, 217, 2579, 2),
+    (31, 24, 355, 275, 1500, 3),
+    (34, 26, 340, 260, 5009, 4),
+    (14, 9, 800, 120, 96855, 4),
 ]
 
 BASE_SCALE = 0.48
 PUFF_STEP = 0.085
 OVERHEAD_SEC = 15
+
+# Blooms are the rare currency: one for every tenth of an island you restore
+# and one more when the island comes back to life. Ten per island.
+BLOOM_STEPS = 10
 
 from upgrade_loader import (
     build_bloom_costs,
@@ -74,12 +78,19 @@ def prereq(node, state):
         "purify": state["bounty"] >= 1,
         "harvest": state["bounty"] >= 4,
         "crit": state["bounty"] >= 1,
-        "sprinkler": state["crit"] >= 2,
+        "sprinkler": state["drizzle"] >= 1,
         "spin": state["sprinkler"] >= 1,
-        "lightning": state["sprinkler"] >= 1 and state["crit"] >= 3,
+        "lightning": state["sprinkler"] >= 1 and state["specks"] >= 2,
         "zap": state["lightning"] >= 1,
-        "tornado": state["lightning"] >= 1 and state["zap"] >= 2,
+        "tornado": state["lightning"] >= 1 and state["zap"] >= 1,
         "twist": state["tornado"] >= 1,
+        "blush": puff >= 1,
+        "bow": state["blush"] >= 1,
+        "trail": state["bow"] >= 1,
+        "buddy": state["trail"] >= 1,
+        "sparkle": state["buddy"] >= 1,
+        "hum": state["sparkle"] >= 1,
+        "press": state["blush"] >= 1,
     }
     return checks[node]
 
@@ -146,4 +157,4 @@ def crit_chance(state):
 
 
 def dew_multiplier(state):
-    return (1.22 ** state["dew"]) * (1.18 ** state["bounty"])
+    return (1.22 ** state["dew"]) * (1.18 ** state["bounty"]) * (1 + 0.04 * state["press"])

@@ -22,6 +22,7 @@ import math
 
 from game_constants import (
     BLOOM_COSTS,
+    BLOOM_STEPS,
     COSTS,
     GLOBE_WORLD,
     MAXED,
@@ -58,6 +59,19 @@ def playtest_factor(state, world: int) -> float:
     return 1.0
 
 
+# Real play greens a good deal more than the rain disc alone. Water that lands on
+# a finished patch spills outward and wakes the dry holes the patch gate skipped,
+# so the effective area grows while the disc still has holes in it. Measured from
+# dev builds with `scripts/dump-analytics.mjs`: a rank-0 bottle really finishes
+# about 12 cells, not the 25 the disc alone predicts.
+SPILL_GAIN = 0.9
+
+
+def spill_multiplier(patch: float) -> float:
+    """How much the spill chain widens the rained-on area."""
+    return 1.0 + SPILL_GAIN * (1.0 - patch)
+
+
 def cells_per_run(state, world: int, filled_ratio: float = 0.0):
     """New mask cells finished this bottle; land persists between runs."""
     cols, rows, mc, mr, hp, pay = WORLDS[world]
@@ -69,7 +83,8 @@ def cells_per_run(state, world: int, filled_ratio: float = 0.0):
         radius = rain_radius(state)
         cell_area = (cols * TILE / mc) * (rows * TILE / mr)
     disc = math.pi * radius * radius / cell_area
-    wet = max(1.0, disc * patch_fraction(state))
+    patch = patch_fraction(state)
+    wet = max(1.0, disc * patch * spill_multiplier(patch))
     # Less untouched land under the cloud as the island greens. Meadow Spring keeps
     # water pooling on the green and seeping into the thirsty soil, holding the floor up.
     floor = 0.08 + 0.07 * state["spring"]
@@ -150,6 +165,17 @@ def buy_all_affordable(state, dew, blooms, world_unlocked=0, max_buys: int | Non
     return dew, blooms, bought
 
 
+def island_blooms(restored, total):
+    """Blooms are rare: one per tenth of the island restored, one more for the clear."""
+    if total <= 0:
+        return 0
+    ratio = restored / total
+    earned = min(BLOOM_STEPS - 1, int(ratio * BLOOM_STEPS))
+    if ratio >= 0.98:
+        earned += 1
+    return earned
+
+
 def clear_world(state, world, dew, blooms, world_unlocked, max_buys_per_run: int | None = None):
     """Growth stays on the island. Clear when the saved mask reaches ~98%."""
     total = mask_count(world)
@@ -160,13 +186,17 @@ def clear_world(state, world, dew, blooms, world_unlocked, max_buys_per_run: int
     last_cells = 0.0
     dry_runs = 0
     unlocked = max(world_unlocked, world)
+    awarded = 0
     for _ in range(1200):
         ratio = restored / total if total else 1.0
         cells, gained, seconds = cells_per_run(state, world, ratio)
         restored = min(float(total), restored + cells)
         last_cells = cells
         dew += gained
-        blooms += cells
+        earned = island_blooms(restored, total)
+        if earned > awarded:
+            blooms += earned - awarded
+            awarded = earned
         minutes += (seconds + OVERHEAD_SEC) / 60
         runs += 1
         dew, blooms, bought = buy_all_affordable(state, dew, blooms, unlocked, max_buys=max_buys_per_run)

@@ -12,13 +12,13 @@ FEEL_BASE = ROOT / "baseline_feel.txt"
 WORLD0_BASE = ROOT / "baseline_world0.txt"
 WORLD_NAMES = ["Dead Forest", "Frostbite", "Desert", "Toxic", "Globe"]
 # Growth stays between bottles. Minutes include the pour plus a short shop.
-# Each island is aimed at about 20 minutes of raining.
+# The first island is the short one, every island after it is a full session.
 ISLAND_WINDOWS = {
-    "Dead Forest": (18.0, 40.0),
-    "Frostbite": (18.0, 34.0),
-    "Desert": (18.0, 36.0),
-    "Toxic": (20.0, 42.0),
-    "Globe": (16.0, 36.0),
+    "Dead Forest": (20.0, 42.0),
+    "Frostbite": (24.0, 46.0),
+    "Desert": (24.0, 46.0),
+    "Toxic": (24.0, 46.0),
+    "Globe": (24.0, 46.0),
 }
 
 
