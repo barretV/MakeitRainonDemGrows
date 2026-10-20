@@ -52,25 +52,10 @@ def mask_count(world: int) -> int:
     return mc * mr
 
 
-def rank_sum(state) -> int:
-    return sum(state.values())
-
-
 def playtest_factor(state, world: int) -> float:
-    """Scale early-bottle earn/restoration to match in-game wallet (~4 dew run 1 at rank 0)."""
-    if world != 0:
-        return 1.0
-    puff = state["puff"]
-    total = rank_sum(state)
-    if total == 0:
-        return 0.24
-    if puff <= 1:
-        return 0.32
-    if puff <= 3 and total <= 5:
-        return 0.42
-    if puff <= 5:
-        return 0.58
-    return min(1.0, 0.65 + puff * 0.05)
+    """Income is the real sit-and-pour. A rank-0 bottle finishes its patch and pays ~33 dew."""
+    del state, world
+    return 1.0
 
 
 def cells_per_run(state, world: int, filled_ratio: float = 0.0):
@@ -95,9 +80,11 @@ def cells_per_run(state, world: int, filled_ratio: float = 0.0):
     soak_on_cell = ticks * soak_per_tick(state)
     mult = dew_multiplier(state)
     crit = 1 + crit_chance(state) * 2
-    if soak_on_cell >= hp:
+    if soak_on_cell >= hp * 0.92:
         cells = wet
         dew = cells * pay * mult * crit
+        # The rim and the bleed into neighbours pay on top of the finished patch.
+        dew += wet * 0.5 * pay * mult
     else:
         frac = soak_on_cell / hp
         cells = wet * frac

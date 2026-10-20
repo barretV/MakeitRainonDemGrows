@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLOBE_WORLD, TILE, gridOf, tileSpec } from './balance';
+import { GLOBE_WORLD, TILE, gridOf, tileSpec, worldDef } from './balance';
 import { normalOf } from './normals';
 
 /** Two mask cells per voxel column on every flat world (mask cells are 0.32 world units). */
@@ -19,7 +19,7 @@ interface Palette {
 }
 
 const PALETTES: Palette[] = [
-  { deadA: '#9a938a', deadB: '#7a736c', rockA: '#8f877e', rockB: '#5c564f', liveA: '#7dce4a', liveB: '#5cb83a', dirtA: '#8a5a32', dirtB: '#5a3a22' },
+  { deadA: '#6a4556', deadB: '#3a2434', rockA: '#4a3542', rockB: '#2a1c28', liveA: '#7dce4a', liveB: '#5cb83a', dirtA: '#6a4030', dirtB: '#3a2418' },
   { deadA: '#f7fbff', deadB: '#d5e6f6', rockA: '#6e96c8', rockB: '#35598f', liveA: '#b7f0c8', liveB: '#6ed4a0', dirtA: '#7f6a9a', dirtB: '#4d6f96' },
   { deadA: '#ecd6a6', deadB: '#d9be8a', rockA: '#d9b27e', rockB: '#ad8256', liveA: '#a8dc62', liveB: '#82c44c', dirtA: '#bc8a5c', dirtB: '#90643e' },
   { deadA: '#76824e', deadB: '#5e683e', rockA: '#6a5e4c', rockB: '#463d32', liveA: '#8cf0b4', liveB: '#5edab6', dirtA: '#7a5aa0', dirtB: '#56407a' },
@@ -208,6 +208,7 @@ export class Terrain {
         uGlobe: { value: this.spherical ? 1 : 0 },
         uSunDir: { value: sunDir },
         uSunColor: { value: sunColor },
+        uDusk: { value: linear(worldDef(this.world).skyBot) },
         uCloud: { value: cloud },
         uRain: rain,
       },
@@ -399,6 +400,7 @@ const VOXEL_FRAG = /* glsl */ `
   uniform float uGlobe;
   uniform vec3 uSunDir;
   uniform vec3 uSunColor;
+  uniform vec3 uDusk;
   uniform vec3 uCloud;
   uniform float uRain;
   varying vec3 vWorld;
@@ -523,15 +525,25 @@ const VOXEL_FRAG = /* glsl */ `
       col = mix(body, lipCol, step(below, lipDepth) * (1.0 - uGlobe * 0.8));
       col *= mix(mix(0.82, 1.0, smoothstep(1.2, 0.0, below)), 0.94 + 0.05 * n, uGlobe);
     }
+    vec4 lifeMask = maskAtCell(maskCell());
+    float life = vUp > 0.5
+      ? smoothstep(0.03, 0.78, lifeMask.r)
+      : smoothstep(0.5, 0.98, lifeMask.r) * 0.62;
     float wrap = clamp(dot(normalize(vN), sunDir) * 0.5 + 0.5, 0.0, 1.0);
-    float sunShade = mix(mix(0.58, 1.28, wrap), 0.98, uGlobe);
-    col *= sunShade;
-    col += uSunColor * smoothstep(0.62, 1.0, wrap) * 0.07 * (1.0 - uGlobe);
+    col *= mix(mix(0.78, 1.08, wrap), 1.0, uGlobe);
+    // Unrestored ground stays in the world's dusk. Restored ground is what the light finds.
+    vec3 dusk = mix(uDusk, vec3(1.05, 0.38, 0.55), 0.72);
+    col = mix(col * dusk, col * vec3(1.12, 1.06, 0.9), smoothstep(0.2, 0.9, life));
+    float exposure = mix(0.22, 1.75, life);
+    exposure = mix(exposure, mix(0.55, 1.2, life), uGlobe);
+    col *= exposure;
+    col += vec3(1.0, 0.62, 0.7) * smoothstep(0.08, 0.32, life) * (1.0 - smoothstep(0.55, 0.9, life)) * 0.28;
+    col += uSunColor * smoothstep(0.72, 1.0, wrap) * 0.18 * life * (1.0 - uGlobe);
     if (vUp > 0.5) {
       float cd = length(vWorld.xz - uCloud.xy);
       float shadow = (1.0 - smoothstep(uCloud.z * 0.28, uCloud.z, cd)) * (1.0 - uGlobe);
-      col *= 1.0 - shadow * 0.26;
-      col = mix(col, col * vec3(0.74, 0.84, 0.98), uRain * 0.34);
+      col *= 1.0 - shadow * 0.5 * (0.3 + life);
+      col = mix(col, col * vec3(0.7, 0.58, 0.66), uRain * 0.22 * (1.0 - life * 0.7));
     }
     gl_FragColor = vec4(col, 1.0);
   }
@@ -550,6 +562,7 @@ const FLORA_VERT = /* glsl */ `
   varying vec3 vT;
   varying vec3 vB;
   varying vec3 vN;
+  varying float vLife;
   void main() {
     vec2 muv = clamp((aSpot.xz - uBoard.xy) / uBoard.zw, 0.0, 0.9999);
     vec4 m = texture2D(uMask, (floor(muv * uMaskSize) + 0.5) / uMaskSize);
@@ -582,6 +595,7 @@ const FLORA_VERT = /* glsl */ `
     vT = tangent;
     vB = bitangent;
     vN = facing;
+    vLife = smoothstep(0.06, 0.75, wet);
     vUv = vec2((frame + position.x + 0.5) / 16.0, position.y);
     vec4 mv = viewMatrix * vec4(wp, 1.0);
     vDepth = -mv.z;
@@ -601,6 +615,7 @@ const FLORA_FRAG = /* glsl */ `
   varying vec3 vT;
   varying vec3 vB;
   varying vec3 vN;
+  varying float vLife;
   void main() {
     vec4 c = texture2D(uAtlas, vUv);
     if (c.a < 0.5) discard;
@@ -608,9 +623,10 @@ const FLORA_FRAG = /* glsl */ `
     vec3 nTex = texture2D(uNormal, vUv).xyz * 2.0 - 1.0;
     vec3 N = normalize(vT * nTex.x + vB * nTex.y + vN * nTex.z);
     float wrap = clamp(dot(N, normalize(uSunDir)) * 0.5 + 0.5, 0.0, 1.0);
-    vec3 col = albedo * mix(0.84, 1.2, wrap);
+    float lit = mix(0.08, 1.75, vLife);
+    vec3 col = albedo * lit * mix(0.7, 1.15, wrap);
     float rim = pow(wrap, 2.2) * clamp(1.0 - nTex.z, 0.0, 1.0);
-    col += albedo * uSunColor * rim * 0.28;
+    col += albedo * uSunColor * rim * 0.4 * vLife;
     gl_FragColor = vec4(col, 1.0);
   }
 `;

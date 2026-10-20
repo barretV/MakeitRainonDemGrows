@@ -251,9 +251,11 @@ export class RainGame {
   private readonly keys = new Set<string>();
   private readonly art: ArtSet;
   private readonly timeU = { value: 0 };
-  private readonly sunDir = new THREE.Vector3(0.28, 0.86, -0.42).normalize();
+  private readonly sunDir = new THREE.Vector3(0.62, 0.22, -0.28).normalize();
   private readonly sunColor = new THREE.Color(1, 0.86, 0.62);
-  private readonly sunClear = new THREE.Color(1, 0.86, 0.62);
+  private readonly sunClear = new THREE.Color(1, 0.52, 0.38);
+  private readonly propDusk = new THREE.Color('#4a2038');
+  private readonly propSun = new THREE.Color('#fff1e4');
   private readonly sunOvercast = new THREE.Color(0.55, 0.68, 0.82);
   private readonly cloudShadow = new THREE.Vector3(0, 0, 2.4);
   private readonly rainUniform = { value: 0 };
@@ -371,8 +373,8 @@ export class RainGame {
     container.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(38, w / h, 0.35, 420);
-    this.scene.background = new THREE.Color('#f7c6df');
-    this.scene.fog = new THREE.Fog('#f7c6df', 24, 52);
+    this.scene.background = new THREE.Color('#4a2038');
+    this.scene.fog = new THREE.Fog('#4a2038', 24, 52);
     this.scene.add(this.track);
     this.scene.add(this.camera);
     this.abilityVfx = new AbilityVfx(this.track);
@@ -420,7 +422,8 @@ export class RainGame {
       const puffMat = mesh.material as THREE.MeshBasicMaterial;
       puffMat.depthWrite = false;
       puffMat.fog = false;
-      puffMat.opacity = 0.82 + (i % 3) * 0.06;
+      puffMat.color.set('#5a3048');
+      puffMat.opacity = 0.34 + (i % 3) * 0.04;
       puffMat.transparent = true;
       this.puffs.push(mesh);
       this.puffDrift.push(i * 1.7);
@@ -503,7 +506,8 @@ export class RainGame {
       cloudMat.transparent = true;
       cloudMat.depthWrite = false;
       cloudMat.toneMapped = false;
-      cloudMat.opacity = 0.68 - (i % 3) * 0.08;
+      cloudMat.color.set('#6a3850');
+      cloudMat.opacity = 0.42 - (i % 3) * 0.06;
       mesh.renderOrder = -4;
       this.scene.add(mesh);
       this.softClouds.push({
@@ -615,31 +619,29 @@ export class RainGame {
           vec3 sky = mix(uBot, uMid, smoothstep(-0.55, 0.0, elev));
           sky = mix(sky, uTop, smoothstep(-0.08, 0.42, elev));
           sky = mix(sky, uTop * vec3(0.55, 0.45, 0.75), smoothstep(0.22, 0.7, elev));
-          vec3 warm = mix(uBot, vec3(1.0, 0.78, 0.55), 0.65);
-          sky = mix(sky, warm, smoothstep(0.08, -0.25, elev) * 0.55);
+          vec3 warm = mix(uBot, vec3(0.95, 0.45, 0.42), 0.45);
+          sky = mix(sky, warm, smoothstep(0.02, -0.28, elev) * 0.42);
 
           vec3 sunDir = normalize(uSunDir);
           float d = max(dot(dir, sunDir), 0.0);
-          float glow = pow(d, 2.4);
-          float core = pow(d, 18.0);
-          float disc = smoothstep(0.985, 0.996, d);
+          float glow = pow(d, 3.2);
+          float core = pow(d, 22.0);
+          float disc = smoothstep(0.992, 0.998, d);
           vec3 axis = abs(sunDir.y) > 0.92 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
           vec3 side = normalize(cross(sunDir, axis));
           float fan = abs(dot(dir, side));
-          float rays = pow(abs(sin(fan * 22.0 + uTime * 0.28)), 10.0) * pow(d, 3.2);
-          float clear = 1.0 - uRain * 0.85;
-          sky += vec3(1.0, 0.72, 0.42) * glow * 0.85 * clear;
-          sky += vec3(1.0, 0.9, 0.62) * core * 1.1 * clear;
-          sky += vec3(1.0, 0.98, 0.9) * disc * 1.4;
-          sky += vec3(1.0, 0.84, 0.55) * rays * 0.65 * clear;
+          float rays = pow(abs(sin(fan * 18.0 + uTime * 0.22)), 14.0) * pow(d, 4.0);
+          float clear = 1.0 - uRain * 0.55;
+          sky += vec3(1.0, 0.46, 0.38) * glow * 0.22 * clear;
+          sky += vec3(1.0, 0.62, 0.42) * core * 0.28 * clear;
+          sky += vec3(1.0, 0.7, 0.5) * disc * 0.42;
+          sky += vec3(1.0, 0.5, 0.4) * rays * 0.12 * clear;
 
           vec2 cuv = vec2(atan(dir.z, dir.x) * 1.4, elev * 2.2) + vec2(uTime * 0.03, uTime * 0.01);
           float cl = fbm(cuv);
           float high = smoothstep(0.12, 0.34, elev) * smoothstep(0.98, 0.42, elev);
-          vec3 cloudCol = mix(uMid, vec3(1.0, 0.97, 0.99), 0.88);
-          sky = mix(sky, cloudCol, smoothstep(0.4, 0.68, cl) * high * (0.92 - uRain * 0.25));
-          float puff = fbm(cuv * 1.6 + vec2(4.0, uTime * 0.02));
-          sky = mix(sky, vec3(1.0, 0.99, 1.0), smoothstep(0.55, 0.78, puff) * high * 0.7);
+          vec3 cloudCol = mix(uMid, uBot, 0.4);
+          sky = mix(sky, cloudCol, smoothstep(0.52, 0.8, cl) * high * 0.22 * (1.0 - uRain * 0.4));
 
           float ang = atan(dir.z, dir.x);
           float ridge = -0.02 + 0.055 * fbm(vec2(ang * 1.6, 2.2));
@@ -652,12 +654,12 @@ export class RainGame {
           float hsh = hash(cell);
           float star = step(0.986, hsh);
           float tw = 0.55 + 0.45 * sin(uTime * 1.6 + hsh * 30.0);
-          sky += vec3(1.0, 0.96, 0.9) * star * tw * night * smoothstep(0.05, 0.4, elev) * 0.85;
+          sky += vec3(1.0, 0.96, 0.9) * star * tw * night * smoothstep(0.2, 0.55, elev) * 0.18;
 
           float motes = fbm(dir.xy * 6.0 + vec2(uTime * 0.04, 0.0));
           sky += vec3(0.55, 0.95, 0.62) * motes * uLife * 0.07 * smoothstep(-0.05, 0.35, elev);
 
-          sky = mix(sky, sky * vec3(0.62, 0.68, 0.78) + vec3(0.02, 0.03, 0.05), uRain * 0.55);
+          sky = mix(sky, sky * vec3(0.55, 0.42, 0.5), uRain * 0.35);
           gl_FragColor = vec4(sky, 1.0);
         }
       `,
@@ -1651,6 +1653,8 @@ export class RainGame {
     this.camYaw = 0;
     const skyMid = worldDef(world).skyMid;
     const sky = worldDef(world);
+    this.propDusk.set(sky.skyMid);
+    this.propSun.set('#fff1e4');
     if (this.globe) {
       this.scene.background = new THREE.Color('#24356e');
     } else {
@@ -1684,16 +1688,17 @@ export class RainGame {
       isl.mesh.visible = !this.globe;
       const map = this.art.parallaxIslands[(world + i) % this.art.parallaxIslands.length]!;
       setLitMap(isl.mesh.material as THREE.ShaderMaterial, map);
+      litColor(isl.mesh.material as THREE.ShaderMaterial).set(worldDef(world).skyMid);
     }
     const hillTex = this.art.hills[world] ?? this.art.hills[0]!;
     const nearMat = this.hillsBackdrop.material as THREE.ShaderMaterial;
     setLitMap(nearMat, hillTex);
-    litColor(nearMat).setRGB(0.86, 0.78, 0.84);
+    litColor(nearMat).setRGB(0.22, 0.1, 0.16);
     litOpacity(nearMat).value = 1;
     const farMat = this.hillsFar.material as THREE.ShaderMaterial;
     setLitMap(farMat, hillTex);
-    litColor(farMat).setRGB(0.97, 0.94, 0.97);
-    litOpacity(farMat).value = 0.62;
+    litColor(farMat).setRGB(0.12, 0.06, 0.1);
+    litOpacity(farMat).value = 0.72;
     for (const m of this.ambient) {
       m.mesh.position.set(
         (this.terrain?.originX ?? -13) + Math.random() * (this.terrain?.width ?? 26),
@@ -1926,7 +1931,7 @@ export class RainGame {
             : art.seed
           : this.propTexture(spec.decor, step, world, index);
       setLitMap(view.prop.material as THREE.ShaderMaterial, map);
-      litColor(view.prop.material as THREE.ShaderMaterial).set(this.propTint());
+      litColor(view.prop.material as THREE.ShaderMaterial).copy(restored ? this.propSun : this.propDusk);
       if (flat) {
         const jx = (((index * 37) % 11) / 11 - 0.5) * TILE * 0.5;
         const jz = (((index * 53) % 13) / 13 - 0.5) * TILE * 0.5;
@@ -1969,7 +1974,7 @@ export class RainGame {
     if (view.prop) {
       const map = spec.kind === 'seed' ? art.money : this.propTexture(spec.decor, 2, world, index);
       setLitMap(view.prop.material as THREE.ShaderMaterial, map);
-      litColor(view.prop.material as THREE.ShaderMaterial).set(this.propTint());
+      litColor(view.prop.material as THREE.ShaderMaterial).copy(this.propSun);
       if (spec.kind === 'seed') view.prop.userData['s'] = 1.25;
       view.stage = 2;
     }
@@ -2108,6 +2113,8 @@ export class RainGame {
           const map = this.propTexture(spec.decor, view.stage, state.world, i);
           const mat = view.prop.material as THREE.ShaderMaterial;
           if (mat.uniforms['uMap']!.value !== map) setLitMap(mat, map);
+          const life = restored ? 1 : clamp((wet - 0.12) / 0.72, 0, 1);
+          litColor(mat).copy(this.propDusk).lerp(this.propSun, life);
           const base = Number(view.prop.userData['s']) || 1;
           const pop = restored ? 1 : clamp(0.34 + wet * 0.8, 0.34, 0.98);
           if (view.growStart > 0) {
@@ -2620,7 +2627,7 @@ export class RainGame {
     const state = this.state;
     const { backX, backZ, rightX, rightZ } = this.skyAxes();
     const sun = this.skyMat.uniforms['uSunDir']!.value as THREE.Vector3;
-    sun.set(-backX * 0.2 + rightX * 0.62, 0.74, -backZ * 0.2 + rightZ * 0.62).normalize();
+    sun.set(-backX * 0.15 + rightX * 0.82, 0.16, -backZ * 0.15 + rightZ * 0.82).normalize();
     this.rainUniform.value = this.rainMix;
     this.sunColor.copy(this.sunClear).lerp(this.sunOvercast, this.rainMix);
     this.sunColor.multiplyScalar(1 - this.rainMix * 0.28);
@@ -2675,10 +2682,10 @@ export class RainGame {
         const mat = shaft.material as THREE.MeshBasicMaterial;
         const weather = 1 - this.rainMix * 0.88;
         mat.opacity =
-          (0.34 + (i % 3) * 0.04) *
+          (0.08 + (i % 3) * 0.015) *
           (0.86 + Math.sin(t * 0.55 + phase) * 0.14) *
           weather *
-          (0.62 + ratio * 0.38);
+          (0.25 + ratio * 0.75);
         shaft.visible = mat.opacity > 0.045;
       });
 
@@ -3091,12 +3098,6 @@ export class RainGame {
     if (decor === 'bush') return upright(this.litBillboard(this.art.bushDead, 0.72, 0.55, 0.2));
     if (decor === 'rock') return upright(this.litBillboard(this.art.rock, 0.62, 0.42, 0.2));
     return upright(this.litBillboard(this.art.twig, 0.55, 0.4, 0.18));
-  }
-
-  /** Per-world multiplier so shared prop art sits in each world's palette. */
-  private propTint(): string {
-    const world = this.state?.world ?? 0;
-    return ['#ffffff', '#dceeff', '#fff2d8', '#e6d8ff'][world] ?? '#ffffff';
   }
 
   private propTexture(decor: Decor, step: number, world: number, index: number): THREE.Texture {
