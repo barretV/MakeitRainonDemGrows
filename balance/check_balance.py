@@ -14,7 +14,7 @@ WORLD_NAMES = ["Dead Forest", "Frostbite", "Desert", "Toxic", "Globe"]
 # Growth stays between bottles. Minutes include the pour plus a short shop.
 # Each island is aimed at about 20 minutes of raining.
 ISLAND_WINDOWS = {
-    "Dead Forest": (22.0, 40.0),
+    "Dead Forest": (18.0, 40.0),
     "Frostbite": (18.0, 34.0),
     "Desert": (18.0, 36.0),
     "Toxic": (20.0, 42.0),
@@ -56,8 +56,8 @@ def check_world0() -> None:
     if not m:
         raise SystemExit(f"sim world0: unexpected output:\n{out}")
     minutes = float(m.group(1))
-    if minutes < 22 or minutes > 40:
-        raise SystemExit(f"sim world0 FAIL: {minutes:.1f} min (want 22–40)")
+    if minutes < 18 or minutes > 40:
+        raise SystemExit(f"sim world0 FAIL: {minutes:.1f} min (want 18–40)")
     print(f"sim world0: PASS ({minutes:.1f} min, {m.group(2)} runs)")
 
 

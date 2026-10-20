@@ -158,7 +158,7 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'bottle',
     kind: 'gate',
     name: 'Bottle',
-    desc: 'Open the bottle petal. The next ranks hold more water.',
+    desc: 'Open the bottle petal. The next ranks spend blooms for a longer pour.',
     max: 1,
     color: '#8fd4ff',
     costs: [150],
@@ -170,11 +170,12 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'bottle',
     kind: 'upgrade',
     name: 'Flask',
-    desc: 'More liters in the next bottle. Nothing refills while you fly.',
+    desc: 'Spend blooms for a longer pour. Each rank is one more second of rain.',
     max: 5,
     color: '#8fd4ff',
-    costs: [164, 187, 197, 226, 259],
-    effect: (level) => `${Math.round(maxLiters({ ...emptyRanks(), bottle: 1, flask: level }))} L`,
+    costs: [40, 48, 56, 64, 72],
+    blooms: [30, 80, 180, 360, 700],
+    effect: (level) => `+${(level * 1.25).toFixed(1)}s pour`,
   },
   {
     id: 'reservoir',
@@ -182,11 +183,12 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'bottle',
     kind: 'upgrade',
     name: 'Reservoir',
-    desc: 'A deeper bottle for the long passes.',
+    desc: 'Blooms deepen the bottle. Another second of rain on every rank.',
     max: 5,
     color: '#8fd4ff',
-    costs: [187, 172, 197, 226, 217],
-    effect: (level) => `Liters x${(1.26 ** level).toFixed(2)}`,
+    costs: [80, 90, 100, 110, 120],
+    blooms: [1100, 1600, 2300, 3400, 4800],
+    effect: (level) => `+${(level * 1.25).toFixed(1)}s pour`,
   },
   {
     id: 'linger',
@@ -194,11 +196,11 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'bottle',
     kind: 'upgrade',
     name: 'Linger',
-    desc: 'The bottle empties slower, so you can sit in a patch.',
+    desc: 'The last sip lasts a little longer.',
     max: 5,
     color: '#8fd4ff',
     costs: [33000, 37950, 37700, 30450, 303720],
-    effect: (level) => `Drain /${(1.14 ** level).toFixed(2)}`,
+    effect: (level) => `+${(level * 0.35).toFixed(1)}s sip`,
   },
   {
     id: 'glacier',
@@ -206,11 +208,11 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'bottle',
     kind: 'upgrade',
     name: 'Glacier',
-    desc: 'The last sip lasts. Built for a whole land.',
+    desc: 'A final sip for the long islands.',
     max: 4,
     color: '#8fd4ff',
     costs: [1750289, 2353294, 2289930, 2136621],
-    effect: (level) => `Drain /${(1.12 ** level).toFixed(2)}`,
+    effect: (level) => `+${(level * 0.25).toFixed(1)}s sip`,
   },
   {
     id: 'drizzle',
@@ -781,16 +783,19 @@ export function cloudScale(ranks: Ranks): number {
   return BASE_SCALE + ranks.puff * PUFF_STEP;
 }
 
-export function maxLiters(ranks: Ranks): number {
-  return 260 * 1.22 ** ranks.flask * 1.18 ** ranks.reservoir;
-}
-
-export function drainPerSec(ranks: Ranks): number {
-  return (46 / 1.1 ** ranks.linger / 1.08 ** ranks.glacier) * 1.3 ** ranks.flow;
-}
-
+/** A fresh bottle is 10s. Flask and Reservoir each add 1s, so a finished first island sits near 20s. */
 export function bottleSeconds(ranks: Ranks): number {
-  return maxLiters(ranks) / drainPerSec(ranks);
+  const stretch = (ranks.flask + ranks.reservoir) * 1.25;
+  const sip = ranks.linger * 0.35 + ranks.glacier * 0.25;
+  return 10 + stretch + sip;
+}
+
+export function drainPerSec(_ranks: Ranks): number {
+  return 46;
+}
+
+export function maxLiters(ranks: Ranks): number {
+  return drainPerSec(ranks) * bottleSeconds(ranks);
 }
 
 export function rainRadius(ranks: Ranks): number {

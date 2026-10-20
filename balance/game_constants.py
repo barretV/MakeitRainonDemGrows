@@ -7,14 +7,14 @@ GLOBE_WORLD = 4
 
 # cols, rows, mask cols, mask rows, cell hp, dew per cell.
 # Each island is a full arc: the mask is big, and hp sets how many bottles a cell needs.
-# hp is just under one bottle of soak when you arrive, so a pour finishes the
-# cells it waters. The island keeps that paint. Prices come from reprice.py.
+# A fresh bottle lasts 10s and Flask/Reservoir stretch it toward 20s.
+# hp is tuned so that pour still takes about twenty minutes to finish an island.
 WORLDS = [
     (8, 6, 100, 75, 76, 3),
-    (18, 16, 180, 160, 400, 2),
-    (31, 24, 310, 240, 1500, 3),
-    (34, 26, 340, 260, 17000, 4),
-    (14, 9, 800, 120, 45000, 4),
+    (18, 16, 180, 160, 1134, 2),
+    (31, 24, 310, 240, 1000, 3),
+    (34, 26, 340, 260, 11312, 4),
+    (14, 9, 800, 120, 47919, 4),
 ]
 
 BASE_SCALE = 0.48
@@ -88,17 +88,21 @@ def cloud_scale(state):
     return BASE_SCALE + state["puff"] * PUFF_STEP
 
 
-def max_liters(state):
-    return 260 * (1.22 ** state["flask"]) * (1.18 ** state["reservoir"])
+def bottle_seconds(state):
+    """10s at rank 0. Each Flask or Reservoir rank is +1s. Linger/Glacier add a short sip."""
+    stretch = (state["flask"] + state["reservoir"]) * 1.25
+    sip = state["linger"] * 0.35 + state["glacier"] * 0.25
+    return 10 + stretch + sip
 
 
 def drain_per_sec(state):
-    """Linger/glacier slow the pour; Cascade (`flow`) pours harder."""
-    return (46 / (1.1 ** state["linger"]) / (1.08 ** state["glacier"])) * (1.3 ** state["flow"])
+    """Pour rate is steady. Cascade sinks harder via soak_per_tick, it does not shorten the bottle."""
+    del state
+    return 46
 
 
-def bottle_seconds(state):
-    return max_liters(state) / drain_per_sec(state)
+def max_liters(state):
+    return drain_per_sec(state) * bottle_seconds(state)
 
 
 def rain_radius(state):
