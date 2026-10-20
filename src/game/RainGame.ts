@@ -26,6 +26,8 @@ const PITCH = 0.72;
 const MOVE = 6.4;
 /** World units per pixel of finger travel. Same idea as Chimney Fisher's relative drag: the press is an anchor, not a teleport. */
 const STEER = 0.042;
+/** Radians of camera turn per pixel of the second touch stick. */
+const TURN_TOUCH = 0.007;
 /** 1 = default framing (closest). Larger values pull the camera back. */
 const CAM_ZOOM_MIN = 1;
 const CAM_ZOOM_MAX = 1.85;
@@ -345,6 +347,12 @@ interface Stick {
   cz: number;
 }
 
+/** The second touch stick only turns the camera. */
+interface TurnStick {
+  id: number;
+  x: number;
+}
+
 export class RainGame {
   readonly audio = new AudioBus();
   private readonly onHud: (model: HudModel) => void;
@@ -382,6 +390,7 @@ export class RainGame {
   private dropAcc = 0;
   private babyAcc = 2;
   private stick: Stick | null = null;
+  private rotateStick: TurnStick | null = null;
   private cloudX = 0;
   private cloudZ = 0;
   private prevX = 0;
@@ -420,8 +429,6 @@ export class RainGame {
   private skyLift = 0;
   private readonly skyBase = new THREE.Color();
   private readonly pointers = new Map<number, { x: number; y: number }>();
-  private pinchSpan0 = 0;
-  private pinchZoom0 = 1;
   private maskTex: THREE.DataTexture | null = null;
   private pulseTex: THREE.DataTexture | null = null;
   private terrain: Terrain | null = null;
@@ -2741,11 +2748,6 @@ export class RainGame {
     const state = this.state;
     if (!state) return;
     this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (this.pointers.size >= 2) {
-      this.pinchSpan0 = this.pointerSpan();
-      this.pinchZoom0 = this.camZoom;
-      this.stick = null;
-    }
     this.aim(event);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hits = this.raycaster.intersectObjects(this.animals.map((a) => a.mesh), false);
@@ -2770,16 +2772,20 @@ export class RainGame {
       }
     }
     const touch = event.pointerType === 'touch' || event.pointerType === 'pen';
-    if (touch && this.pointers.size < 2) {
+    if (!touch) return;
+    // First finger flies the cloud, second finger turns the world: two sticks.
+    if (!this.stick) {
       this.stick = { id: event.pointerId, x: event.clientX, y: event.clientY, cx: this.cloudX, cz: this.cloudZ };
-      this.renderer.domElement.setPointerCapture(event.pointerId);
+    } else if (!this.rotateStick) {
+      this.rotateStick = { id: event.pointerId, x: event.clientX };
     }
+    this.renderer.domElement.setPointerCapture(event.pointerId);
   };
 
   private onUp = (event: PointerEvent): void => {
     this.pointers.delete(event.pointerId);
-    if (this.pointers.size < 2) this.pinchSpan0 = 0;
     if (this.stick && event.pointerId === this.stick.id) this.stick = null;
+    if (this.rotateStick && event.pointerId === this.rotateStick.id) this.rotateStick = null;
   };
 
   private onWheel = (event: WheelEvent): void => {
@@ -2795,22 +2801,29 @@ export class RainGame {
     if (this.pointers.has(event.pointerId)) {
       this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
-    if (this.pointers.size >= 2 && this.pinchSpan0 > 0) {
-      const span = this.pointerSpan();
-      if (span > 6) this.setCamZoom(this.pinchZoom0 * (span / this.pinchSpan0));
+    const state = this.state;
+    // The second finger is the right stick: push it sideways to turn the world.
+    const turn = this.rotateStick;
+    if (turn && event.pointerId === turn.id && state && (state.phase === 'play' || state.phase === 'finale')) {
+      const dx = event.clientX - turn.x;
+      if (Math.abs(dx) > 0.5) {
+        this.camYaw += dx * TURN_TOUCH;
+        turn.x = event.clientX;
+      }
       return;
     }
-    if (!this.stick || event.pointerId !== this.stick.id || !this.state || this.state.phase !== 'play') return;
+    if (!this.stick || event.pointerId !== this.stick.id || !state || state.phase !== 'play') return;
+    const stick = this.stick;
     if (this.globe) {
-      const dx = event.clientX - this.stick.x;
-      const dy = event.clientY - this.stick.y;
-      this.cloudX = this.stick.cx + dx * 0.005;
-      this.cloudZ = clamp(this.stick.cz - dy * 0.004, -1.15, 1.15);
+      const dx = event.clientX - stick.x;
+      const dy = event.clientY - stick.y;
+      this.cloudX = stick.cx + dx * 0.005;
+      this.cloudZ = clamp(stick.cz - dy * 0.004, -1.15, 1.15);
       return;
     }
-    const { cols, rows } = gridOf(this.state.world);
-    const dx = event.clientX - this.stick.x;
-    const dy = event.clientY - this.stick.y;
+    const { cols, rows } = gridOf(state.world);
+    const dx = event.clientX - stick.x;
+    const dy = event.clientY - stick.y;
     const yaw = this.camYaw;
     const camOffX = Math.sin(yaw);
     const camOffZ = Math.cos(yaw);
@@ -2820,8 +2833,8 @@ export class RainGame {
     const rightZ = -camOffX;
     const wx = (dx * rightX - dy * fwdX) * STEER;
     const wz = (dx * rightZ - dy * fwdZ) * STEER;
-    const nextX = clamp(this.stick.cx + wx, -TILE / 2 + 0.3, cols * TILE - TILE / 2 - 0.3);
-    const nextZ = clamp(this.stick.cz + wz, -TILE / 2 + 0.3, rows * TILE - TILE / 2 - 0.3);
+    const nextX = clamp(stick.cx + wx, -TILE / 2 + 0.3, cols * TILE - TILE / 2 - 0.3);
+    const nextZ = clamp(stick.cz + wz, -TILE / 2 + 0.3, rows * TILE - TILE / 2 - 0.3);
     if (Math.hypot(wx, wz) > 0.2) {
       this.faceX = wx;
       this.faceZ = wz;
@@ -2852,14 +2865,6 @@ export class RainGame {
   private wantsRain(): boolean {
     const state = this.state;
     return !!state && state.phase === 'play' && state.screen === 'play' && !this.introActive;
-  }
-
-  private pointerSpan(): number {
-    const pts = [...this.pointers.values()];
-    const a = pts[0];
-    const b = pts[1];
-    if (!a || !b) return 0;
-    return Math.hypot(b.x - a.x, b.y - a.y);
   }
 
   private setCamZoom(next: number): void {
