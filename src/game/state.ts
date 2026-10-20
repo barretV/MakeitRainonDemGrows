@@ -125,8 +125,6 @@ export interface HudModel {
   cleared: boolean;
   /** This bottle set a new revival record on the current world. */
   newBest: boolean;
-  /** Tree ranks still allowed before the next bottle. */
-  rootsLeft: number;
   tree: TreeNodeView[];
   worlds: WorldChip[];
   stats: Stats;
@@ -282,7 +280,6 @@ export class SaveState {
   screen: Screen = 'play';
   runDew = 0;
   /** Tree ranks bought since the last refill. Two per bottle. */
-  private rootsThisBottle = 0;
   runTiles = 0;
   runReached = 0;
   best: number[] = [0, 0, 0, 0, 0];
@@ -401,7 +398,7 @@ export class SaveState {
   }
 
   reach(): number {
-    return this.world === GLOBE_WORLD ? rainRadius(this.ranks) * 0.085 : rainRadius(this.ranks);
+    return this.world === GLOBE_WORLD ? rainRadius(this.ranks) * 0.05 : rainRadius(this.ranks);
   }
 
   patch(): number {
@@ -487,7 +484,6 @@ export class SaveState {
 
   private refillBottle(): void {
     this.tank = 1;
-    this.rootsThisBottle = 0;
     this.resetAbilityCooldowns(true);
     this.lightningCd = abilityOn(this.ranks, 'lightning') ? 6 : LIGHTNING_CD;
     this.tornadoCd = abilityOn(this.ranks, 'tornado') ? 10 : TORNADO_CD;
@@ -618,6 +614,9 @@ export class SaveState {
     this.runReached = 0;
     this.newBest = false;
     this.screen = 'play';
+    // A new bottle starts on bare ground. Upgrades are what let the next pour
+    // cover more; walking the same cloud over a saved island is not progress.
+    this.lands.delete(this.world);
     this.mountWorld(this.world);
     this.refillBottle();
     this.phase = 'play';
@@ -678,10 +677,6 @@ export class SaveState {
       this.toast = `Need ${cost} dew (you have ${wallet}).`;
       return false;
     }
-    if (this.rootsThisBottle >= 2) {
-      this.toast = 'Two buys a bottle. Rain again, then come back.';
-      return false;
-    }
     const bloomCost = nodeBloomCost(id, level);
     const blooms = spendableBlooms(this.stats.tiles, this.petals, this.ranks);
     if (blooms < bloomCost) {
@@ -690,7 +685,6 @@ export class SaveState {
     }
     this.dew -= cost;
     this.ranks[id] += 1;
-    this.rootsThisBottle += 1;
     this.toast = node.kind === 'gate' ? `${node.name} unlocked.` : `${node.name} rank ${this.ranks[id]}.`;
     this.claim();
     return true;
@@ -1260,7 +1254,6 @@ export class SaveState {
       best: this.best[this.world] ?? 0,
       cleared: this.phase === 'clear',
       newBest: this.newBest,
-      rootsLeft: Math.max(0, 2 - this.rootsThisBottle),
       tree: buildTree(this.ranks, wallet, this.unlocked),
       worlds: [0, 1, 2, 3, 4].map((index) => ({
         index,

@@ -62,7 +62,7 @@ void RundotGameAPI.deviceCache.getItem(WORKSHOP_VIEW_KEY).then((raw) => {
 }).catch(() => undefined);
 let lastWorkshopFocusId: NodeId = 'puff';
 
-function statusBadge(node: TreeNodeView, rootsLeft: number): { kind: string; text: string } {
+function statusBadge(node: TreeNodeView): { kind: string; text: string } {
   if (node.worldReq != null) {
     return { kind: 'lock', text: `Locked · ${worldDef(node.worldReq).name}` };
   }
@@ -74,7 +74,6 @@ function statusBadge(node: TreeNodeView, rootsLeft: number): { kind: string; tex
     };
   }
   if (node.maxed) return { kind: 'max', text: 'Max rank' };
-  if (node.afford && rootsLeft <= 0) return { kind: 'wait', text: 'Rain again' };
   if (node.afford) return { kind: 'buy', text: 'Ready' };
   if (node.level > 0) return { kind: 'owned', text: `Rank ${node.level}/${node.max}` };
   return { kind: 'lock', text: 'Need more dew' };
@@ -86,9 +85,8 @@ function costLabel(node: TreeNodeView): string {
   return parts.join(' + ');
 }
 
-function primaryBuyLabel(node: TreeNodeView, rootsLeft = 2): string {
+function primaryBuyLabel(node: TreeNodeView): string {
   if (node.maxed) return 'Maxed out';
-  if (rootsLeft <= 0 && node.afford) return 'Rain again';
   if (node.worldReq != null) return `Reach ${worldDef(node.worldReq).name}`;
   if (node.ghost) return 'Not unlocked yet';
   if (!node.afford) return node.blooms > 0 ? 'Need dew + blooms' : 'Need more dew';
@@ -109,11 +107,11 @@ function vinePath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} Q ${mx + nx} ${my + ny} ${x2} ${y2}`;
 }
 
-function pickFocusId(tree: TreeNodeView[], rootsLeft: number): NodeId {
+function pickFocusId(tree: TreeNodeView[]): NodeId {
   const byId = new Map(tree.map((n) => [n.id, n]));
   for (const id of PRIORITY) {
     const node = byId.get(id);
-    if (node?.afford && rootsLeft > 0) return id;
+    if (node?.afford) return id;
   }
   for (const id of PRIORITY) {
     const node = byId.get(id);
@@ -131,7 +129,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     return node.visible || (node.ghost && puffLevel >= 1);
   });
   const nextBuy = PRIORITY.map((id) => model.tree.find((node) => node.id === id)).find(
-    (node) => node && node.afford && model.rootsLeft > 0,
+    (node) => node && node.afford,
   );
   const [picked, setPicked] = useState<NodeId>('puff');
   const [tab, setTab] = useState<'power' | 'petals'>('power');
@@ -139,7 +137,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   const [affordPingIds, setAffordPingIds] = useState<Set<NodeId>>(() => new Set());
   const pickedId = shown.some((n) => n.id === picked) ? picked : (nextBuy?.id ?? shown[0]?.id ?? 'puff');
   const selected = model.tree.find((node) => node.id === pickedId) ?? shown[0];
-  const badge = selected ? statusBadge(selected, model.rootsLeft) : { kind: 'owned', text: '' };
+  const badge = selected ? statusBadge(selected) : { kind: 'owned', text: '' };
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -269,7 +267,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   };
 
   const triggerAffordPing = () => {
-    const ids = model.tree.filter((n) => n.afford && model.rootsLeft > 0).map((n) => n.id);
+    const ids = model.tree.filter((n) => n.afford).map((n) => n.id);
     if (!ids.length) return;
     setAffordPingIds(new Set(ids));
     if (affordTimerRef.current != null) window.clearTimeout(affordTimerRef.current);
@@ -288,7 +286,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
         return;
       }
       const solo = totalRanks === 0;
-      const id = solo ? 'puff' : pickFocusId(model.tree, model.rootsLeft);
+      const id = solo ? 'puff' : pickFocusId(model.tree);
       const zoom = solo ? SOLO_PUFF_ZOOM : COMFORT_ZOOM;
       focusNode(id, true, zoom);
       window.setTimeout(() => triggerAffordPing(), 520);
@@ -425,7 +423,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
         onWheel={onWheel}
         onClick={() => {
           if (!moved.current) {
-            const id = pickFocusId(model.tree, model.rootsLeft);
+            const id = pickFocusId(model.tree);
             setPicked(id);
             focusNode(id, true, viewRef.current.s);
           }
@@ -433,11 +431,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       >
         <DewWallet amount={model.dew} blooms={model.spendableBlooms} />
         <div className="workshop-legend pixel">
-          {model.rootsLeft > 0 ? (
-            <span className="workshop-legend__item workshop-legend__item--buy">Can buy</span>
-          ) : (
-            <span className="workshop-legend__item workshop-legend__item--wait">Rain again</span>
-          )}
+          <span className="workshop-legend__item workshop-legend__item--buy">Can buy</span>
           <span className="workshop-legend__item workshop-legend__item--owned">Owned</span>
           <span className="workshop-legend__item workshop-legend__item--lock">Locked</span>
         </div>
@@ -457,7 +451,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
               const showEdge = !node.ghost || drawing;
               if (!showEdge && node.ghost) return null;
               const color = BRANCH_COLORS[node.branch];
-              const hot = model.rootsLeft > 0 && !node.ghost && (node.afford || parent.afford);
+              const hot = !node.ghost && (node.afford || parent.afford);
               return (
                 <path
                   key={`${parent.id}-${node.id}`}
@@ -500,7 +494,6 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
               <TreeNodeCloud
                 key={node.id}
                 node={node}
-                rootsLeft={model.rootsLeft}
                 picked={pickedId === node.id}
                 reveal={revealRef.current.has(node.id)}
                 buyPop={buyPopRef.current[node.id] ?? 0}
@@ -578,19 +571,14 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
               )}
               <p className="workshop-panel__desc">{selected.desc}</p>
               <p className="workshop-panel__effect">{selected.effect}</p>
-              {model.rootsLeft <= 0 && selected.afford && (
-                <p className="workshop-panel__note">
-                  Two buys a bottle. You used both. Rain again, then come back.
-                </p>
-              )}
               <button
                 type="button"
-                disabled={!selected.afford || model.rootsLeft <= 0}
+                disabled={!selected.afford}
                 onClick={() => purchase(selected.id)}
-                className={`workshop-buy pixel${selected.afford && model.rootsLeft > 0 ? ' workshop-buy--go' : ''}${buyPulse ? ' workshop-buy--pulse' : ''}`}
+                className={`workshop-buy pixel${selected.afford ? ' workshop-buy--go' : ''}${buyPulse ? ' workshop-buy--pulse' : ''}`}
                 key={buyPulse ? `buy-${buyPulse}` : 'buy'}
               >
-                {primaryBuyLabel(selected, model.rootsLeft)}
+                {primaryBuyLabel(selected)}
               </button>
               <button type="button" onClick={() => game.returnFromWorkshop()} className="workshop-back pixel">
                 Back to rain

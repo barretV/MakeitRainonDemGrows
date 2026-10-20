@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Greedy bottle campaign with persistent land (mask progress carries between bottles).
+Greedy bottle campaign. Each bottle starts on a bare island and clears it
+only when that one bottle restores ~98%. Upgrade prices are what keep the
+shop to about one rank per bottle.
 
     python balance/sim.py                  # full campaign, greedy shop
     python balance/sim.py --one-buy        # player-like: at most one upgrade per bottle
@@ -76,7 +78,7 @@ def cells_per_run(state, world: int, filled_ratio: float = 0.0):
     cols, rows, mc, mr, hp, pay = WORLDS[world]
     if world == GLOBE_WORLD:
         # Mirror state.reach(): the globe is painted in lon/lat units.
-        radius = rain_radius(state) * 0.085
+        radius = rain_radius(state) * 0.05
         cell_area = (2 * math.pi / mc) * (2.3 / mr)
     else:
         radius = rain_radius(state)
@@ -162,20 +164,17 @@ def buy_all_affordable(state, dew, blooms, world_unlocked=0, max_buys: int | Non
 
 
 def clear_world(state, world, dew, blooms, world_unlocked, max_buys_per_run: int | None = None):
-    """Run bottles until the island is ~98% restored. Returns a result dict."""
-    target = mask_count(world) * 0.98
+    """Fresh island every bottle. Clear when one bottle restores ~98%."""
+    total = mask_count(world)
     minutes = 0.0
     runs = 0
     buys = []
-    restored = 0.0
     last_cells = 0.0
     dry_runs = 0
     unlocked = max(world_unlocked, world)
     for _ in range(1200):
-        filled_ratio = restored / mask_count(world)
-        cells, gained, seconds = cells_per_run(state, world, filled_ratio)
+        cells, gained, seconds = cells_per_run(state, world, 0.0)
         last_cells = cells
-        restored += cells
         dew += gained
         blooms += cells
         minutes += (seconds + OVERHEAD_SEC) / 60
@@ -185,7 +184,7 @@ def clear_world(state, world, dew, blooms, world_unlocked, max_buys_per_run: int
             buys.append((runs, ",".join(bought)))
         else:
             dry_runs += 1
-        if restored >= target:
+        if cells / total >= 0.98:
             return {
                 "minutes": minutes,
                 "runs": runs,
@@ -193,7 +192,7 @@ def clear_world(state, world, dew, blooms, world_unlocked, max_buys_per_run: int
                 "blooms": blooms,
                 "buys": buys,
                 "cells": last_cells,
-                "pct": restored / mask_count(world),
+                "pct": cells / total,
                 "dry_runs": dry_runs,
             }
     return {
@@ -203,7 +202,7 @@ def clear_world(state, world, dew, blooms, world_unlocked, max_buys_per_run: int
         "blooms": blooms,
         "buys": buys,
         "cells": last_cells,
-        "pct": restored / mask_count(world),
+                "pct": last_cells / total,
         "dry_runs": dry_runs,
     }
 

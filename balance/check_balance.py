@@ -10,6 +10,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 FEEL_BASE = ROOT / "baseline_feel.txt"
 WORLD0_BASE = ROOT / "baseline_world0.txt"
+WORLD_NAMES = ["Dead Forest", "Frostbite", "Desert", "Toxic", "Globe"]
+# Fresh island each bottle. Minutes are how long the priced tree takes
+# before one bottle can restore that island. World 0 is the long climb.
+ISLAND_WINDOWS = {
+    "Dead Forest": (50.0, 85.0),
+    "Frostbite": (5.0, 14.0),
+    "Desert": (4.0, 12.0),
+    "Toxic": (0.4, 4.0),
+    "Globe": (5.0, 14.0),
+}
 
 
 def run(cmd: list[str]) -> str:
@@ -28,6 +38,12 @@ def check_feel() -> None:
     dry = int(dry_m.group(1))
     if dry > 2:
         raise SystemExit(f"feel.py FAIL: {dry} dry runs in first 25 (max 2)")
+    avg_m = re.search(r"avg purchases/run \(first 25\): ([\d.]+)", out)
+    if not avg_m:
+        raise SystemExit("feel.py: missing purchases/run summary")
+    avg = float(avg_m.group(1))
+    if avg > 1.35:
+        raise SystemExit(f"feel.py FAIL: {avg:.2f} buys/run in first 25 (max 1.35)")
     pass_m = re.search(r"target:.*-> (PASS|FAIL)", out)
     if pass_m and pass_m.group(1) == "FAIL":
         raise SystemExit("feel.py FAIL: target line")
@@ -35,14 +51,29 @@ def check_feel() -> None:
 
 
 def check_world0() -> None:
-    out = run([sys.executable, str(ROOT / "sim.py"), "--world", "0", "--one-buy"])
+    out = run([sys.executable, str(ROOT / "sim.py"), "--world", "0"])
     m = re.search(r"world 0: ([\d.]+) min, (\d+) runs", out)
     if not m:
         raise SystemExit(f"sim world0: unexpected output:\n{out}")
     minutes = float(m.group(1))
-    if minutes < 24 or minutes > 42:
-        raise SystemExit(f"sim world0 FAIL: {minutes:.1f} min (want 24–42)")
+    if minutes < 50 or minutes > 85:
+        raise SystemExit(f"sim world0 FAIL: {minutes:.1f} min (want 50–85)")
     print(f"sim world0: PASS ({minutes:.1f} min, {m.group(2)} runs)")
+
+
+def check_campaign() -> None:
+    """One buy per bottle across the whole campaign: every island must be a full arc."""
+    out = run([sys.executable, str(ROOT / "sim.py")])
+    for name in WORLD_NAMES:
+        m = re.search(rf"^{re.escape(name)}\s+(\d+)\s+([\d.]+)", out, re.MULTILINE)
+        if not m:
+            raise SystemExit(f"sim campaign: missing row for {name}:\n{out}")
+        runs = int(m.group(1))
+        minutes = float(m.group(2))
+        lo, hi = ISLAND_WINDOWS[name]
+        if minutes < lo or minutes > hi:
+            raise SystemExit(f"sim {name} FAIL: {minutes:.1f} min (want {lo:.0f}-{hi:.0f})")
+        print(f"sim {name}: PASS ({minutes:.1f} min, {runs} runs)")
 
 
 def check_sync() -> None:
@@ -56,6 +87,7 @@ def main() -> None:
     check_sync()
     check_feel()
     check_world0()
+    check_campaign()
     print("\n=== balance:check ALL PASS ===")
 
 

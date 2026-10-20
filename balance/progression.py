@@ -55,14 +55,10 @@ def simulate(max_buys_per_bottle: int | None, from_world: int):
     islands: list[dict] = []
 
     for world in range(from_world, len(WORLDS)):
-        restored = 0.0
         total = mask_count(world)
-        target = total * 0.98
         per_run: list[dict] = []
-        while restored < target and len(per_run) < 1200:
-            filled = restored / total
-            cells, earned, seconds = cells_per_run(state, world, filled)
-            restored += cells
+        while len(per_run) < 1200:
+            cells, earned, seconds = cells_per_run(state, world, 0.0)
             dew += earned
             blooms += cells
 
@@ -116,6 +112,8 @@ def simulate(max_buys_per_bottle: int | None, from_world: int):
                     "blocked": "" if bought else blocked,
                 }
             )
+            if cells / total >= 0.98:
+                break
 
         unlocked = max(unlocked, world)
         minutes = sum((e["bottle_s"] + OVERHEAD_SEC) / 60 for e in per_run)

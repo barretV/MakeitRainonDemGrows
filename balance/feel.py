@@ -1,35 +1,42 @@
 #!/usr/bin/env python3
-"""Early-run dopamine: purchases, power jumps, and restoration per bottle (world 0)."""
+"""Early-run dopamine: purchases, power jumps, and restoration per bottle (world 0).
+
+Checks the "one more run, one more upgrade" cadence: how often a bottle ends with
+no affordable upgrade (a dry run) and how many buys a player gets per bottle.
+"""
 from __future__ import annotations
 
-from game_constants import OVERHEAD_SEC, bottle_seconds, cloud_scale, max_liters, rain_radius
+from game_constants import BLOOM_COSTS, COSTS, OVERHEAD_SEC, bottle_seconds, cloud_scale, max_liters, rain_radius, soak_per_tick
 from sim import buy_all_affordable, cells_per_run, mask_count, new_state
 
 
-def early_purchase_report(max_runs: int = 40, max_buys_per_run: int = 1) -> None:
+def early_purchase_report(max_runs: int = 40, max_buys_per_run: int | None = None) -> None:
     state = new_state()
     dew = 0.0
-    restored = 0.0
+    blooms = 0.0
     total = mask_count(0)
     dry_streak = 0
     dry_zones: list[tuple[int, int]] = []
     purchases_per_run: list[int] = []
+    best_cover = 0.0
 
-    print(f"=== EARLY RUN FEEL (world 0, {max_buys_per_run} buy/run, {max_runs} runs) ===")
-    print("run  dew  bank  +land%  radius  liters  bought")
+    label = "shop until the wallet stops" if max_buys_per_run is None else f"{max_buys_per_run} buy/run"
+    print(f"=== EARLY RUN FEEL (world 0, fresh island, {label}, {max_runs} runs) ===")
+    print("run  dew  bank  blooms  +land%  radius  liters  soak  bought")
     for run in range(1, max_runs + 1):
-        filled_ratio = restored / total
-        cells, gained, seconds = cells_per_run(state, 0, filled_ratio)
-        restored += cells
+        cells, gained, seconds = cells_per_run(state, 0, 0.0)
         land_pct = cells / total * 100
+        best_cover = max(best_cover, land_pct)
         dew += gained
-        dew, bought = buy_all_affordable(state, dew, max_buys=max_buys_per_run)
+        blooms += cells
+        dew, blooms, bought = buy_all_affordable(state, dew, blooms, 0, max_buys=max_buys_per_run)
         n = len(bought)
         purchases_per_run.append(n)
         liters = max_liters(state)
         radius = rain_radius(state)
         print(
-            f"{run:3}  {gained:4.0f}  {dew:4.0f}  {land_pct:5.2f}%  {radius:5.2f}  {liters:5.0f}L  {','.join(bought) if bought else '-'}"
+            f"{run:3}  {gained:4.0f}  {dew:4.0f}  {blooms:6.0f}  {land_pct:5.2f}%  {radius:5.2f}  "
+            f"{liters:5.0f}L  {soak_per_tick(state):4.2f}  {','.join(bought) if bought else '-'}"
         )
         if n == 0:
             dry_streak += 1
@@ -44,7 +51,7 @@ def early_purchase_report(max_runs: int = 40, max_buys_per_run: int = 1) -> None
     dry_runs = sum(1 for n in window if n == 0)
     avg_buy = sum(window) / len(window)
     print()
-    print(f"restored after {max_runs} runs: {restored / total * 100:.1f}%")
+    print(f"best single bottle after {max_runs} runs: {best_cover:.1f}%")
     print(f"dry runs (no buy), first 25: {dry_runs}/25")
     print(f"avg purchases/run (first 25): {avg_buy:.2f}")
     early_zones = [(a, b) for a, b in dry_zones if b <= 25]
@@ -55,9 +62,15 @@ def early_purchase_report(max_runs: int = 40, max_buys_per_run: int = 1) -> None
     print("target: <=2 dry runs in first 25 ->", "PASS" if dry_runs <= 2 else "FAIL")
     print(f"cloud scale end: {cloud_scale(state):.2f} (start {0.48:.2f})")
 
+    # Where did the wallet go? (both currencies)
+    dew_spent = sum(COSTS[k][i] for k in COSTS for i in range(state[k]))
+    blooms_spent = sum(BLOOM_COSTS[k][i] for k in COSTS for i in range(state[k]))
+    print(f"dew spent {dew_spent:.0f} · blooms spent {blooms_spent:.0f} · blooms banked {blooms:.0f}")
+    print(f"bottle time now {bottle_seconds(state):.1f}s")
+
 
 def main() -> None:
-    early_purchase_report(40, max_buys_per_run=1)
+    early_purchase_report(40, max_buys_per_run=None)
 
 
 if __name__ == "__main__":

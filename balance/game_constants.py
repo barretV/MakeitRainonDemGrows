@@ -7,13 +7,15 @@ GLOBE_WORLD = 4
 
 # cols, rows, mask cols, mask rows, cell hp, dew per cell.
 # Each island is a full arc: the mask is big, and hp sets how many bottles a cell needs.
-# hp/pay are solved by `python balance/tune.py` (one-buy player model, ~30-36 min per island).
+# hp is low enough that one bottle can finish the cells it waters.
+# A world clears when that bottle covers the island, not by saving partial paint.
+# Prices come from `python balance/reprice.py --write`.
 WORLDS = [
     (8, 6, 100, 75, 76, 3),
-    (13, 9, 130, 90, 3000, 2),
-    (15, 11, 150, 110, 10500, 3),
-    (17, 12, 170, 120, 22500, 4),
-    (14, 9, 800, 120, 3072281, 4),
+    (13, 9, 130, 90, 4916, 2),
+    (15, 11, 150, 110, 6688, 3),
+    (17, 12, 170, 120, 6688, 4),
+    (14, 9, 800, 120, 6688, 4),
 ]
 
 BASE_SCALE = 0.48
@@ -103,10 +105,17 @@ def bottle_seconds(state):
 def rain_radius(state):
     grown = cloud_scale(state) / BASE_SCALE
     reach = (
-        (1 + 0.18 * state["circle"])
-        * (1 + 0.16 * state["wide"])
-        * (1 + 0.14 * state["horizon"])
-        * (1 + 0.02 * state["harvest"])
+        (1 + 0.23 * state["circle"])
+        * (1 + 0.21 * state["wide"])
+        * (1 + 0.19 * state["horizon"])
+        * (1 + 0.12 * state["harvest"])
+        * (1 + 0.16 * state["sprinkler"])
+        * (1 + 0.06 * state["spin"])
+        * (1 + 0.12 * state["lightning"])
+        * (1 + 0.04 * state["zap"])
+        * (1 + 0.12 * state["tornado"])
+        * (1 + 0.04 * state["twist"])
+        * (1 + 0.7 * state["monsoon"])
     )
     return 0.92 * grown * reach
 
@@ -126,7 +135,7 @@ def pool_flow(state):
 
 
 def patch_fraction(state):
-    return min(0.84, 0.15 + state["specks"] * 0.05 + state["mist"] * 0.045)
+    return min(1.0, 0.18 + state["specks"] * 0.09 + state["mist"] * 0.075)
 
 
 def crit_chance(state):

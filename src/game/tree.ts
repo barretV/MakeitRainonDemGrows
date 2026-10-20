@@ -149,7 +149,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Get bigger. A bigger cloud drinks a wider circle and the camera leans in.',
     max: 8,
     color: '#ffe56a',
-    costs: [4, 8, 22, 55, 130, 300, 690, 1550],
+    costs: [4, 8, 14, 18, 31, 38, 75, 93],
     effect: (level) => `Size ${cloudScale({ ...emptyRanks(), puff: level }).toFixed(2)}`,
   },
   {
@@ -161,7 +161,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the bottle petal. The next ranks hold more water.',
     max: 1,
     color: '#8fd4ff',
-    costs: [9],
+    costs: [100],
     effect: () => 'Bottle petal open',
   },
   {
@@ -173,7 +173,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'More liters in the next bottle. Nothing refills while you fly.',
     max: 5,
     color: '#8fd4ff',
-    costs: [11, 26, 60, 138, 320],
+    costs: [100, 114, 131, 150, 172],
     effect: (level) => `${Math.round(maxLiters({ ...emptyRanks(), bottle: 1, flask: level }))} L`,
   },
   {
@@ -185,7 +185,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A deeper bottle for the long passes.',
     max: 5,
     color: '#8fd4ff',
-    costs: [42, 100, 230, 530, 1220],
+    costs: [123, 114, 131, 150, 172],
     effect: (level) => `Liters x${(1.26 ** level).toFixed(2)}`,
   },
   {
@@ -197,7 +197,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The bottle empties slower, so you can sit in a patch.',
     max: 5,
     color: '#8fd4ff',
-    costs: [52, 125, 290, 670, 1550],
+    costs: [230508, 271999, 304175, 349801, 402271],
     effect: (level) => `Drain /${(1.14 ** level).toFixed(2)}`,
   },
   {
@@ -209,7 +209,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The last sip lasts. Built for a whole land.',
     max: 4,
     color: '#8fd4ff',
-    costs: [200, 460, 1050, 2400],
+    costs: [450000, 517499, 595123, 553055],
     effect: (level) => `Drain /${(1.12 ** level).toFixed(2)}`,
   },
   {
@@ -221,7 +221,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the rain petal. The first cloud only leaks.',
     max: 1,
     color: '#7eb6ff',
-    costs: [10],
+    costs: [123],
     effect: () => 'Drizzle petal open',
   },
   {
@@ -233,7 +233,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'More drops in the circle. Still patchy.',
     max: 5,
     color: '#7eb6ff',
-    costs: [13, 32, 75, 172, 400],
+    costs: [100, 160, 210, 270, 320],
     effect: (level) => `${Math.round(patchFraction({ ...emptyRanks(), drizzle: 1, specks: level }) * 100)}% of the circle`,
   },
   {
@@ -245,7 +245,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The dry holes in the circle close up.',
     max: 5,
     color: '#7eb6ff',
-    costs: [55, 132, 305, 700, 1620],
+    costs: [1700, 1954, 2247, 2584, 2971],
     effect: (level) => `Patches +${level}`,
   },
   {
@@ -257,7 +257,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Each drop sinks deeper. Patches fill instead of only darkening.',
     max: 5,
     color: '#7eb6ff',
-    costs: [20, 48, 112, 260, 600],
+    costs: [2700, 3104, 3569, 4104, 4719],
     effect: (level) => `Soak x${(1.42 ** level).toFixed(2)}`,
   },
   {
@@ -269,7 +269,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The circle finally means it.',
     max: 4,
     color: '#7eb6ff',
-    costs: [4500, 11200, 25500, 55000],
+    costs: [340000, 390999, 449648, 460455],
     effect: (level) => `Soak x${(1.36 ** level).toFixed(2)}`,
   },
   {
@@ -281,8 +281,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Auto geysers punch through dry ground when you pour.',
     max: 4,
     color: '#5ec8ff',
-    costs: [180, 420, 980, 2200],
-    blooms: [0, 120, 280, 650],
+    costs: [340000, 390999, 449648, 494954],
+    blooms: [0, 2300, 2645, 3041],
     effect: (level) => `Geyser rank ${level}`,
   },
   {
@@ -294,8 +294,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The bottle tips harder and every drop sinks further.',
     max: 4,
     color: '#5ec8ff',
-    costs: [2200, 5200, 12000, 27000],
-    blooms: [300, 700, 1600, 3600],
+    costs: [340000, 390999, 449648, 517095],
+    blooms: [2300, 2645, 3041, 3497],
     effect: (level) => `Pour x${(1.3 ** level).toFixed(2)}`,
   },
   {
@@ -307,8 +307,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Finished ground holds a pool that seeps into thirsty neighbours.',
     max: 3,
     color: '#8ee0a0',
-    costs: [3400, 7800, 18000],
-    blooms: [500, 1100, 2400],
+    costs: [340000, 390999, 449648],
+    blooms: [2300, 2645, 3041],
     effect: (level) => `Pools ${Math.round((0.72 + 0.22 * level) * 100)}%`,
   },
   {
@@ -320,8 +320,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Green spores wake moss in a wide arc.',
     max: 3,
     color: '#7ddf6a',
-    costs: [95, 240, 580],
-    blooms: [0, 90, 240],
+    costs: [340000, 390999, 449648],
+    blooms: [0, 2300, 2645],
     effect: (level) => `Spore +${level}`,
   },
   {
@@ -333,7 +333,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the reach petal. Grow your bottle first — then widen the rain circle.',
     max: 1,
     color: '#b6e86a',
-    costs: [12],
+    costs: [380],
     effect: () => 'Reach petal open',
   },
   {
@@ -345,7 +345,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A wider rain circle.',
     max: 5,
     color: '#b6e86a',
-    costs: [14, 34, 78, 180, 415],
+    costs: [380, 570, 810, 1000, 1400],
     effect: (level) => `Radius x${(1 + 0.32 * level).toFixed(2)}`,
   },
   {
@@ -357,7 +357,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The circle covers a meadow, not a puddle.',
     max: 5,
     color: '#b6e86a',
-    costs: [62, 148, 340, 7800, 19200],
+    costs: [7500, 11000, 15000, 20000, 25000],
     effect: (level) => `Radius x${(1 + 0.28 * level).toFixed(2)}`,
   },
   {
@@ -369,7 +369,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Big enough to walk a whole land in one bottle.',
     max: 4,
     color: '#b6e86a',
-    costs: [14000, 31000, 60000, 105000],
+    costs: [340000, 480000, 552000, 440715],
     effect: (level) => `Radius x${(1 + 0.26 * level).toFixed(2)}`,
   },
   {
@@ -381,8 +381,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Rolling heat-waves carry water across the dunes.',
     max: 3,
     color: '#f5d27a',
-    costs: [2200, 5200, 12000],
-    blooms: [260, 620, 1400],
+    costs: [910000, 1046499, 1203473],
+    blooms: [6100, 7014, 8066],
     worldMin: 2,
     effect: (level) => `Wave +${level}`,
   },
@@ -395,8 +395,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Lobs a soaking splash ahead of the cloud.',
     max: 3,
     color: '#7ec8f0',
-    costs: [1800, 4200, 9800],
-    blooms: [220, 520, 1200],
+    costs: [910000, 1046499, 1203473],
+    blooms: [6100, 7014, 8066],
     worldMin: 2,
     effect: (level) => `Bomb +${level}`,
   },
@@ -409,7 +409,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Open the charm petal. The cloud gets loud about it.',
     max: 1,
     color: '#ff9bb8',
-    costs: [13],
+    costs: [3278],
     effect: () => 'Charm petal open',
   },
   {
@@ -421,7 +421,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Every finished patch pays more.',
     max: 5,
     color: '#ff9bb8',
-    costs: [15, 36, 84, 195, 450],
+    costs: [2700, 3400, 4100, 5000, 6100],
     effect: (level) => `Dew x${(1.22 ** level).toFixed(2)}`,
   },
   {
@@ -433,8 +433,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A shimmering arc paints frost into bloom.',
     max: 3,
     color: '#ffb4e8',
-    costs: [650, 1500, 3400],
-    blooms: [80, 200, 460],
+    costs: [372667, 310500, 357075],
+    blooms: [2800, 3219, 3701],
     worldMin: 1,
     effect: (level) => `Arc +${level}`,
   },
@@ -447,8 +447,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Ice shatters into instant growth.',
     max: 3,
     color: '#d8f4ff',
-    costs: [520, 1200, 2800],
-    blooms: [60, 150, 350],
+    costs: [270000, 372670, 357075],
+    blooms: [2800, 3219, 3701],
     worldMin: 1,
     effect: (level) => `Melt +${level}`,
   },
@@ -461,8 +461,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Toxic crust melts under a green wash.',
     max: 3,
     color: '#b8ff9a',
-    costs: [2400, 5600, 13000],
-    blooms: [700, 1600, 3600],
+    costs: [4500000, 5175000, 5951250],
+    blooms: [22000, 25299, 29093],
     worldMin: 3,
     effect: (level) => `Purify +${level}`,
   },
@@ -475,8 +475,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A latitude belt of rain wraps the globe.',
     max: 2,
     color: '#6ec8ff',
-    costs: [18000, 42000],
-    blooms: [1100, 2600],
+    costs: [7100000, 15000000],
+    blooms: [36000, 77000],
     worldMin: 4,
     effect: (level) => `Band +${level}`,
   },
@@ -489,7 +489,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The meadow tips extra.',
     max: 12,
     color: '#ff9bb8',
-    costs: [78, 188, 435, 1000, 8000, 20000, 24000, 28000, 52000, 230000, 320000, 440000],
+    costs: [31000, 37000, 44000, 52000, 61000, 72000, 85000, 100000, 114999, 140000, 161000, 195091],
     effect: (level) => `Dew x${(1.18 ** level).toFixed(2)}`,
   },
   {
@@ -502,8 +502,8 @@ const NODES: readonly UpgradeNode[] = [
     max: 24,
     color: '#ff9bb8',
     worldMin: 4,
-    costs: [130000, 140400, 151600, 163800, 176900, 191000, 206300, 222800, 240600, 259900, 280700, 303100, 327400, 353600, 381800, 412400, 445400, 481000, 519500, 561000, 605900, 654400, 706800, 763300],
-    blooms: [1800, 1900, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600, 3900, 4200, 4500, 4800, 3000, 3200, 3400, 3600, 3800, 4000, 4200, 4400, 4600],
+    costs: [7400000, 15000000, 32000000, 68000000, 140000000, 300000000, 640000000, 1300000000, 2700000000, 5800000000, 12000000000, 25000000000, 53000000000, 110000000000, 230000000000, 490000000000, 1000000000000, 2100000000000, 4500000000000, 9600000000000, 20000000000000, 43000000000000, 92000000000000, 190000000000000],
+    blooms: [1800, 3800, 8100, 17000, 36000, 77000, 160000, 340000, 730000, 1500000, 3200000, 6800000, 14000000, 30000000, 64000000, 130000000, 270000000, 580000000, 1200000000, 2500000000, 5300000000, 11000000000, 23000000000, 49000000000],
     effect: (level) => `Radius +${level * 2}%`,
   },
   {
@@ -515,7 +515,7 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'Some patches bloom on contact and pay triple.',
     max: 4,
     color: '#ff9bb8',
-    costs: [85, 205, 475, 1100],
+    costs: [272000, 264500, 304175, 349801],
     effect: (level) => `${Math.round(critChance({ ...emptyRanks(), crit: level }) * 100)}% crit`,
   },
   {
@@ -527,8 +527,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The cloud spins and paints a ring. Off until you buy it.',
     max: 1,
     color: '#ff9bb8',
-    costs: [19000],
-    blooms: [420],
+    costs: [515864],
+    blooms: [4500],
     worldMin: 1,
     effect: () => 'Sprinkler unlocked',
   },
@@ -541,8 +541,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The ring reaches further.',
     max: 3,
     color: '#ff9bb8',
-    costs: [25000, 54000, 115000],
-    blooms: [350, 800, 1800],
+    costs: [910000, 1046499, 1203473],
+    blooms: [6100, 7014, 8066],
     worldMin: 1,
     effect: (level) => `Ring +${level}`,
   },
@@ -555,8 +555,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A bolt finishes a tight circle of patches.',
     max: 1,
     color: '#ffd56a',
-    costs: [42000],
-    blooms: [900],
+    costs: [1700000],
+    blooms: [8500],
     worldMin: 2,
     effect: () => 'Lightning unlocked',
   },
@@ -569,8 +569,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'The bolt covers more patches.',
     max: 3,
     color: '#ffd56a',
-    costs: [50000, 105000, 210000],
-    blooms: [450, 1000, 2200],
+    costs: [3600000, 4139999, 4760998],
+    blooms: [18000, 20700, 23804],
     worldMin: 2,
     effect: (level) => `Bolt +${level}`,
   },
@@ -583,8 +583,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A twister walks ahead and greens what it touches.',
     max: 1,
     color: '#d7c4ff',
-    costs: [125000],
-    blooms: [1600],
+    costs: [4500000],
+    blooms: [22000],
     worldMin: 3,
     effect: () => 'Tornado unlocked',
   },
@@ -597,8 +597,8 @@ const NODES: readonly UpgradeNode[] = [
     desc: 'A fatter twister.',
     max: 3,
     color: '#d7c4ff',
-    costs: [145000, 270000, 500000],
-    blooms: [900, 2000, 4400],
+    costs: [5700000, 6554999, 7538248],
+    blooms: [28000, 32199, 37028],
     worldMin: 3,
     effect: (level) => `Twister +${level}`,
   },
@@ -796,10 +796,17 @@ export function bottleSeconds(ranks: Ranks): number {
 export function rainRadius(ranks: Ranks): number {
   const grown = cloudScale(ranks) / BASE_SCALE;
   const reach =
-    (1 + 0.18 * ranks.circle) *
-    (1 + 0.16 * ranks.wide) *
-    (1 + 0.14 * ranks.horizon) *
-    (1 + 0.02 * ranks.harvest);
+    (1 + 0.23 * ranks.circle) *
+    (1 + 0.21 * ranks.wide) *
+    (1 + 0.19 * ranks.horizon) *
+    (1 + 0.12 * ranks.harvest) *
+    (1 + 0.16 * ranks.sprinkler) *
+    (1 + 0.06 * ranks.spin) *
+    (1 + 0.12 * ranks.lightning) *
+    (1 + 0.04 * ranks.zap) *
+    (1 + 0.12 * ranks.tornado) *
+    (1 + 0.04 * ranks.twist) *
+    (1 + 0.7 * ranks.monsoon);
   return 0.92 * grown * reach;
 }
 
@@ -819,7 +826,7 @@ export function poolFlow(ranks: Ranks): number {
 
 /** Fraction of the disc that actually receives rain. The rest stays a dry hole in the circle. */
 export function patchFraction(ranks: Ranks): number {
-  return Math.min(0.84, 0.15 + ranks.specks * 0.05 + ranks.mist * 0.045);
+  return Math.min(1, 0.18 + ranks.specks * 0.09 + ranks.mist * 0.075);
 }
 
 export function critChance(ranks: Ranks): number {
