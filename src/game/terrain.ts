@@ -213,6 +213,7 @@ export class Terrain {
         uRain: rain,
         uRainDisc: { value: new THREE.Vector3(0, 0, 1) },
         uRainOn: { value: 0 },
+        uSeek: { value: 0 },
       },
       vertexShader: VOXEL_VERT,
       fragmentShader: VOXEL_FRAG,
@@ -407,6 +408,7 @@ const VOXEL_FRAG = /* glsl */ `
   uniform float uRain;
   uniform vec3 uRainDisc;
   uniform float uRainOn;
+  uniform float uSeek;
   varying vec3 vWorld;
   varying vec3 vN;
   varying float vUp;
@@ -483,7 +485,7 @@ const VOXEL_FRAG = /* glsl */ `
       float fleck = smoothstep(0.34, 0.08, length(vec2(bf.x, bf.y * 1.8))) * step(0.4, h21(bc));
       vec3 root = vec3(0.08, 0.32, 0.1);
       vec3 midG = mix(uLiveA, vec3(0.22, 0.62, 0.22), 0.55);
-      vec3 tip = mix(uLiveB, vec3(0.72, 0.95, 0.42), 0.45);
+      vec3 tip = mix(uLiveB, vec3(0.42, 0.72, 0.24), 0.35);
       vec3 turf = mix(root, midG, grass);
       turf = mix(turf, tip, fleck * grass);
       turf *= 0.9 + 0.16 * n2;
@@ -493,7 +495,7 @@ const VOXEL_FRAG = /* glsl */ `
       turf = mix(turf, tip * 1.15, grown * fleck * 0.35);
       vec3 bladeN = normalize(vec3(sway * 0.55, 1.0, gust * 0.35));
       float bladeLit = clamp(dot(bladeN, sunDir) * 0.5 + 0.5, 0.0, 1.0);
-      turf += vec3(0.95, 0.88, 0.35) * fleck * grass * bladeLit * 0.42;
+      turf += vec3(0.72, 0.78, 0.28) * fleck * grass * bladeLit * 0.16;
       col = mix(damp, turf, clamp(grass * 0.95 + bloom * 0.2, 0.0, 1.0));
       col = mix(col, mix(uLiveA, uLiveB, fleck), grown * 0.55);
       vec2 local = fract(vWorld.xz * 3.125) - 0.5;
@@ -537,12 +539,15 @@ const VOXEL_FRAG = /* glsl */ `
     col *= mix(mix(0.78, 1.08, wrap), 1.0, uGlobe);
     // Unrestored ground stays in the world's dusk. Restored ground is what the light finds.
     vec3 dusk = mix(uDusk, vec3(1.05, 0.38, 0.55), 0.72);
-    col = mix(col * dusk, col * vec3(1.12, 1.06, 0.9), smoothstep(0.2, 0.9, life));
-    float exposure = mix(0.62, 1.48, life);
-    exposure = mix(exposure, mix(0.55, 1.2, life), uGlobe);
+    col = mix(col * dusk, col * vec3(1.0, 0.98, 0.9), smoothstep(0.25, 0.88, life));
+    float exposure = mix(0.62, 1.12, life);
+    exposure = mix(exposure, mix(0.55, 1.05, life), uGlobe);
     col *= exposure;
-    col += vec3(1.0, 0.62, 0.7) * smoothstep(0.08, 0.32, life) * (1.0 - smoothstep(0.55, 0.9, life)) * 0.28;
-    col += uSunColor * smoothstep(0.72, 1.0, wrap) * 0.18 * life * (1.0 - uGlobe);
+    col += vec3(1.0, 0.62, 0.7) * smoothstep(0.08, 0.32, life) * (1.0 - smoothstep(0.55, 0.9, life)) * 0.18;
+    col += uSunColor * smoothstep(0.72, 1.0, wrap) * 0.08 * life * (1.0 - uGlobe);
+    float thirsty = uSeek * (1.0 - smoothstep(0.05, 0.48, life));
+    float blink = 0.55 + 0.45 * sin(uTime * 2.8 + vWorld.x * 0.9 + vWorld.z * 0.55);
+    col = mix(col, vec3(1.0, 0.78, 0.22), thirsty * blink * (vUp > 0.5 ? 0.82 : 0.35));
     if (vUp > 0.5) {
       float cd = length(vWorld.xz - uCloud.xy);
       float shadow = (1.0 - smoothstep(uCloud.z * 0.28, uCloud.z, cd)) * (1.0 - uGlobe);
@@ -635,7 +640,7 @@ const FLORA_FRAG = /* glsl */ `
     vec3 nTex = texture2D(uNormal, vUv).xyz * 2.0 - 1.0;
     vec3 N = normalize(vT * nTex.x + vB * nTex.y + vN * nTex.z);
     float wrap = clamp(dot(N, normalize(uSunDir)) * 0.5 + 0.5, 0.0, 1.0);
-    float lit = mix(0.08, 1.75, vLife);
+    float lit = mix(0.16, 1.18, vLife);
     vec3 col = albedo * lit * mix(0.7, 1.15, wrap);
     float rim = pow(wrap, 2.2) * clamp(1.0 - nTex.z, 0.0, 1.0);
     col += albedo * uSunColor * rim * 0.4 * vLife;

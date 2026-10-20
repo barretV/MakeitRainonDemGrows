@@ -333,6 +333,9 @@ export class RainGame {
   private shafts: THREE.Mesh[] = [];
   private sunSpots: { x: number; z: number; w: number }[] = [];
   private sunSpotTick = -1;
+  private thirsts: THREE.Mesh[] = [];
+  private thirstSpots: { x: number; z: number; dry: number }[] = [];
+  private thirstTick = -1;
   private puffs: THREE.Mesh[] = [];
   private puffDrift: number[] = [];
   private softClouds: SoftCloud[] = [];
@@ -455,6 +458,29 @@ export class RainGame {
       shaft.userData['shaftPhase'] = i * 1.7;
       this.shafts.push(shaft);
       this.scene.add(shaft);
+    }
+    for (let i = 0; i < 4; i += 1) {
+      const pin = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.7, 18),
+        new THREE.MeshBasicMaterial({
+          map: shaftTex,
+          color: 0xffd15a,
+          transparent: true,
+          opacity: 0,
+          blending: THREE.NormalBlending,
+          depthWrite: false,
+          fog: false,
+          toneMapped: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      pin.renderOrder = 5;
+      pin.userData['bb'] = 1;
+      pin.userData['gw'] = 0.7;
+      pin.userData['ph'] = 18;
+      pin.userData['shaftPhase'] = i * 1.4;
+      this.thirsts.push(pin);
+      this.scene.add(pin);
     }
 
     this.sunHalo = this.billboard(this.art.sunGlow, 1, 1, 0.02);
@@ -1459,6 +1485,7 @@ export class RainGame {
       if (!disc) continue;
       (disc.value as THREE.Vector3).set(this.cloudX, this.cloudZ, state.reach());
       mat.uniforms['uRainOn']!.value = raining ? 1 : 0;
+      if (mat.uniforms['uSeek']) mat.uniforms['uSeek'].value = clamp((state.ratio() - 0.68) / 0.16, 0, 1);
     }
     if (raining) {
       const reach = state.reach();
@@ -2705,8 +2732,33 @@ export class RainGame {
         shaft.userData['tiltZ'] = -0.18 + side * 0.07;
         const mat = shaft.material as THREE.MeshBasicMaterial;
         const weather = 0.62 + (1 - this.rainMix) * 0.38;
-        mat.opacity = (0.22 + spot.w * 0.38) * (0.86 + Math.sin(t * 0.65 + phase) * 0.14) * weather;
+        mat.opacity = (0.14 + spot.w * 0.22) * (0.86 + Math.sin(t * 0.65 + phase) * 0.14) * weather;
         shaft.visible = true;
+      });
+      const seek = clamp((ratio - 0.68) / 0.16, 0, 1);
+      if (seek > 0.02 && spotTick !== this.thirstTick) {
+        this.thirstTick = spotTick;
+        this.thirstSpots = state.thirstySpots(this.thirsts.length);
+      } else if (seek <= 0.02) {
+        this.thirstSpots = [];
+      }
+      this.thirsts.forEach((pin, i) => {
+        const spot = this.thirstSpots[i];
+        if (!spot || seek <= 0.02) {
+          pin.visible = false;
+          return;
+        }
+        const phase = Number(pin.userData['shaftPhase']) || 0;
+        const x = spot.x + Math.sin(t * 0.4 + phase) * 0.04;
+        const z = spot.z;
+        const gy = this.groundY(x, z);
+        const h = 15 + (i % 2) * 2.2;
+        pin.position.set(x, gy + h * 0.5, z);
+        this.sizeTo(pin, 1.15, h);
+        pin.userData['tiltZ'] = 0;
+        const mat = pin.material as THREE.MeshBasicMaterial;
+        mat.opacity = seek * (0.62 + 0.28 * Math.sin(t * 2.6 + phase));
+        pin.visible = mat.opacity > 0.08;
       });
 
       const bowStrength = clamp((ratio - 0.55) / 0.35, 0, 1);
@@ -2728,6 +2780,7 @@ export class RainGame {
       this.rainbow.visible = false;
       this.mist.visible = false;
       this.shafts.forEach((shaft) => (shaft.visible = false));
+      this.thirsts.forEach((pin) => (pin.visible = false));
     }
     this.softClouds.forEach((cloud, i) => {
       if (this.globe) {

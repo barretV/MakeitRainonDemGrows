@@ -1145,6 +1145,40 @@ export class SaveState {
     return picked;
   }
 
+  /**
+   * Remaining dry pockets, once most of the island is already green.
+   * One pin per pocket so the last percent is somewhere you can see.
+   */
+  thirstySpots(limit: number): { x: number; z: number; dry: number }[] {
+    if (this.world === GLOBE_WORLD || limit <= 0 || this.ratio() < 0.68) return [];
+    const { cols, rows } = maskOf(this.world);
+    const hp = Math.max(1, cellHp(this.world));
+    const stride = this.ratio() > 0.9 ? 1 : Math.max(1, Math.floor(Math.sqrt((cols * rows) / 8000)));
+    const hits: { x: number; z: number; dry: number }[] = [];
+    for (let r = 0; r < rows; r += stride) {
+      for (let c = 0; c < cols; c += stride) {
+        const wet = Math.min(1, (this.progress[r * cols + c] ?? 0) / hp);
+        if (wet >= 0.88) continue;
+        const at = this.cellCenter(c, r, cols, rows);
+        hits.push({ x: at.x, z: at.z, dry: 1 - wet });
+      }
+    }
+    hits.sort((a, b) => b.dry - a.dry);
+    const picked: { x: number; z: number; dry: number }[] = [];
+    for (const hit of hits) {
+      if (picked.length >= limit) break;
+      let crowded = false;
+      for (const spot of picked) {
+        if ((spot.x - hit.x) ** 2 + (spot.z - hit.z) ** 2 < 7.5) {
+          crowded = true;
+          break;
+        }
+      }
+      if (!crowded) picked.push(hit);
+    }
+    return picked;
+  }
+
   /** Average mask soak for one board tile (0–1). Drives staged props before the hill is "green". */
   hillWet(index: number): number {
     const { cols, rows } = gridOf(this.world);
