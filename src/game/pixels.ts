@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { worldDef } from './balance';
+import { bakeSpriteNormal, rememberNormal } from './normals';
 
 class Pix {
   readonly canvas: HTMLCanvasElement;
@@ -133,7 +134,9 @@ function texOf(canvas: HTMLCanvasElement, smooth = false): THREE.CanvasTexture {
 function bake(draw: (p: Pix) => void, w: number, h: number, smooth = false): THREE.CanvasTexture {
   const pix = new Pix(w, h);
   draw(pix);
-  return texOf(pix.canvas, smooth);
+  const tex = texOf(pix.canvas, smooth);
+  rememberNormal(tex, bakeSpriteNormal(pix.canvas));
+  return tex;
 }
 
 export type CloudMood = 'idle' | 'joy' | 'sleep' | 'grin' | 'pout' | 'blink';
@@ -202,66 +205,153 @@ function drawCloud(mood: CloudMood): THREE.CanvasTexture {
   }, 96, 64);
 }
 
+function mixHex(a: string, b: string, t: number): string {
+  const [r1, g1, b1] = rgb(a);
+  const [r2, g2, b2] = rgb(b);
+  const c = (n1: number, n2: number) =>
+    Math.max(0, Math.min(255, Math.round(n1 + (n2 - n1) * t)))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${c(r1, r2)}${c(g1, g2)}${c(b1, b2)}`;
+}
+
 function skyCanvas(top: string, mid: string, bot: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
   canvas.height = 512;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas unavailable');
+  const deep = mixHex(bot, mid, 0.4);
   const g = ctx.createLinearGradient(0, 0, 0, 512);
   g.addColorStop(0, top);
-  g.addColorStop(0.42, mid);
-  g.addColorStop(0.78, bot);
-  g.addColorStop(1, bot);
+  g.addColorStop(0.34, mid);
+  g.addColorStop(0.52, mixHex(mid, bot, 0.35));
+  g.addColorStop(0.62, bot);
+  g.addColorStop(0.78, mixHex(bot, deep, 0.5));
+  g.addColorStop(1, deep);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 1024, 512);
-  const glow = ctx.createRadialGradient(780, 90, 10, 780, 110, 220);
-  glow.addColorStop(0, 'rgba(255,244,210,0.95)');
-  glow.addColorStop(0.25, 'rgba(255,210,160,0.45)');
-  glow.addColorStop(1, 'rgba(255,180,200,0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, 1024, 512);
-  ctx.fillStyle = 'rgba(255,236,180,0.9)';
-  ctx.beginPath();
-  ctx.arc(780, 92, 28, 0, Math.PI * 2);
-  ctx.fill();
-  const puff = (x: number, y: number, s: number, a: number) => {
-    ctx.fillStyle = `rgba(255,255,255,${a})`;
+
+  const soft = (x: number, y: number, w: number, h: number, a: number) => {
+    const cg = ctx.createRadialGradient(0, 0, 2, 0, 0, w);
+    cg.addColorStop(0, `rgba(255,255,255,${a})`);
+    cg.addColorStop(0.5, `rgba(255,252,250,${(a * 0.55).toFixed(3)})`);
+    cg.addColorStop(1, 'rgba(255,250,252,0)');
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(1, h / w);
+    ctx.fillStyle = cg;
     ctx.beginPath();
-    ctx.ellipse(x, y, 46 * s, 18 * s, 0, 0, Math.PI * 2);
-    ctx.ellipse(x - 28 * s, y + 6, 28 * s, 14 * s, 0, 0, Math.PI * 2);
-    ctx.ellipse(x + 30 * s, y + 4, 26 * s, 13 * s, 0, 0, Math.PI * 2);
+    ctx.arc(0, 0, w, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   };
-  puff(140, 70, 1.3, 0.55);
-  puff(340, 48, 1.6, 0.42);
-  puff(560, 86, 1.1, 0.38);
-  puff(900, 60, 1.4, 0.34);
-  ctx.fillStyle = '#7a3d66';
-  for (let i = 0; i < 48; i += 1) {
-    const x = (i * 47) % 1100 - 40;
-    const base = 300 + (i % 5) * 8;
-    const h = 36 + (i % 7) * 14;
-    const w = 28 + (i % 4) * 8;
-    ctx.beginPath();
-    ctx.moveTo(x, base);
-    ctx.lineTo(x + w * 0.5, base - h);
-    ctx.lineTo(x + w, base);
-    ctx.closePath();
-    ctx.fill();
+
+  // Warm glow around where the billboard sun sits (visible play-camera strip).
+  const glow = ctx.createRadialGradient(812, 276, 8, 812, 284, 290);
+  glow.addColorStop(0, 'rgba(255,250,226,0.95)');
+  glow.addColorStop(0.2, 'rgba(255,228,180,0.5)');
+  glow.addColorStop(0.55, 'rgba(255,208,190,0.16)');
+  glow.addColorStop(1, 'rgba(255,204,204,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(470, 20, 554, 460);
+
+  // Distant cloud bands along the visible horizon strip.
+  soft(150, 268, 200, 30, 0.5);
+  soft(430, 252, 240, 34, 0.42);
+  soft(700, 262, 180, 28, 0.36);
+  soft(950, 244, 210, 30, 0.34);
+  soft(300, 300, 260, 30, 0.24);
+  soft(620, 308, 240, 28, 0.2);
+
+  // Cloud sea below the horizon so the island reads as floating.
+  soft(140, 352, 340, 78, 0.6);
+  soft(470, 372, 380, 88, 0.5);
+  soft(820, 356, 320, 74, 0.55);
+  soft(1010, 392, 300, 70, 0.44);
+  soft(320, 404, 360, 76, 0.34);
+  soft(660, 428, 400, 80, 0.28);
+
+  // Sparkles high up so the wide intro camera still has sky life.
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  for (let i = 0; i < 30; i += 1) {
+    const x = (i * 197) % 1024;
+    const y = 16 + ((i * 83) % 150);
+    const s = i % 5 === 0 ? 3 : 2;
+    ctx.fillRect(x, y, s, s);
   }
-  ctx.fillStyle = '#c98aab';
-  for (let i = 0; i < 36; i += 1) {
-    const x = (i * 61) % 1080;
-    const base = 250 + (i % 3) * 6;
-    const h = 22 + (i % 5) * 8;
-    const w = 22 + (i % 3) * 6;
-    ctx.beginPath();
-    ctx.moveTo(x, base);
-    ctx.lineTo(x + w * 0.5, base - h);
-    ctx.lineTo(x + w, base);
-    ctx.closePath();
-    ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  for (let i = 0; i < 18; i += 1) {
+    const x = (i * 331 + 60) % 1024;
+    const y = 150 + ((i * 47) % 110);
+    ctx.fillRect(x, y, 2, 2);
+  }
+  return texOf(canvas, true);
+}
+
+/** Deep-space backdrop for the endgame globe world: stars, haze and a faint nebula. */
+function spaceCanvas(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas unavailable');
+  const g = ctx.createLinearGradient(0, 0, 0, 512);
+  g.addColorStop(0, '#05060f');
+  g.addColorStop(0.3, '#0a1130');
+  g.addColorStop(0.5, '#101c48');
+  g.addColorStop(0.62, '#16255a');
+  g.addColorStop(0.8, '#0d1638');
+  g.addColorStop(1, '#060814');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 1024, 512);
+
+  // soft nebula clouds
+  const neb = (x: number, y: number, w: number, h: number, col: string, a: number) => {
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, w);
+    rg.addColorStop(0, col.replace('%a', String(a)));
+    rg.addColorStop(0.55, col.replace('%a', String(a * 0.36)));
+    rg.addColorStop(1, col.replace('%a', '0'));
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(1, h / w);
+    ctx.translate(-x, -y);
+    ctx.fillStyle = rg;
+    ctx.fillRect(x - w, y - w, w * 2, w * 2);
+    ctx.restore();
+  };
+  neb(300, 250, 300, 130, 'rgba(140,110,255,%a)', 0.16);
+  neb(760, 210, 260, 120, 'rgba(90,210,255,%a)', 0.12);
+  neb(520, 320, 420, 150, 'rgba(255,150,210,%a)', 0.08);
+
+  // milky band
+  const band = ctx.createLinearGradient(0, 150, 1024, 400);
+  band.addColorStop(0, 'rgba(255,255,255,0)');
+  band.addColorStop(0.42, 'rgba(226,232,255,0.1)');
+  band.addColorStop(0.55, 'rgba(236,240,255,0.14)');
+  band.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = band;
+  ctx.fillRect(0, 120, 1024, 300);
+
+  const rnd = (n: number) => {
+    const v = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  // stars: a spread of sizes/tints, dense enough for any visible strip
+  for (let i = 0; i < 620; i += 1) {
+    const x = rnd(i * 1.7) * 1024;
+    const y = 60 + rnd(i * 3.3 + 11) * 400;
+    const r = 0.6 + rnd(i * 5.1) * 1.5;
+    const t = rnd(i * 7.7);
+    const col = t > 0.82 ? '255,214,178' : t > 0.6 ? '186,214,255' : '255,255,255';
+    const a = 0.35 + rnd(i * 2.9) * 0.6;
+    ctx.fillStyle = `rgba(${col},${a.toFixed(2)})`;
+    ctx.fillRect(x, y, r, r);
+    if (r > 1.7) {
+      ctx.fillStyle = `rgba(${col},${(a * 0.35).toFixed(2)})`;
+      ctx.fillRect(x - r * 1.6, y + r * 0.4, r * 4.2, 1);
+      ctx.fillRect(x + r * 0.4, y - r * 1.6, 1, r * 4.2);
+    }
   }
   return texOf(canvas, true);
 }
@@ -269,15 +359,16 @@ function skyCanvas(top: string, mid: string, bot: string): THREE.CanvasTexture {
 function drawSun(): THREE.CanvasTexture {
   return bake(
     (p) => {
-      p.ellipse(24, 24, 18, 18, 'rgba(255, 220, 140, 0.35)');
-      p.ellipse(24, 24, 12, 12, '#ffe9a8');
-      p.ellipse(24, 24, 8, 8, '#fff8dc');
-      p.star(24, 24, '#fff');
+      p.ellipse(24, 24, 19, 19, 'rgba(255,196,96,0.3)');
+      p.ellipse(24, 24, 14, 14, '#ffc95c');
+      p.ellipse(24, 24, 11, 11, '#ffdd86');
+      p.ellipse(24, 24, 8, 8, '#fff4c4');
+      p.star(24, 24, '#fffdf2');
       for (let i = 0; i < 8; i += 1) {
         const a = (i / 8) * Math.PI * 2;
-        const x = 24 + Math.cos(a) * 15;
-        const y = 24 + Math.sin(a) * 15;
-        p.ellipse(x, y, 2.2, 1.2, '#fff6c2');
+        const x = 24 + Math.cos(a) * 16;
+        const y = 24 + Math.sin(a) * 16;
+        p.ellipse(x, y, 2.4, 1.3, '#ffe9a0');
       }
     },
     48,
@@ -330,13 +421,101 @@ function drawMountain(): THREE.CanvasTexture {
 
 function drawHills(color: string, back: string): THREE.CanvasTexture {
   return bake((p) => {
-    for (let i = 0; i < 8; i += 1) {
-      const cx = 20 + i * 34;
-      const cy = 58 + (i % 2) * 8;
-      p.ellipse(cx, cy, 28, 18, i % 2 === 0 ? color : back);
+    const light = mixHex(color, '#ffffff', 0.4);
+    const rim = mixHex(color, '#fff4ea', 0.55);
+    const dark = mixHex(color, '#4a3346', 0.5);
+    const tree = mixHex(color, '#241a24', 0.55);
+    const backLight = mixHex(back, '#ffffff', 0.3);
+    const backDark = mixHex(back, '#2e1c2e', 0.24);
+    const backTree = mixHex(back, '#241a24', 0.4);
+    const rnd = (n: number) => {
+      const v = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    type Hill = { cx: number; cy: number; rx: number; ry: number };
+    const ridge = (list: Hill[], fill: string) => {
+      for (const h of list) p.ellipse(h.cx, h.cy, h.rx, h.ry, fill);
+    };
+    const crestOf = (list: Hill[]): number[] => {
+      const crest: number[] = new Array(p.w).fill(9999);
+      for (let x = 0; x < p.w; x += 1) {
+        for (const h of list) {
+          const dx = (x - h.cx) / h.rx;
+          if (Math.abs(dx) >= 1) continue;
+          const y = h.cy - h.ry * Math.sqrt(1 - dx * dx);
+          if (y < crest[x]!) crest[x] = y;
+        }
+      }
+      return crest;
+    };
+
+    // far ridge (hazier, only its crest shows above the near range)
+    const far: Hill[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      const cx = -20 + i * 58;
+      const top = 2 + Math.floor(rnd(i + 7) * 12);
+      far.push({ cx, cy: top + 28, rx: 52, ry: 31 });
     }
-    p.outline('#ffffff22');
-  }, 280, 80);
+    ridge(far, backDark);
+    ridge(far.map((h) => ({ ...h, cx: h.cx - 8, rx: 40, ry: h.ry - 7 })), back);
+    const farCrest = crestOf(far);
+    for (let x = 0; x < p.w; x += 1) {
+      const y = Math.round(farCrest[x]!);
+      if (y > 900) continue;
+      p.set(x, y, backLight);
+      if (x % 3 === 0 && rnd(x + 5) > 0.45) {
+        const th = 1 + Math.floor(rnd(x + 11) * 3);
+        for (let k = 1; k <= th; k += 1) p.set(x, y - k, backTree);
+      }
+    }
+
+    // solid base (drawn before the near ridge so no hard seam shows)
+    for (let y = 33; y < p.h; y += 1) for (let x = 0; x < p.w; x += 1) p.set(x, y, dark);
+
+    // near ridge with a sun-kissed crest and a forest fringe
+    const near: Hill[] = [];
+    for (let i = 0; i < 11; i += 1) {
+      const cx = -14 + i * 62;
+      const top = 12 + Math.floor(rnd(i + 91) * 14);
+      near.push({ cx, cy: top + 21, rx: 56, ry: 28 });
+    }
+    ridge(near, color);
+    const nearCrest = crestOf(near);
+    for (let x = 0; x < p.w; x += 1) {
+      const y = Math.round(nearCrest[x]!);
+      if (y > 900) continue;
+      // sunlit crest: rim highlight with a short falloff down the upper slope
+      p.set(x, y, rim);
+      p.set(x, y + 1, light);
+      p.set(x, y + 2, mixHex(color, '#ffffff', 0.22));
+      p.set(x, y + 3, mixHex(color, '#ffffff', 0.1));
+      // forest fringe: little tree tops peeking over the ridge
+      const n = rnd(x + 37);
+      if (n > 0.42) {
+        const th = 1 + Math.floor(rnd(x + 71) * 4);
+        const spread = n > 0.78 ? 1 : 0;
+        for (let k = 1; k <= th; k += 1) {
+          p.set(x, y - k, tree);
+          if (spread && k > 1) p.set(x + 1, y - k, tree);
+          if (spread && k > 2) p.set(x - 1, y - k, tree);
+        }
+      }
+    }
+    // volume: lower slopes sink into shadow where the range meets the island
+    p.shadeLower(mixHex(color, '#3a2436', 0.55), 0.3);
+    // dissolve into the sky so the range never ends on a hard horizontal cut
+    const img = p.ctx.getImageData(0, 0, p.w, p.h);
+    const fadeFrom = p.h - 13;
+    for (let y = fadeFrom; y < p.h; y += 1) {
+      const k = 1 - (y - fadeFrom) / (p.h - fadeFrom);
+      const a = Math.pow(k, 1.35);
+      for (let x = 0; x < p.w; x += 1) {
+        const i = (y * p.w + x) * 4 + 3;
+        img.data[i] = Math.round((img.data[i] ?? 0) * a);
+      }
+    }
+    p.ctx.putImageData(img, 0, 0);
+  }, 640, 48);
 }
 
 /** Distant restored sky-islands for parallax backdrop. */
@@ -352,7 +531,7 @@ function drawParallaxIsland(variant: number): THREE.CanvasTexture {
 
     for (let y = capY; y < p.h; y += 1) {
       const t = (y - capY) / (p.h - capY);
-      const bulge = 1 - t * 0.35;
+      const bulge = 1 - t * 0.78;
       const rx = 38 * bulge + Math.sin(y * 0.4) * 1.2;
       for (let x = 0; x < p.w; x += 1) {
         const dx = (x + 0.5 - cx) / rx;
@@ -414,8 +593,15 @@ function groundTex(colors: string[], cracks: boolean): THREE.CanvasTexture {
     const deep = colors[3] ?? alt;
     for (let y = 0; y < p.h; y += 1) {
       for (let x = 0; x < p.w; x += 1) {
-        const n = (x * 3 + y * 5 + ((x >> 2) * (y >> 2))) % 11;
-        const color = n === 0 ? hi : n === 1 ? alt : n === 2 ? deep : base;
+        let color = base;
+        if (cracks) {
+          const n = (x * 3 + y * 5 + ((x >> 2) * (y >> 2))) % 11;
+          color = n === 0 ? hi : n === 1 ? alt : n === 2 ? deep : base;
+        } else {
+          // scattered grass speckle instead of a regular weave
+          const h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+          color = h < 0.1 ? hi : h < 0.27 ? alt : h < 0.33 ? deep : base;
+        }
         p.set(x, y, color);
       }
     }
@@ -459,42 +645,81 @@ function shift(hex: string): string {
 
 function bareTree(trunk: string, limb: string): THREE.CanvasTexture {
   return bake((p) => {
-    p.line(24, 62, 24, 34, trunk);
-    p.line(23, 62, 23, 40, trunk);
-    p.line(25, 62, 25, 42, trunk);
-    p.line(24, 40, 10, 22, limb);
-    p.line(24, 36, 38, 16, limb);
-    p.line(24, 44, 8, 36, limb);
-    p.line(24, 42, 40, 30, limb);
-    p.line(12, 26, 6, 18, limb);
-    p.line(34, 22, 42, 12, limb);
-    p.line(16, 40, 12, 48, limb);
+    const bark = mixHex(trunk, '#ffffff', 0.22);
+    const barkDark = mixHex(trunk, '#000000', 0.3);
+    const limbHi = mixHex(limb, '#ffffff', 0.2);
+    // gnarled, tapering trunk with a gentle lean
+    for (let y = 24; y < 63; y += 1) {
+      const t = (y - 24) / 39;
+      const cx = 24 + Math.round(Math.sin((y - 24) * 0.18) * 1.4) - Math.round(t);
+      const half = Math.round(0.4 + t * 2.1);
+      for (let dx = -half; dx <= half; dx += 1) {
+        p.set(cx + dx, y, dx <= 0 ? bark : barkDark);
+      }
+    }
+    // roots
+    p.line(23, 60, 16, 64, trunk);
+    p.line(25, 60, 32, 64, trunk);
+    p.line(18, 62, 13, 65, barkDark);
+    p.line(30, 62, 35, 65, barkDark);
+    // crooked branches
+    const twig = (x0: number, y0: number, segs: Array<[number, number]>) => {
+      let x = x0;
+      let y = y0;
+      for (const [dx, dy] of segs) {
+        p.line(x, y, x + dx, y + dy, limb);
+        p.line(x, y + 1, x + dx, y + dy + 1, limbHi);
+        x += dx;
+        y += dy;
+      }
+    };
+    twig(23, 38, [[-4, -6], [1, -7], [-5, -6], [1, -6]]);
+    twig(25, 36, [[4, -6], [-1, -7], [5, -6], [-1, -5]]);
+    twig(23, 50, [[-6, -4], [-3, -5]]);
+    twig(25, 47, [[7, -5], [3, -4]]);
+    twig(19, 19, [[-4, -5]]);
+    twig(30, 17, [[5, -4]]);
+    twig(18, 44, [[-5, 3]]);
+    twig(27, 43, [[6, 2]]);
+    twig(15, 13, [[-3, -4]]);
+    twig(34, 12, [[3, -4]]);
   }, 48, 64);
 }
 
 function birchTree(): THREE.CanvasTexture {
   return bake((p) => {
-    p.line(22, 62, 22, 18, '#f4f1ea');
-    p.line(26, 62, 26, 20, '#d7d0c4');
-    for (let y = 22; y < 58; y += 7) {
-      p.line(21, y, 27, y + 2, '#2a2a2e');
-    }
-    p.ellipse(16, 16, 10, 8, '#7dce4a');
-    p.ellipse(30, 18, 9, 7, '#b6e86a');
-    p.ellipse(22, 10, 8, 6, '#5cb83a');
+    // rounder, fuller crown
+    p.ellipse(24, 13, 12, 10, '#7dce4a');
+    p.ellipse(13, 20, 10, 8, '#5cb83a');
+    p.ellipse(35, 19, 10, 8, '#b6e86a');
+    p.ellipse(24, 24, 11, 7, '#6cc43e');
     p.outline('#2f6a32');
+    // solid pale trunk with a gentle lean, warm shadow side
+    for (let y = 22; y < 62; y += 1) {
+      const x = 23 - Math.round((62 - y) * 0.02);
+      p.set(x, y, '#f0ebdf');
+      p.set(x + 1, y, '#e4ddcc');
+      p.set(x + 2, y, '#cdc5b2');
+    }
+    for (let y = 28; y < 58; y += 8) {
+      const x = 23 + ((y * 5) % 2);
+      p.line(x, y, x + 1, y + 1, '#4a4a52');
+    }
+    p.line(24, 30, 17, 24, '#efeadf');
+    p.line(24, 36, 31, 30, '#efeadf');
   }, 48, 64);
 }
 
 function oakTree(): THREE.CanvasTexture {
   return bake((p) => {
-    p.line(24, 62, 24, 34, '#6b4630');
-    p.line(23, 62, 23, 40, '#4e3222');
     p.ellipse(24, 24, 16, 13, '#3f9a3a');
     p.ellipse(12, 28, 10, 8, '#2f7a32');
     p.ellipse(36, 26, 10, 9, '#5cb83a');
     p.ellipse(24, 14, 9, 7, '#7dce4a');
     p.outline('#1f4a22');
+    p.line(24, 62, 24, 34, '#6b4630');
+    p.line(23, 62, 23, 40, '#4e3222');
+    p.line(25, 62, 25, 42, '#3b2718');
     p.set(18, 18, '#e8ffc8');
     p.set(30, 20, '#fff');
   }, 48, 64);
@@ -502,9 +727,6 @@ function oakTree(): THREE.CanvasTexture {
 
 function cherryTree(): THREE.CanvasTexture {
   return bake((p) => {
-    p.line(24, 62, 24, 36, '#8d5a38');
-    p.line(23, 62, 23, 40, '#6e4128');
-    p.line(25, 62, 25, 42, '#a56b42');
     const puffs: Array<[number, number, number, string]> = [
       [24, 24, 14, '#ff8fb8'],
       [12, 28, 10, '#ffb3d0'],
@@ -515,6 +737,9 @@ function cherryTree(): THREE.CanvasTexture {
     ];
     for (const [x, y, r, c] of puffs) p.ellipse(x, y, r, r * 0.82, c);
     p.outline('#c45b86');
+    p.line(24, 62, 24, 36, '#8d5a38');
+    p.line(23, 62, 23, 40, '#6e4128');
+    p.line(25, 62, 25, 42, '#a56b42');
     p.set(18, 18, '#fff');
     p.set(30, 20, '#fff');
     p.set(24, 12, '#fff');
@@ -524,17 +749,33 @@ function cherryTree(): THREE.CanvasTexture {
 
 function pineTree(leaf: string, edge: string): THREE.CanvasTexture {
   return bake((p) => {
-    p.line(24, 62, 24, 46, '#6b4630');
-    p.line(23, 62, 23, 50, '#4e3222');
-    for (let i = 0; i < 4; i += 1) {
-      const y = 14 + i * 9;
-      const w = 16 - i * 3;
-      p.line(24, y, 24 - w, y + 10, leaf);
-      p.line(24, y, 24 + w, y + 10, leaf);
-      p.line(24 - w, y + 10, 24 + w, y + 10, leaf);
+    const dark = mixHex(leaf, edge, 0.6);
+    const light = mixHex(leaf, '#ffffff', 0.3);
+    // three overlapping frond tiers, each with a shaded underside
+    const tier = (top: number, half: number, h: number) => {
+      for (let y = 0; y < h; y += 1) {
+        const w = Math.max(1, Math.round((y / (h - 1)) * half));
+        for (let dx = -w; dx <= w; dx += 1) {
+          let c = leaf;
+          if (y >= h - 2) c = dark;
+          else if (dx <= -w + 1) c = light;
+          else if (dx >= w - 1) c = dark;
+          p.set(24 + dx, top + y, c);
+        }
+      }
+    };
+    tier(8, 11, 15);
+    tier(20, 16, 15);
+    tier(32, 20, 15);
+    // trunk
+    for (let y = 46; y < 62; y += 1) {
+      p.set(23, y, '#6b4630');
+      p.set(24, y, '#54382a');
+      p.set(25, y, '#4e3222');
     }
-    p.outline(edge);
-    p.star(24, 8, '#fff');
+    p.set(24, 7, '#ffffff');
+    p.set(23, 7, '#f4ffe0');
+    p.set(25, 7, '#f4ffe0');
   }, 48, 64);
 }
 
@@ -559,12 +800,12 @@ function cactusTree(): THREE.CanvasTexture {
 
 function alienTree(): THREE.CanvasTexture {
   return bake((p) => {
-    p.line(24, 62, 24, 34, '#6a4a8a');
     p.ellipse(24, 24, 14, 12, '#7cf0d2');
     p.ellipse(12, 30, 8, 7, '#c084fc');
     p.ellipse(36, 28, 8, 8, '#67e8f9');
     p.ellipse(24, 16, 6, 5, '#f9a8d4');
     p.outline('#3d6b78');
+    p.line(24, 62, 24, 34, '#6a4a8a');
     p.star(24, 8, '#fff');
     p.set(20, 22, '#06303a');
     p.set(28, 22, '#06303a');
@@ -631,9 +872,12 @@ function rockSprite(moss: boolean): THREE.CanvasTexture {
 
 function twigPatch(): THREE.CanvasTexture {
   return bake((p) => {
-    p.line(4, 16, 12, 8, '#6a5e54');
-    p.line(14, 18, 18, 6, '#4e453e');
-    p.line(20, 16, 28, 10, '#7a6e64');
+    p.line(6, 18, 14, 9, '#8a7c6e');
+    p.line(14, 9, 22, 7, '#7a6c60');
+    p.line(14, 12, 18, 18, '#94867a');
+    p.line(9, 15, 5, 10, '#7a6c60');
+    p.set(22, 6, '#b09a7a');
+    p.set(7, 11, '#b09a7a');
   }, 32, 24);
 }
 
@@ -692,7 +936,59 @@ function floraAtlas(): THREE.CanvasTexture {
     p.ellipse(7 * 16 + 6, 10, 3.5, 3, '#86d65a');
     for (const [x, y] of [[5, 9], [9, 8], [11, 11], [7, 12], [4, 12]] as Array<[number, number]>) at(7, x, y, '#ff8fb8');
     at(7, 8, 9, '#ffffff');
-  }, 128, 16);
+    // tall grass
+    for (const [x, h] of [[3, 7], [5, 10], [7, 6], [9, 11], [11, 8], [13, 5]] as Array<[number, number]>) {
+      for (let y = 15 - h; y < 15; y += 1) at(8, x, y, y < 15 - h + 2 ? '#c8f28a' : '#5cb83a');
+    }
+    // cattail reeds
+    for (const [x, top] of [[5, 6], [9, 4], [13, 7]] as Array<[number, number]>) {
+      for (let y = top + 2; y < 15; y += 1) at(9, x, y, y < top + 5 ? '#a8dc62' : '#4caf3a');
+      p.ellipse(9 * 16 + x, top, 1.5, 2.6, '#8a5a32');
+      at(9, x, top - 2, '#c9a06a');
+    }
+    // clover patch
+    for (const [cx, cy] of [[5, 11], [9, 9], [11, 12], [7, 13]] as Array<[number, number]>) {
+      for (let y = 13; y < 15; y += 1) at(10, cx, y, '#3e8a32');
+      at(10, cx - 1, cy, '#7dce4a');
+      at(10, cx + 1, cy, '#7dce4a');
+      at(10, cx, cy - 1, '#b6e86a');
+      at(10, cx, cy + 1, '#5cb83a');
+    }
+    // mushroom
+    for (let y = 10; y < 15; y += 1) at(11, 8, y, '#f4e3c8');
+    at(11, 7, 14, '#d9c4a2');
+    p.ellipse(11 * 16 + 8, 9, 5, 3, '#ff6f6f');
+    at(11, 6, 8, '#fff');
+    at(11, 10, 8, '#fff');
+    at(11, 8, 7, '#fff');
+    // daisy cluster
+    for (const [x, top] of [[4, 9], [8, 7], [12, 10]] as Array<[number, number]>) {
+      for (let y = top + 2; y < 15; y += 1) at(12, x, y, '#3e8a32');
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as Array<[number, number]>) at(12, x + dx, top + dy, '#fff');
+      at(12, x, top, '#ffe56a');
+    }
+    // fern frond
+    for (let x = 4; x < 13; x += 1) {
+      const y = 13 - Math.round(Math.sin(((x - 4) / 8) * Math.PI) * 7);
+      at(13, x, y, '#4caf3a');
+      if (x % 2 === 0) {
+        at(13, x, y - 1, '#7dce4a');
+        at(13, x, y - 2, '#a8e870');
+      }
+    }
+    // mossy pebble
+    p.ellipse(14 * 16 + 8, 12, 6, 3.4, '#9a938c');
+    p.ellipse(14 * 16 + 7, 10, 3.5, 2, '#7dce4a');
+    at(14, 6, 12, '#b6e86a');
+    at(14, 10, 13, '#6a645e');
+    // golden bud
+    for (let y = 8; y < 15; y += 1) at(15, 8, y, '#3e8a32');
+    at(15, 7, 11, '#5cb83a');
+    at(15, 9, 10, '#5cb83a');
+    p.ellipse(15 * 16 + 8, 6, 3, 3.6, '#ffd36e');
+    at(15, 8, 5, '#fff6c2');
+    at(15, 6, 7, '#ffb703');
+  }, 256, 16);
 }
 
 function frog(): THREE.CanvasTexture {
@@ -775,17 +1071,181 @@ function koi(): THREE.CanvasTexture {
 
 function pond(full: boolean): THREE.CanvasTexture {
   return bake((p) => {
-    p.ellipse(24, 16, 20, 10, full ? '#3ec4ff' : '#8a7568');
-    p.outline(full ? '#1a7ec8' : '#5c4c44');
+    // raised muddy bank
+    p.ellipse(24, 16.5, 21, 11, '#7a6553');
+    p.ellipse(24, 15.5, 20.5, 10.2, '#947d66');
+    p.ellipse(24, 14.8, 19.5, 9.4, '#a89076');
+    // inner basin: wet mud, or open water when restored
+    p.ellipse(24, 16, 17, 8.6, full ? '#1a8ec8' : '#4a3c34');
+    p.ellipse(24, 15, 15, 7.2, full ? '#3ec4ff' : '#5f4c40');
+    p.outline(full ? '#146a9c' : '#3a2e26');
     if (full) {
-      p.line(10, 14, 18, 12, '#e8f8ff');
-      p.line(22, 18, 34, 15, '#e8f8ff');
-      p.set(16, 16, '#fff');
+      p.line(12, 14, 20, 12, '#dff6ff');
+      p.line(24, 18, 33, 16, '#dff6ff');
+      p.set(16, 15, '#ffffff');
+      p.set(31, 17, '#bfeaff');
     } else {
-      p.line(10, 12, 20, 18, '#5a463c');
-      p.line(22, 10, 36, 16, '#5a463c');
+      // cracked mud
+      p.line(12, 14, 20, 19, '#3a2e26');
+      p.line(22, 12, 34, 17, '#3a2e26');
+      p.line(18, 15, 18, 18, '#3a2e26');
+      p.line(27, 13, 27, 17, '#3a2e26');
+      p.set(28, 14, '#6b5850');
     }
   }, 48, 32);
+}
+
+/** Inner water ellipse only: scales up inside the basin so the pond visibly fills. */
+function pondWater(shimmer: boolean): THREE.CanvasTexture {
+  return bake((p) => {
+    p.ellipse(24, 17, 19, 9.5, '#3ec4ff');
+    p.ellipse(24, 18.5, 16, 6.5, '#1a9be0');
+    p.ellipse(24, 15.5, 13, 4.5, '#7fdcff');
+    if (shimmer) {
+      p.line(12, 15, 20, 13, '#e8f8ff');
+      p.line(24, 19, 33, 16, '#e8f8ff');
+      p.line(15, 18, 22, 19, '#bfeaff');
+      p.set(28, 14, '#ffffff');
+      p.set(18, 17, '#ffffff');
+    } else {
+      p.line(14, 17, 21, 16, '#d6f2ff');
+      p.line(26, 18, 34, 17, '#d6f2ff');
+      p.set(20, 14, '#ffffff');
+    }
+  }, 48, 32);
+}
+
+/** Lily pad with an optional water-lily bloom. */
+function lilyPad(flower: boolean): THREE.CanvasTexture {
+  return bake((p) => {
+    p.ellipse(12, 12, 10, 6, '#4caf3a');
+    p.ellipse(11, 11, 7, 4, '#7dce4a');
+    p.line(12, 12, 18, 7, '#2f7a32');
+    p.set(8, 10, '#b6e86a');
+    p.outline('#2f7a32');
+    if (flower) {
+      p.ellipse(12, 5, 4, 3, '#ff8fb8');
+      p.ellipse(12, 4, 2.6, 2, '#ffd9e8');
+      p.set(12, 4, '#ffe56a');
+      p.set(9, 5, '#fff');
+      p.set(15, 6, '#ff6f9e');
+    }
+  }, 24, 18);
+}
+
+/** Tiny green sprout that bridges dead decor and the grown bush/tree. */
+function bushSprout(): THREE.CanvasTexture {
+  return bake((p) => {
+    for (let y = 10; y < 17; y += 1) p.set(12, y, '#3e8a32');
+    p.ellipse(9, 10, 3.4, 2.4, '#7dce4a');
+    p.ellipse(15, 9, 3.2, 2.2, '#b6e86a');
+    p.set(12, 7, '#b6e86a');
+    p.set(8, 12, '#5cb83a');
+    p.set(16, 12, '#5cb83a');
+  }, 24, 20);
+}
+
+/** Young tree: trunk first, two leaf clumps, so trees visibly grow in. */
+function sapling(): THREE.CanvasTexture {
+  return bake((p) => {
+    p.line(16, 38, 16, 20, '#6a4a2a');
+    p.line(15, 38, 15, 24, '#8a6038');
+    p.line(16, 26, 10, 21, '#8a6038');
+    p.line(16, 24, 22, 20, '#8a6038');
+    p.ellipse(10, 18, 5, 4, '#5cb83a');
+    p.ellipse(22, 17, 5.5, 4.5, '#7dce4a');
+    p.ellipse(16, 14, 6, 4.6, '#b6e86a');
+    p.outline('#2f7a32');
+    p.set(14, 14, '#dff8b0');
+  }, 32, 40);
+}
+
+/** Translucent gust streak for wind trails. */
+function windStreak(): THREE.CanvasTexture {
+  return bake((p) => {
+    for (let x = 2; x < 62; x += 1) {
+      const t = x / 64;
+      const thick = Math.max(1, Math.round(Math.sin(t * Math.PI) * 3.2));
+      for (let y = 0; y < thick; y += 1) p.set(x, 6 + y - Math.floor(thick / 2), y === 0 ? 'rgba(255,255,255,0.5)' : 'rgba(235,248,255,0.34)');
+    }
+    p.set(60, 6, 'rgba(255,255,255,0.7)');
+  }, 64, 12);
+}
+
+/** Big soft backdrop cloud, much larger and fluffier than the hero cloud. */
+function softCloud(): THREE.CanvasTexture {
+  return bake((p) => {
+    const blobs: Array<[number, number, number, number]> = [
+      [64, 38, 40, 15],
+      [34, 42, 24, 12],
+      [94, 42, 24, 12],
+      [48, 30, 22, 12],
+      [82, 30, 20, 11],
+      [64, 24, 18, 10],
+    ];
+    for (const [x, y, rx, ry] of blobs) p.ellipse(x, y, rx, ry, 'rgba(255,255,255,0.85)');
+    for (const [x, y, rx, ry] of blobs) p.ellipse(x, y - ry * 0.32, rx * 0.82, ry * 0.62, 'rgba(255,255,255,0.9)');
+  }, 128, 64, true);
+}
+
+/** Standing rainbow arc: fades in once most of an island is alive. */
+function rainbowArc(): THREE.CanvasTexture {
+  return bake((p) => {
+    const bands: Array<[number, string]> = [
+      [62, 'rgba(255,110,110,0.5)'],
+      [56, 'rgba(255,190,110,0.5)'],
+      [50, 'rgba(255,246,140,0.46)'],
+      [44, 'rgba(140,230,150,0.46)'],
+      [38, 'rgba(130,200,255,0.5)'],
+      [32, 'rgba(190,150,255,0.42)'],
+    ];
+    for (const [radius, color] of bands) {
+      for (let a = 0; a <= 180; a += 1) {
+        const rad = (a * Math.PI) / 180;
+        const x = 128 - Math.cos(rad) * radius;
+        const y = 122 - Math.sin(rad) * radius;
+        p.set(x, y, color);
+        p.set(x, y + 1, color.replace(/0\.\d+\)$/, '0.22)'));
+      }
+    }
+  }, 256, 128);
+}
+
+/** Warm radial glow used behind the sun and under god rays. */
+function sunGlow(): THREE.CanvasTexture {
+  return bake(
+    (p) => {
+      for (let r = 40; r > 0; r -= 1) {
+        const k = 1 - r / 40;
+        const a = Math.pow(k, 2.1) * 0.5;
+        p.ellipse(40, 40, r, r * 0.92, `rgba(255,238,190,${a.toFixed(3)})`);
+      }
+      p.ellipse(40, 40, 9, 9, 'rgba(255,248,220,0.6)');
+      p.ellipse(40, 40, 5, 5, 'rgba(255,252,240,0.75)');
+    },
+    80,
+    80,
+    true,
+  );
+}
+
+/** Falling petal / pollen motes for ambient life. */
+function petalBit(): THREE.CanvasTexture {
+  return bake((p) => {
+    p.ellipse(4, 4, 3, 1.8, '#ffb3d0');
+    p.set(3, 4, '#ff8fb8');
+    p.set(5, 3, '#fff');
+  }, 8, 8);
+}
+
+function pollenBit(): THREE.CanvasTexture {
+  return bake((p) => {
+    p.set(2, 2, '#fff6c2');
+    p.set(1, 2, 'rgba(255,240,190,0.7)');
+    p.set(2, 1, 'rgba(255,240,190,0.7)');
+    p.set(3, 2, 'rgba(255,240,190,0.55)');
+    p.set(2, 3, 'rgba(255,240,190,0.55)');
+  }, 5, 5);
 }
 
 function seedSprite(): THREE.CanvasTexture {
@@ -885,6 +1345,7 @@ export interface ArtSet {
   cloud: Record<CloudMood, THREE.CanvasTexture>;
   baby: THREE.CanvasTexture;
   skies: THREE.CanvasTexture[];
+  space: THREE.CanvasTexture;
   mountain: THREE.CanvasTexture;
   parallaxIslands: THREE.CanvasTexture[];
   hills: THREE.CanvasTexture[];
@@ -911,6 +1372,18 @@ export interface ArtSet {
   koi: THREE.CanvasTexture;
   pondEmpty: THREE.CanvasTexture;
   pondFull: THREE.CanvasTexture;
+  pondWaterA: THREE.CanvasTexture;
+  pondWaterB: THREE.CanvasTexture;
+  lilyPad: THREE.CanvasTexture;
+  lilyPadFlower: THREE.CanvasTexture;
+  bushSprout: THREE.CanvasTexture;
+  sapling: THREE.CanvasTexture;
+  windStreak: THREE.CanvasTexture;
+  softCloud: THREE.CanvasTexture;
+  rainbow: THREE.CanvasTexture;
+  sunGlow: THREE.CanvasTexture;
+  petal: THREE.CanvasTexture;
+  pollen: THREE.CanvasTexture;
   seed: THREE.CanvasTexture;
   drop: THREE.CanvasTexture;
   star: THREE.CanvasTexture;
@@ -944,6 +1417,7 @@ export function getArt(): ArtSet {
       return skyCanvas(w.skyTop, w.skyMid, w.skyBot);
     }),
     mountain: drawMountain(),
+    space: spaceCanvas(),
     parallaxIslands: [0, 1, 2, 3, 4, 5].map((i) => drawParallaxIsland(i)),
     hills: [0, 1, 2, 3].map((i) => {
       const w = worldDef(i);
@@ -963,13 +1437,13 @@ export function getArt(): ArtSet {
     ],
     deadCliff: [
       cliffTex(['#9a928a', '#6e675f', '#514c46', '#3e3a36']),
-      cliffTex(['#e8f2fb', '#c5d7ea', '#9fb6d0', '#7f96b0']),
+      cliffTex(['#dfe6ee', '#b3bccb', '#8b95a6', '#6b7484']),
       cliffTex(['#ead7b0', '#d2b48a', '#b8926a', '#8c6a48']),
       cliffTex(['#6a8a40', '#4e682c', '#7a5ea0', '#3a4424']),
     ],
     liveCliff: [
       cliffTex(['#7dce4a', '#6b4428', '#8a5a32', '#4a2e1c']),
-      cliffTex(['#b7f0ff', '#9fd0ea', '#7eb6d4', '#5e90b4']),
+      cliffTex(['#cdeaf4', '#9dc0cf', '#7d9dae', '#5d7c8c']),
       cliffTex(['#b6e86a', '#c4a06a', '#a07848', '#6e5030']),
       cliffTex(['#86efac', '#67e8f9', '#5b8a7a', '#3d5c6e']),
     ],
@@ -997,6 +1471,18 @@ export function getArt(): ArtSet {
     koi: koi(),
     pondEmpty: pond(false),
     pondFull: pond(true),
+    pondWaterA: pondWater(false),
+    pondWaterB: pondWater(true),
+    lilyPad: lilyPad(false),
+    lilyPadFlower: lilyPad(true),
+    bushSprout: bushSprout(),
+    sapling: sapling(),
+    windStreak: windStreak(),
+    softCloud: softCloud(),
+    rainbow: rainbowArc(),
+    sunGlow: sunGlow(),
+    petal: petalBit(),
+    pollen: pollenBit(),
     seed: seedSprite(),
     drop: dropSprite(),
     star: bit('star'),

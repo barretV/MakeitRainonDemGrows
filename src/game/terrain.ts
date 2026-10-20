@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLOBE_WORLD, TILE, gridOf, tileSpec } from './balance';
+import { normalOf } from './normals';
 
 /** Two mask cells per voxel column on every flat world (mask cells are 0.32 world units). */
 export const VOX = 0.64;
@@ -109,7 +110,8 @@ export class Terrain {
           const cx = this.originX + (tc + 0.5) * TILE;
           const cz = this.originZ + (tr + 0.5) * TILE;
           const d = Math.hypot(x - cx, z - cz) / (TILE * 0.5);
-          if (d < 1) h = h * Math.min(1, d * d) + 0.18 * (1 - Math.min(1, d * d));
+          const dip = (1 - Math.min(1, d * d)) * 0.6;
+          h = Math.max(0.25, h - dip);
         }
         if (!this.spherical) {
           if (shore > 0.14) {
@@ -179,6 +181,10 @@ export class Terrain {
     maskSize: { cols: number; rows: number },
     time: { value: number },
     fog: THREE.Fog,
+    sunDir: THREE.Vector3,
+    sunColor: THREE.Color,
+    cloud: THREE.Vector3,
+    rain: { value: number },
   ): THREE.InstancedMesh {
     const pal = PALETTES[this.world] ?? PALETTES[0]!;
     const geo = new THREE.BoxGeometry(VOX, 1, VOX);
@@ -199,11 +205,17 @@ export class Terrain {
         uDirtB: { value: linear(pal.dirtB) },
         uFog: { value: fog.color.clone() },
         uFogRange: { value: new THREE.Vector2(Math.max(55, fog.far * 0.9), Math.max(160, fog.far * 2.8)) },
+        uGlobe: { value: this.spherical ? 1 : 0 },
+        uSunDir: { value: sunDir },
+        uSunColor: { value: sunColor },
+        uCloud: { value: cloud },
+        uRain: rain,
       },
       vertexShader: VOXEL_VERT,
       fragmentShader: VOXEL_FRAG,
     });
     const matrices: THREE.Matrix4[] = [];
+    const cells: number[] = [];
     const m = new THREE.Matrix4();
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
@@ -241,8 +253,9 @@ export class Terrain {
         if (this.spherical) {
           const { lon, lat } = this.lonLatFromColumn(c, r);
           normal.copy(this.spherePoint(lon, lat, 1)).normalize();
-          const surfaceR = 6.38 + top * 0.14;
-          const coreR = 6.38 + bottom * 0.14;
+          // gentle relief: from space the planet should read smooth, not voxel-stepped
+          const surfaceR = 6.38 + top * 0.035;
+          const coreR = 6.38 + bottom * 0.035;
           const midR = (surfaceR + coreR) / 2;
           pos.copy(this.spherePoint(lon, lat, midR));
           quat.setFromUnitVectors(up, normal);
@@ -254,9 +267,11 @@ export class Terrain {
         }
         m.compose(pos, quat, scl);
         matrices.push(m.clone());
+        cells.push((c + 0.5) / maskSize.cols, (r + 0.5) / maskSize.rows);
       }
     }
     const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, matrices.length));
+    geo.setAttribute('aCell', new THREE.InstancedBufferAttribute(new Float32Array(cells.length ? cells : [0, 0]), 2));
     matrices.forEach((mat4, i) => mesh.setMatrixAt(i, mat4));
     mesh.instanceMatrix.needsUpdate = true;
     mesh.frustumCulled = false;
@@ -281,6 +296,8 @@ export class Terrain {
     maskSize: { cols: number; rows: number },
     time: { value: number },
     fog: THREE.Fog,
+    sunDir: THREE.Vector3,
+    sunColor: THREE.Color,
   ): THREE.InstancedMesh {
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.translate(0, 0.5, 0);
@@ -298,8 +315,8 @@ export class Terrain {
           if (this.shoreAt(x, z) > 0.02) continue;
           const y = this.heightAt(x, z);
           const deadFrame = roll < 0.12 ? Math.floor(hash2(c, r, seed + 3) * 3) : 3;
-          const liveFrame = 4 + Math.floor(hash2(c, r + k, seed + 4) * 4);
-          const size = 0.34 + hash2(c, r, seed + 5) * 0.22;
+          const liveFrame = 4 + Math.floor(hash2(c, r + k, seed + 4) * 12);
+          const size = 0.38 + hash2(c, r, seed + 5) * 0.26;
           spots.push(x, y, z, size);
           frames.push(deadFrame, liveFrame);
         }
@@ -319,6 +336,9 @@ export class Terrain {
         uTime: time,
         uFog: { value: fog.color.clone() },
         uFogRange: { value: new THREE.Vector2(Math.max(55, fog.far * 0.9), Math.max(160, fog.far * 2.8)) },
+        uNormal: { value: normalOf(atlas) },
+        uSunDir: { value: sunDir },
+        uSunColor: { value: sunColor },
       },
       vertexShader: FLORA_VERT,
       fragmentShader: FLORA_FRAG,
@@ -332,15 +352,28 @@ export class Terrain {
 }
 
 const VOXEL_VERT = /* glsl */ `
+  attribute vec2 aCell;
+  uniform vec2 uMaskSize;
+  uniform vec4 uBoard;
+  uniform float uGlobe;
   varying vec3 vWorld;
   varying vec3 vN;
+  varying float vUp;
   varying float vTop;
   varying float vDepth;
+  varying vec2 vCell;
   void main() {
     vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
     vWorld = wp.xyz;
     vN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * normal);
+    // how much this face points along the column's own up axis: "top" on flat
+    // worlds, "outward" on the globe (where the up axis is the sphere normal)
+    vec3 instUp = normalize(mat3(instanceMatrix) * vec3(0.0, 1.0, 0.0));
+    vUp = dot(vN, instUp);
     vTop = (modelMatrix * instanceMatrix * vec4(0.0, 0.5, 0.0, 1.0)).y;
+    // mask lookup in cell units: lon/lat for the globe, board space for flat worlds
+    vec2 uv = clamp((wp.xz - uBoard.xy) / uBoard.zw, 0.0, 0.9999);
+    vCell = mix(uv, aCell, step(0.5, uGlobe)) * uMaskSize;
     vec4 mv = viewMatrix * wp;
     vDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
@@ -363,33 +396,46 @@ const VOXEL_FRAG = /* glsl */ `
   uniform vec3 uDirtB;
   uniform vec3 uFog;
   uniform vec2 uFogRange;
+  uniform float uGlobe;
+  uniform vec3 uSunDir;
+  uniform vec3 uSunColor;
+  uniform vec3 uCloud;
+  uniform float uRain;
   varying vec3 vWorld;
   varying vec3 vN;
+  varying float vUp;
   varying float vTop;
   varying float vDepth;
+  varying vec2 vCell;
 
   float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
-  vec4 maskAt(vec2 xz) {
-    vec2 uv = clamp((xz - uBoard.xy) / uBoard.zw, 0.0, 0.9999);
-    vec2 cell = floor(uv * uMaskSize);
-    return texture2D(uMask, (cell + 0.5) / uMaskSize);
+  // flat worlds look the cell up per fragment (columns straddle cell borders);
+  // the globe uses the interpolated lon/lat cell coming from the vertex shader
+  vec2 maskCell() {
+    vec2 uv = clamp((vWorld.xz - uBoard.xy) / uBoard.zw, 0.0, 0.9999) * uMaskSize;
+    return mix(uv, vCell, step(0.5, uGlobe));
   }
 
-  float pulseAt(vec2 xz) {
-    vec2 uv = clamp((xz - uBoard.xy) / uBoard.zw, 0.0, 0.9999);
-    return texture2D(uPulse, uv).r;
+  vec4 maskAtCell(vec2 cell) {
+    return texture2D(uMask, (floor(cell) + 0.5) / uMaskSize);
+  }
+
+  float pulseAtCell(vec2 cell) {
+    return texture2D(uPulse, clamp(cell / uMaskSize, 0.0, 0.9999)).r;
   }
 
   void main() {
+    vec3 sunDir = normalize(uSunDir);
     vec3 col;
-    if (vN.y > 0.5) {
-      vec4 m = maskAt(vWorld.xz);
+    if (vUp > 0.5) {
+      vec2 mc = maskCell();
+      vec4 m = maskAtCell(mc);
       float wet = m.r;
       float rip = m.g;
       float waveInk = m.b;
       float pool = m.a;
-      float pop = pulseAt(vWorld.xz);
+      float pop = pulseAtCell(mc);
       float stage = floor(wet * 5.0 + 0.001);
       float soak = smoothstep(0.01, 0.19, wet);
       float moss = smoothstep(0.18, 0.38, wet);
@@ -401,32 +447,49 @@ const VOXEL_FRAG = /* glsl */ `
       vec2 f = fract(slab);
       float n = h21(cell);
       float n2 = h21(cell + 19.0);
-      vec3 dead = mix(uDeadA, uDeadB, step(0.5, n));
+      vec3 dead = mix(uDeadA, uDeadB, mix(step(0.5, n), n, uGlobe));
       dead *= 0.9 + 0.14 * h21(cell + 4.0);
       float crack = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
-      dead = mix(dead * 0.48, dead, smoothstep(0.0, 0.08, crack));
+      dead = mix(dead * 0.48, dead, smoothstep(0.0, mix(0.08, 0.55, uGlobe), crack));
       vec3 mud = mix(uDirtA, uDirtB, n);
       mud = mix(mud, vec3(0.28, 0.42, 0.18), moss * 0.65);
       vec3 water = vec3(0.28, 0.62, 0.92);
-      float ripple = sin(vWorld.x * 14.0 + uTime * 2.4) * sin(vWorld.z * 11.0 - uTime * 1.8);
+      float sx = sin(vWorld.x * 14.0 + uTime * 2.4);
+      float sz = sin(vWorld.z * 11.0 - uTime * 1.8);
+      float ripple = sx * sz;
+      float rx = sin(vWorld.x * 30.0 + uTime * 5.2);
+      float rz = sin(vWorld.z * 26.0 - uTime * 4.4);
+      float hx = 14.0 * cos(vWorld.x * 14.0 + uTime * 2.4) * sz + uRain * 30.0 * cos(vWorld.x * 30.0 + uTime * 5.2) * rz;
+      float hz = 11.0 * sx * cos(vWorld.z * 11.0 - uTime * 1.8) + uRain * 26.0 * rx * cos(vWorld.z * 26.0 - uTime * 4.4);
+      vec3 wn = normalize(vN + vec3(-hx, 0.0, -hz) * (0.04 + uRain * 0.028));
+      vec3 viewDir = normalize(cameraPosition - vWorld);
+      float spec = pow(max(dot(wn, normalize(sunDir + viewDir)), 0.0), 36.0);
       float sheen = pow(max(0.0, ripple), 6.0) * (soak + pool * 0.85) * (1.0 - grass * 0.7);
       vec3 damp = mix(dead, mix(mud, water, 0.55 + sheen * 0.4), soak);
       damp += vec3(0.65, 0.9, 1.0) * sheen * 0.55;
       float sway = sin(uTime * 1.6 + vWorld.x * 6.0 + vWorld.z * 4.0);
-      float blade = abs(sin((vWorld.x + sway * 0.04) * 34.0) * sin((vWorld.z - sway * 0.03) * 27.0));
-      blade = smoothstep(0.25, 0.82, blade);
+      float gust = smoothstep(0.5, 1.0, sin(vWorld.x * 0.16 + vWorld.z * 0.11 - uTime * 1.35));
+      sway += gust * 1.6;
+      // grass flecks: per-cell scatter reads organic; a sin lattice reads like fabric
+      vec2 wob = vec2(sway * 0.02, -sway * 0.014);
+      vec2 bc = floor((vWorld.xz + wob) * 6.0);
+      vec2 bf = fract((vWorld.xz + wob) * 6.0) - 0.5;
+      float fleck = smoothstep(0.34, 0.08, length(vec2(bf.x, bf.y * 1.8))) * step(0.4, h21(bc));
       vec3 root = vec3(0.08, 0.32, 0.1);
       vec3 midG = mix(uLiveA, vec3(0.22, 0.62, 0.22), 0.55);
       vec3 tip = mix(uLiveB, vec3(0.72, 0.95, 0.42), 0.45);
       vec3 turf = mix(root, midG, grass);
-      turf = mix(turf, tip, blade * grass);
+      turf = mix(turf, tip, fleck * grass);
       turf *= 0.9 + 0.16 * n2;
-      float flower = step(0.96, h21(cell + floor(uTime * 0.15)));
-      vec3 petal = h21(cell + 2.0) > 0.5 ? vec3(1.0, 0.45, 0.62) : vec3(1.0, 0.92, 0.55);
-      turf = mix(turf, petal, flower * bloom * 0.85);
-      turf = mix(turf, tip * 1.15, grown * blade * 0.35);
+      float petalDot = smoothstep(0.3, 0.1, length(bf * 1.5)) * step(0.965, h21(bc + 13.0));
+      vec3 petal = h21(bc + 2.0) > 0.5 ? vec3(1.0, 0.45, 0.62) : vec3(1.0, 0.92, 0.55);
+      turf = mix(turf, petal, petalDot * bloom * 0.9);
+      turf = mix(turf, tip * 1.15, grown * fleck * 0.35);
+      vec3 bladeN = normalize(vec3(sway * 0.55, 1.0, gust * 0.35));
+      float bladeLit = clamp(dot(bladeN, sunDir) * 0.5 + 0.5, 0.0, 1.0);
+      turf += vec3(0.95, 0.88, 0.35) * fleck * grass * bladeLit * 0.42;
       col = mix(damp, turf, clamp(grass * 0.95 + bloom * 0.2, 0.0, 1.0));
-      col = mix(col, mix(uLiveA, uLiveB, blade), grown * 0.55);
+      col = mix(col, mix(uLiveA, uLiveB, fleck), grown * 0.55);
       vec2 local = fract(vWorld.xz * 3.125) - 0.5;
       float ring = smoothstep(0.22, 0.0, abs(length(local) * 2.0 - (1.0 - rip) * 1.35)) * rip;
       col += vec3(0.85, 1.0, 0.7) * ring * 0.5;
@@ -435,28 +498,40 @@ const VOXEL_FRAG = /* glsl */ `
       float popRing = smoothstep(0.35, 0.0, abs(length(local) * 2.0 - 0.2)) * pop;
       col += vec3(1.0, 0.98, 0.72) * popRing * (0.35 + 0.25 * sin(uTime * 9.0));
       col *= 1.0 + pop * 0.12 * (0.5 + 0.5 * sin(uTime * 12.0 + stage));
+      float wetness = (soak + pool * 0.9) * (1.0 - grass * 0.55);
+      col += uSunColor * spec * wetness * (0.5 + uRain * 0.4);
       vec2 vf = fract((vWorld.xz - uBoard.xy) / ${VOX.toFixed(2)});
       float seam = step(vf.x, 0.035) + step(vf.y, 0.035);
-      col *= 1.0 - min(seam, 1.0) * 0.05;
-      col *= 0.82 + clamp(vTop, 0.0, 4.5) * 0.06;
+      col *= 1.0 - min(seam, 1.0) * 0.05 * (1.0 - uGlobe);
+      col *= mix(0.82 + clamp(vTop, 0.0, 4.5) * 0.06, 0.94 + 0.05 * n2, uGlobe);
     } else {
       float below = vTop - vWorld.y;
-      vec4 m = maskAt(vWorld.xz - vN.xz * 0.05);
+      vec4 m = maskAtCell(maskCell());
       float grown = step(0.999, m.r);
       float along = vWorld.x * abs(vN.z) + vWorld.z * abs(vN.x);
       vec2 fine = floor(vec2(along, vWorld.y) * 12.5);
       float n = h21(fine);
       float band = step(0.5, fract(vWorld.y * 1.4 + h21(vec2(floor(along * 1.5), 3.0)) * 0.35));
+      band = mix(band, n, uGlobe);
       vec3 rock = mix(uRockA, uRockB, band) * (0.9 + 0.18 * n);
       vec3 dirt = mix(uDirtA, uDirtB, band) * (0.88 + 0.2 * n);
       if (n > 0.94) dirt = mix(dirt, uRockA, 0.7);
-      vec3 body = mix(rock, dirt, grown);
+      vec3 body = mix(rock, dirt, mix(grown, 0.45 + 0.3 * n, uGlobe));
       body = mix(body, rock * 0.72, smoothstep(-0.5, -2.5, vWorld.y));
       float lipDepth = 0.1 + 0.08 * h21(vec2(floor(along * 12.5), 1.0)) + grown * 0.06;
       vec3 lipCol = mix(uDeadB * 0.95, uLiveB * 0.92, grown);
-      col = mix(body, lipCol, step(below, lipDepth));
-      col *= abs(vN.z) > 0.5 ? (vN.z > 0.0 ? 0.9 : 0.72) : (vN.x < 0.0 ? 0.78 : 0.72);
-      col *= mix(0.82, 1.0, smoothstep(1.2, 0.0, below));
+      col = mix(body, lipCol, step(below, lipDepth) * (1.0 - uGlobe * 0.8));
+      col *= mix(mix(0.82, 1.0, smoothstep(1.2, 0.0, below)), 0.94 + 0.05 * n, uGlobe);
+    }
+    float wrap = clamp(dot(normalize(vN), sunDir) * 0.5 + 0.5, 0.0, 1.0);
+    float sunShade = mix(mix(0.58, 1.28, wrap), 0.98, uGlobe);
+    col *= sunShade;
+    col += uSunColor * smoothstep(0.62, 1.0, wrap) * 0.07 * (1.0 - uGlobe);
+    if (vUp > 0.5) {
+      float cd = length(vWorld.xz - uCloud.xy);
+      float shadow = (1.0 - smoothstep(uCloud.z * 0.28, uCloud.z, cd)) * (1.0 - uGlobe);
+      col *= 1.0 - shadow * 0.26;
+      col = mix(col, col * vec3(0.74, 0.84, 0.98), uRain * 0.34);
     }
     gl_FragColor = vec4(col, 1.0);
   }
@@ -472,6 +547,9 @@ const FLORA_VERT = /* glsl */ `
   uniform float uTime;
   varying vec2 vUv;
   varying float vDepth;
+  varying vec3 vT;
+  varying vec3 vB;
+  varying vec3 vN;
   void main() {
     vec2 muv = clamp((aSpot.xz - uBoard.xy) / uBoard.zw, 0.0, 0.9999);
     vec4 m = texture2D(uMask, (floor(muv * uMaskSize) + 0.5) / uMaskSize);
@@ -488,9 +566,23 @@ const FLORA_VERT = /* glsl */ `
     tier = mix(tier, 1.55, grove);
     float size = aSpot.w * pop * (1.0 - hidden) * tier;
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
-    float sway = sin(uTime * 1.8 + aSpot.x * 3.0 + aSpot.z * 2.0) * mix(0.02, 0.1, grown) * position.y;
+    float gust = smoothstep(0.5, 1.0, sin(aSpot.x * 0.16 + aSpot.z * 0.11 - uTime * 1.35));
+    float sway =
+      (sin(uTime * 1.8 + aSpot.x * 3.0 + aSpot.z * 2.0) * mix(0.02, 0.1, grown) + gust * 0.11 * grown) *
+      position.y;
     vec3 wp = aSpot.xyz + right * (position.x + sway) * size + vec3(0.0, position.y * size, 0.0);
-    vUv = vec2((frame + position.x + 0.5) / 8.0, position.y);
+    vec3 tangent = right;
+    vec3 bitangent = vec3(0.0, 1.0, 0.0);
+    vec3 facing = cross(tangent, bitangent);
+    if (dot(facing, cameraPosition - wp) < 0.0) {
+      facing = -facing;
+      tangent = -tangent;
+    }
+    facing = normalize(facing + tangent * sway * 1.6);
+    vT = tangent;
+    vB = bitangent;
+    vN = facing;
+    vUv = vec2((frame + position.x + 0.5) / 16.0, position.y);
     vec4 mv = viewMatrix * vec4(wp, 1.0);
     vDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
@@ -499,13 +591,26 @@ const FLORA_VERT = /* glsl */ `
 
 const FLORA_FRAG = /* glsl */ `
   uniform sampler2D uAtlas;
+  uniform sampler2D uNormal;
+  uniform vec3 uSunDir;
+  uniform vec3 uSunColor;
   uniform vec3 uFog;
   uniform vec2 uFogRange;
   varying vec2 vUv;
   varying float vDepth;
+  varying vec3 vT;
+  varying vec3 vB;
+  varying vec3 vN;
   void main() {
     vec4 c = texture2D(uAtlas, vUv);
     if (c.a < 0.5) discard;
-    gl_FragColor = vec4(c.rgb, 1.0);
+    vec3 albedo = pow(c.rgb, vec3(2.2));
+    vec3 nTex = texture2D(uNormal, vUv).xyz * 2.0 - 1.0;
+    vec3 N = normalize(vT * nTex.x + vB * nTex.y + vN * nTex.z);
+    float wrap = clamp(dot(N, normalize(uSunDir)) * 0.5 + 0.5, 0.0, 1.0);
+    vec3 col = albedo * mix(0.84, 1.2, wrap);
+    float rim = pow(wrap, 2.2) * clamp(1.0 - nTex.z, 0.0, 1.0);
+    col += albedo * uSunColor * rim * 0.28;
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
