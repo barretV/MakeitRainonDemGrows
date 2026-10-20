@@ -679,7 +679,7 @@ export class SaveState {
       return false;
     }
     if (this.rootsThisBottle >= 2) {
-      this.toast = 'Two roots a bottle. Rain again for more.';
+      this.toast = 'Two buys a bottle. Rain again, then come back.';
       return false;
     }
     const bloomCost = nodeBloomCost(id, level);

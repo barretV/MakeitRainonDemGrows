@@ -720,6 +720,11 @@ canvas {
   box-shadow: 0 0 0 2px #1a1028;
 }
 
+.workshop-legend__item--wait::before {
+  background: #e8c56a;
+  box-shadow: 0 0 0 2px #1a1028;
+}
+
 .workshop-legend__item--owned::before {
   background: #eef3ff;
   border: 2px solid #6a8fd4;
@@ -837,6 +842,11 @@ canvas {
   box-shadow: 0 0 10px rgba(158, 232, 106, 0.35);
 }
 
+.workshop-status--wait {
+  color: #2a2010;
+  background: #e8c56a;
+}
+
 .workshop-status--owned {
   color: #c8d8f8;
   background: rgba(106, 143, 212, 0.25);
@@ -882,6 +892,13 @@ canvas {
 .workshop-panel__effect {
   color: #ffe56a;
   font-size: 14px;
+}
+
+.workshop-panel__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #ffe56a;
 }
 
 .workshop-buy,
@@ -1148,6 +1165,16 @@ canvas {
   animation: tree-node-ready-breathe 2.2s ease-in-out infinite;
 }
 
+.tree-node--wait .tree-node__cloud,
+.tree-node--wait .tree-node__drop {
+  fill: #f7f1e4;
+}
+
+.tree-node--wait .tree-node__body {
+  stroke: #c4a15a;
+  stroke-width: 3;
+}
+
 @keyframes tree-node-ready-breathe {
   0%,
   100% {
@@ -1229,6 +1256,11 @@ canvas {
 
 .tree-node__badge--ready:active {
   transform: translateX(-50%) scale(0.92);
+}
+
+.tree-node__badge--wait {
+  color: #2a2010;
+  background: #e8c56a;
 }
 
 .tree-node__badge--locked,

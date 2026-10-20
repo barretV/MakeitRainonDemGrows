@@ -9,7 +9,7 @@ const DROP =
   'M24 2c-11 0-15 11-15 22 0 14 15 34 15 34s15-20 15-34C39 13 35 2 24 2z';
 
 type NodeShape = 'cloud' | 'drop';
-type Visual = 'ghost' | 'maxed' | 'ready' | 'owned' | 'locked';
+type Visual = 'ghost' | 'maxed' | 'ready' | 'wait' | 'owned' | 'locked';
 
 /** Bottle + reach + core = fluffy clouds; drizzle + charm = rain drops. */
 function nodeShape(branch: Branch): NodeShape {
@@ -17,18 +17,20 @@ function nodeShape(branch: Branch): NodeShape {
   return 'cloud';
 }
 
-function nodeVisual(node: TreeNodeView): Visual {
+function nodeVisual(node: TreeNodeView, rootsLeft: number): Visual {
   if (node.ghost) return 'ghost';
   if (node.maxed) return 'maxed';
-  if (node.afford) return 'ready';
+  if (node.afford && rootsLeft > 0) return 'ready';
+  if (node.afford) return 'wait';
   if (node.level > 0) return 'owned';
   if (!node.visible) return 'ghost';
   return 'locked';
 }
 
-function stateLabel(node: TreeNodeView): string | null {
+function stateLabel(node: TreeNodeView, rootsLeft: number): string | null {
   if (node.worldReq != null) return `World ${node.worldReq + 1}`;
-  if (node.afford) return 'Buy';
+  if (node.afford && rootsLeft > 0) return 'Buy';
+  if (node.afford) return 'Rain again';
   if (node.ghost || !node.visible) return 'Locked';
   if (node.maxed) return 'Max';
   return null;
@@ -257,6 +259,7 @@ function NodeSymbol({
 
 export function TreeNodeCloud({
   node,
+  rootsLeft,
   picked,
   reveal,
   buyPop,
@@ -267,6 +270,7 @@ export function TreeNodeCloud({
   onBuy,
 }: {
   node: TreeNodeView;
+  rootsLeft: number;
   picked: boolean;
   reveal?: boolean;
   buyPop?: number;
@@ -276,13 +280,13 @@ export function TreeNodeCloud({
   onPick: () => void;
   onBuy: () => void;
 }) {
-  const state = nodeVisual(node);
+  const state = nodeVisual(node, rootsLeft);
   const shape = nodeShape(node.branch);
   const branchColor = BRANCH_COLORS[node.branch];
   const { w, h } = nodeSize(node, shape);
   const gateOpen = node.kind !== 'gate' || node.level > 0 || node.afford;
   const mutedIcon = state === 'ghost' || state === 'locked';
-  const badge = stateLabel(node);
+  const badge = stateLabel(node, rootsLeft);
   const showRank = node.max > 1 && !node.maxed;
 
   return (
