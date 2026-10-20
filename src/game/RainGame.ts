@@ -262,8 +262,6 @@ export class RainGame {
   private soakAcc = 0;
   private dropAcc = 0;
   private babyAcc = 2;
-  private keyRain = false;
-  private mouseRain = false;
   private stick: Stick | null = null;
   private cloudX = 0;
   private cloudZ = 0;
@@ -1191,7 +1189,6 @@ export class RainGame {
     this.rebuild();
     this.dropCloud(this.spawnAt());
     this.pushHud(true);
-    this.keyRain = true;
     this.frame = requestAnimationFrame(this.loop);
   }
 
@@ -2357,8 +2354,6 @@ export class RainGame {
     if (touch && this.pointers.size < 2) {
       this.stick = { id: event.pointerId, x: event.clientX, y: event.clientY, cx: this.cloudX, cz: this.cloudZ };
       this.renderer.domElement.setPointerCapture(event.pointerId);
-    } else if (event.button === 0) {
-      this.mouseRain = true;
     }
   };
 
@@ -2366,7 +2361,6 @@ export class RainGame {
     this.pointers.delete(event.pointerId);
     if (this.pointers.size < 2) this.pinchSpan0 = 0;
     if (this.stick && event.pointerId === this.stick.id) this.stick = null;
-    if (event.pointerType !== 'touch' && event.pointerType !== 'pen') this.mouseRain = false;
   };
 
   private onWheel = (event: WheelEvent): void => {
@@ -2421,17 +2415,12 @@ export class RainGame {
     const key = event.key.toLowerCase();
     if (key === ' ' || key === 'spacebar' || key.startsWith('arrow')) event.preventDefault();
     this.keys.add(key);
-    if (event.repeat) return;
-    if (key === ' ' || key === 'spacebar') {
-      this.keyRain = true;
-      this.audio.unlock();
-    }
+    if (key === ' ' || key === 'spacebar') this.audio.unlock();
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
     const key = event.key.toLowerCase();
     this.keys.delete(key);
-    if (key === ' ' || key === 'spacebar') this.keyRain = false;
   };
 
   private aim(event: PointerEvent): void {
@@ -2440,8 +2429,10 @@ export class RainGame {
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   }
 
+  /** The bottle pours on its own while a run is live. Steering does not start or stop it. */
   private wantsRain(): boolean {
-    return this.keyRain || this.mouseRain || (this.stick !== null && this.pointers.size < 2);
+    const state = this.state;
+    return !!state && state.phase === 'play' && !this.introActive;
   }
 
   private pointerSpan(): number {

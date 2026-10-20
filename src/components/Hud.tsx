@@ -151,7 +151,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
       {gear && playing && (
         <div className="menu-card menu-card--pop pointer-events-auto absolute top-[12%] right-[2%] w-[260px] text-left">
           <div className="menu-card__title">Settings</div>
-          <p className="menu-card__sub">WASD or arrows to fly. Space or click to rain. Drag anywhere on touch.</p>
+          <p className="menu-card__sub">WASD or arrows to fly. The cloud rains on its own. Drag anywhere on touch.</p>
           <div className="mt-3 flex gap-2">
             <Mini onClick={() => game.toggleSfx()}>{model.sfx ? 'SFX on' : 'SFX off'}</Mini>
             <Mini onClick={() => game.toggleMusic()}>{model.music ? 'Music on' : 'Music off'}</Mini>
