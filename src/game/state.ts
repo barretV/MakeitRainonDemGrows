@@ -498,7 +498,7 @@ export class SaveState {
   }
 
   private syncPhaseAfterLoad(): void {
-    if (this.ratio() >= 1) {
+    if (this.islandRestored()) {
       this.phase = 'clear';
       this.screen = 'results';
       this.toast = `${worldDef(this.world).name} is green again.`;
@@ -1106,6 +1106,18 @@ export class SaveState {
     return sum / (count * hp);
   }
 
+  /** Match the balance sim (~98% cells full) and HUD rounding to 100%. */
+  islandRestored(): boolean {
+    const count = this.progress.length;
+    if (count === 0) return false;
+    const hp = cellHp(this.world);
+    let full = 0;
+    for (let i = 0; i < count; i += 1) {
+      if ((this.progress[i] ?? 0) >= hp) full += 1;
+    }
+    return full / count >= 0.98 || this.ratio() >= 0.995;
+  }
+
   isRestored(index: number, world = this.world): boolean {
     if (world !== this.world) return (this.best[world] ?? 0) >= 1;
     return this.green[index] === true;
@@ -1703,10 +1715,19 @@ export class SaveState {
     }
   }
 
-  private finishIfDone(): void {
-    if (this.phase !== 'play') return;
-    if (this.ratio() < 1) return;
+  /** Island hit the clear threshold — start the victory beat (or recover from a dry bottle on the same pour). */
+  tryCompleteIsland(): void {
+    if (this.phase === 'finale' || this.phase === 'clear') return;
+    if (!this.islandRestored()) return;
+    if (this.phase === 'dry') {
+      this.phase = 'play';
+      this.screen = 'play';
+    }
     this.beginFinale();
+  }
+
+  private finishIfDone(): void {
+    this.tryCompleteIsland();
   }
 
   beginFinale(): void {
@@ -1722,12 +1743,12 @@ export class SaveState {
   endFinale(): void {
     if (this.phase !== 'finale') return;
     this.phase = 'clear';
-    this.screen = 'results';
     this.finaleProgress = 1;
     this.noteBest();
     if (this.world < GLOBE_WORLD && this.unlocked < this.world + 1) this.unlocked = this.world + 1;
     this.toast = `${worldDef(this.world).name} is green again.`;
     this.claim();
+    this.screen = this.world < GLOBE_WORLD ? 'worlds' : 'results';
   }
 
   private claim(): void {

@@ -1326,6 +1326,7 @@ export class RainGame {
       });
       if (cast) this.fireAbility(cast, state);
     }
+    state.tryCompleteIsland();
     if (this.syncRunPhase()) return;
     if (splashDew >= 0.05) {
       const label =
