@@ -331,6 +331,8 @@ export class RainGame {
   private hillsFar: THREE.Mesh;
   private sunHalo: THREE.Mesh;
   private shafts: THREE.Mesh[] = [];
+  private sunSpots: { x: number; z: number; w: number }[] = [];
+  private sunSpotTick = -1;
   private puffs: THREE.Mesh[] = [];
   private puffDrift: number[] = [];
   private softClouds: SoftCloud[] = [];
@@ -431,12 +433,12 @@ export class RainGame {
     }
 
     const shaftTex = this.glowTexture('shaft');
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       const shaft = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.6 + (i % 3) * 0.7, 16),
+        new THREE.PlaneGeometry(1.4, 12),
         new THREE.MeshBasicMaterial({
           map: shaftTex,
-          color: 0xfff0c8,
+          color: 0xffe7a8,
           transparent: true,
           opacity: 0,
           blending: THREE.AdditiveBlending,
@@ -446,11 +448,11 @@ export class RainGame {
           side: THREE.DoubleSide,
         }),
       );
-      shaft.renderOrder = 2;
+      shaft.renderOrder = 4;
       shaft.userData['bb'] = 1;
-      shaft.userData['gw'] = 1.6 + (i % 3) * 0.7;
-      shaft.userData['ph'] = 16;
-      shaft.userData['shaftPhase'] = i * 1.9;
+      shaft.userData['gw'] = 1.4;
+      shaft.userData['ph'] = 12;
+      shaft.userData['shaftPhase'] = i * 1.7;
       this.shafts.push(shaft);
       this.scene.add(shaft);
     }
@@ -1946,8 +1948,9 @@ export class RainGame {
         view.y = this.groundY(view.x, view.z);
       }
       const base = this.propBase(spec.decor, step, index);
+      const resting = spec.kind === 'seed' ? base : base * (restored ? 1 : clamp(0.34 + wet * 0.8, 0.34, 0.98));
       view.prop.userData['s'] = base;
-      view.prop.scale.setScalar(base);
+      view.prop.scale.setScalar(resting);
       const ph = (Number(view.prop.userData['ph']) || 1) * view.prop.scale.y;
       view.prop.position.set(view.x + view.nx * (ph / 2), view.y + view.ny * (ph / 2), view.z + view.nz * (ph / 2));
       // Tall billboards are pushed out along the surface normal, so an edge tile
@@ -2678,21 +2681,32 @@ export class RainGame {
       haloMat.opacity = (0.34 + Math.sin(t * 0.9) * 0.04) * (1 - this.rainMix * 0.65);
       this.sunDisc.lookAt(this.camera.position);
 
+      const spotTick = Math.floor(t / 0.4);
+      if (spotTick !== this.sunSpotTick) {
+        this.sunSpotTick = spotTick;
+        this.sunSpots = state.sunPatches(3);
+      }
+      const anchors = this.sunSpots;
+      const per = anchors.length <= 1 ? 3 : anchors.length === 2 ? 2 : 1;
       this.shafts.forEach((shaft, i) => {
+        const spot = anchors[Math.floor(i / per)];
+        if (!spot) {
+          shaft.visible = false;
+          return;
+        }
         const phase = Number(shaft.userData['shaftPhase']) || 0;
-        const spread = (i - 2) * 0.055;
-        const drop = 0.16 + (i % 3) * 0.07;
-        shaft.position.copy(this.skyPoint(0.18 + spread, 0.74 - drop, 46));
-        shaft.userData['tiltZ'] = -0.5 - spread * 2.2;
-        this.sizeTo(shaft, 2.6 + (i % 3) * 0.45, 18 + (i % 2) * 4);
+        const side = (i % per) - (per - 1) / 2;
+        const x = spot.x + side * 0.55 + Math.sin(t * 0.18 + phase) * 0.05;
+        const z = spot.z + Math.cos(t * 0.15 + phase) * 0.08;
+        const gy = this.groundY(x, z);
+        const h = 8.2 + (i % 3) * 1.6 + spot.w * 1.4;
+        shaft.position.set(x, gy + h * 0.46, z);
+        this.sizeTo(shaft, 1.05 + spot.w * 0.85, h);
+        shaft.userData['tiltZ'] = -0.18 + side * 0.07;
         const mat = shaft.material as THREE.MeshBasicMaterial;
-        const weather = 1 - this.rainMix * 0.88;
-        mat.opacity =
-          (0.08 + (i % 3) * 0.015) *
-          (0.86 + Math.sin(t * 0.55 + phase) * 0.14) *
-          weather *
-          (0.25 + ratio * 0.75);
-        shaft.visible = mat.opacity > 0.045;
+        const weather = 0.62 + (1 - this.rainMix) * 0.38;
+        mat.opacity = (0.22 + spot.w * 0.38) * (0.86 + Math.sin(t * 0.65 + phase) * 0.14) * weather;
+        shaft.visible = true;
       });
 
       const bowStrength = clamp((ratio - 0.55) / 0.35, 0, 1);

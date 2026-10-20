@@ -10,7 +10,7 @@ import {
   type NodeId,
   type TreeNodeView,
 } from '../game/tree';
-import { formatDew, type HudModel } from '../game/state';
+import { formatDew, walletDew, type HudModel } from '../game/state';
 import { DewWallet } from './DewWallet';
 import { PetalShop } from './PetalShop';
 import { TreeNodeCloud } from './TreeNodeCloud';
@@ -62,7 +62,16 @@ void RundotGameAPI.deviceCache.getItem(WORKSHOP_VIEW_KEY).then((raw) => {
 }).catch(() => undefined);
 let lastWorkshopFocusId: NodeId = 'puff';
 
-function statusBadge(node: TreeNodeView): { kind: string; text: string } {
+function stillNeed(node: TreeNodeView, dew: number, blooms: number): string {
+  const dewShort = Math.max(0, Math.ceil(node.cost - dew));
+  const bloomShort = Math.max(0, Math.ceil(node.blooms - blooms));
+  if (dewShort > 0 && bloomShort > 0) return `Need ${formatDew(dewShort)} dew + ${bloomShort} blooms`;
+  if (bloomShort > 0) return `Need ${bloomShort} more blooms`;
+  if (dewShort > 0) return `Need ${formatDew(dewShort)} more dew`;
+  return 'Need more dew';
+}
+
+function statusBadge(node: TreeNodeView, dew: number, blooms: number): { kind: string; text: string } {
   if (node.worldReq != null) {
     return { kind: 'lock', text: `Locked · ${worldDef(node.worldReq).name}` };
   }
@@ -76,7 +85,7 @@ function statusBadge(node: TreeNodeView): { kind: string; text: string } {
   if (node.maxed) return { kind: 'max', text: 'Max rank' };
   if (node.afford) return { kind: 'buy', text: 'Ready' };
   if (node.level > 0) return { kind: 'owned', text: `Rank ${node.level}/${node.max}` };
-  return { kind: 'lock', text: 'Need more dew' };
+  return { kind: 'lock', text: stillNeed(node, dew, blooms) };
 }
 
 function costLabel(node: TreeNodeView): string {
@@ -85,11 +94,11 @@ function costLabel(node: TreeNodeView): string {
   return parts.join(' + ');
 }
 
-function primaryBuyLabel(node: TreeNodeView): string {
+function primaryBuyLabel(node: TreeNodeView, dew: number, blooms: number): string {
   if (node.maxed) return 'Maxed out';
   if (node.worldReq != null) return `Reach ${worldDef(node.worldReq).name}`;
   if (node.ghost) return 'Not unlocked yet';
-  if (!node.afford) return node.blooms > 0 ? 'Need dew + blooms' : 'Need more dew';
+  if (!node.afford) return stillNeed(node, dew, blooms);
   const cost = costLabel(node);
   if (node.kind === 'gate') return `Unlock · ${cost}`;
   if (node.level === 0) return `Buy · ${cost}`;
@@ -137,7 +146,9 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   const [affordPingIds, setAffordPingIds] = useState<Set<NodeId>>(() => new Set());
   const pickedId = shown.some((n) => n.id === picked) ? picked : (nextBuy?.id ?? shown[0]?.id ?? 'puff');
   const selected = model.tree.find((node) => node.id === pickedId) ?? shown[0];
-  const badge = selected ? statusBadge(selected) : { kind: 'owned', text: '' };
+  const purse = walletDew(model.dew);
+  const blooms = model.spendableBlooms;
+  const badge = selected ? statusBadge(selected, purse, blooms) : { kind: 'owned', text: '' };
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -578,7 +589,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
                 className={`workshop-buy pixel${selected.afford ? ' workshop-buy--go' : ''}${buyPulse ? ' workshop-buy--pulse' : ''}`}
                 key={buyPulse ? `buy-${buyPulse}` : 'buy'}
               >
-                {primaryBuyLabel(selected)}
+                {primaryBuyLabel(selected, purse, blooms)}
               </button>
               <button type="button" onClick={() => game.returnFromWorkshop()} className="workshop-back pixel">
                 Back to rain

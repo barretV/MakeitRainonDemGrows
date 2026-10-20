@@ -462,8 +462,12 @@ export class SaveState {
     this.tiles[world] = pack.tiles;
     this.filled = 0;
     this.maskDirty = true;
+    this.pulseDirty = true;
     this.ripples = 0;
     this.justGreen = [];
+    this.waves = [];
+    this.growthPulses = [];
+    this.pulse.fill(0);
     this.rebuildMaskPixels();
     this.refreshGreenFromProgress();
   }
@@ -559,15 +563,14 @@ export class SaveState {
     for (let i = 0; i < progress.length; i += 1) {
       const now = progress[i] ?? 0;
       const pixel = i * 4;
-      if (now >= hp) {
-        pixels[pixel] = 255;
-        pixels[pixel + 1] = 255;
-      } else if (now > 0) {
-        pixels[pixel] = Math.min(254, Math.floor((now / hp) * 254));
-      } else {
-        pixels[pixel] = 0;
-        pixels[pixel + 1] = 0;
-      }
+      if (now >= hp) pixels[pixel] = 255;
+      else if (now > 0) pixels[pixel] = Math.min(254, Math.floor((now / hp) * 254));
+      else pixels[pixel] = 0;
+      // Green is a live splash and blue is a live wave. Leaving either set
+      // makes the flora shader pop every plant, then fadeRipples shrinks them
+      // the moment play resumes.
+      pixels[pixel + 1] = 0;
+      pixels[pixel + 2] = 0;
     }
   }
 
@@ -1106,6 +1109,40 @@ export class SaveState {
   isRestored(index: number, world = this.world): boolean {
     if (world !== this.world) return (this.best[world] ?? 0) >= 1;
     return this.green[index] === true;
+  }
+
+  /**
+   * A handful of world-space spots where the mask is actually growing.
+   * Spread apart so sun shafts land on separate patches instead of one stack.
+   */
+  sunPatches(limit: number): { x: number; z: number; w: number }[] {
+    if (this.world === GLOBE_WORLD || limit <= 0) return [];
+    const { cols, rows } = maskOf(this.world);
+    const hp = Math.max(1, cellHp(this.world));
+    const stride = Math.max(1, Math.floor(Math.sqrt((cols * rows) / 4000)));
+    const hits: { x: number; z: number; w: number }[] = [];
+    for (let r = 0; r < rows; r += stride) {
+      for (let c = 0; c < cols; c += stride) {
+        const w = Math.min(1, (this.progress[r * cols + c] ?? 0) / hp);
+        if (w < 0.2) continue;
+        const at = this.cellCenter(c, r, cols, rows);
+        hits.push({ x: at.x, z: at.z, w });
+      }
+    }
+    hits.sort((a, b) => b.w - a.w);
+    const picked: { x: number; z: number; w: number }[] = [];
+    for (const hit of hits) {
+      if (picked.length >= limit) break;
+      let crowded = false;
+      for (const spot of picked) {
+        if ((spot.x - hit.x) ** 2 + (spot.z - hit.z) ** 2 < 2.4) {
+          crowded = true;
+          break;
+        }
+      }
+      if (!crowded) picked.push(hit);
+    }
+    return picked;
   }
 
   /** Average mask soak for one board tile (0–1). Drives staged props before the hill is "green". */
