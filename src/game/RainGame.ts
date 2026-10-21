@@ -446,6 +446,7 @@ export class RainGame {
   private rainRing: THREE.Mesh;
   private auras: { ring: THREE.Mesh; wisp: THREE.Mesh }[] = [];
   private propShadows: THREE.InstancedMesh | null = null;
+  private waterfalls: { fall: THREE.Mesh; mist: THREE.Mesh; stream: THREE.Mesh }[] = [];
   private readonly shadowMatrix = new THREE.Matrix4();
   private readonly shadowPos = new THREE.Vector3();
   private readonly shadowQuat = new THREE.Quaternion();
@@ -2130,6 +2131,12 @@ export class RainGame {
     if (!state) return;
     this.animals = [];
     this.boxes = [];
+    for (const fall of this.waterfalls) {
+      this.track.remove(fall.fall);
+      this.track.remove(fall.mist);
+      this.track.remove(fall.stream);
+    }
+    this.waterfalls = [];
     this.clearGroup(this.track);
     this.views = [];
     if (this.tornado) {
@@ -2356,6 +2363,7 @@ export class RainGame {
     this.syncHero();
     this.syncBoxes(true);
     this.syncCritters(0, 0, true);
+    this.restoreWaterfalls();
   }
 
   private dressView(view: TileView, index: number, restored: boolean, world: number): void {
@@ -2451,7 +2459,20 @@ export class RainGame {
       this.track.add(view.prop);
     }
     if (restored && spec.kind === 'seed' && view.prop) view.prop.userData['s'] = 1.25;
-    this.views.push(view);  }
+    this.views.push(view);
+  }
+
+  /** Lakes that are already full keep spilling over the edge. */
+  private restoreWaterfalls(): void {
+    const state = this.state;
+    if (!state) return;
+    for (let i = 0; i < this.views.length; i += 1) {
+      const view = this.views[i];
+      if (!view || view.pondStage < 2) continue;
+      if (state.spec(i).kind !== 'pond') continue;
+      this.spawnWaterfall(view, i);
+    }
+  }
 
   private dressTile(index: number): void {
     const state = this.state;
@@ -2547,6 +2568,8 @@ export class RainGame {
             this.burst(view.x, view.y + 0.45, view.z, 12);
             this.rippleAt(view.x, view.z, '#bfeaff');
             this.audio.splash();
+            // The lake is full: it spills over the edge of the world.
+            this.spawnWaterfall(view, i);
           }
         }
         if (view.pondWater) {
@@ -3227,6 +3250,157 @@ export class RainGame {
     mesh.count = 0;
     this.propShadows = mesh;
     this.track.add(mesh);
+  }
+
+  /**
+   * A lake that finally fills spills over the island's edge. The water runs
+   * downhill to the rim and falls into the sky, so restoring a pond is a thing
+   * you can see from across the island.
+   */
+  private spawnWaterfall(view: TileView, pondIndex: number): void {
+    const state = this.state;
+    if (!state || !this.terrain || this.globe) return;
+    const centreX = this.terrain.originX + this.terrain.width * 0.5;
+    const centreZ = this.terrain.originZ + this.terrain.depth * 0.5;
+    let dirX = view.x - centreX;
+    let dirZ = view.z - centreZ;
+    if (Math.hypot(dirX, dirZ) < 0.5) {
+      dirX = 0;
+      dirZ = 1;
+    }
+    const path = this.terrain.downhillPath(view.x, view.z, dirX, dirZ);
+    if (path.length < 2) return;
+    const lip = path[path.length - 1]!;
+
+    // The stream: a ribbon of water lying on the ground, scrolling downhill.
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const index: number[] = [];
+    let travelled = 0;
+    for (let i = 0; i < path.length; i += 1) {
+      const p = path[i]!;
+      const next = path[Math.min(path.length - 1, i + 1)]!;
+      const prev = path[Math.max(0, i - 1)]!;
+      let dx = next.x - prev.x;
+      let dz = next.z - prev.z;
+      const len = Math.hypot(dx, dz) || 1;
+      dx /= len;
+      dz /= len;
+      const px = -dz;
+      const pz = dx;
+      const halfWidth = 0.42;
+      const y = p.y + 0.07;
+      positions.push(p.x + px * halfWidth, y, p.z + pz * halfWidth);
+      positions.push(p.x - px * halfWidth, y, p.z - pz * halfWidth);
+      if (i > 0) travelled += Math.hypot(p.x - prev.x, p.z - prev.z);
+      uvs.push(0, travelled, 1, travelled);
+      if (i < path.length - 1) {
+        const a = i * 2;
+        index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(index);
+    const streamMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: {
+        uTime: this.timeU,
+        uColor: { value: new THREE.Color('#bfe9ff') },
+        uOpacity: { value: 0.55 },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        varying vec2 vUv;
+        void main() {
+          float flow = fract(vUv.y * 0.9 - uTime * 0.55);
+          float streak = smoothstep(0.0, 0.35, flow) * smoothstep(1.0, 0.5, flow);
+          float edge = smoothstep(0.0, 0.3, vUv.x) * smoothstep(1.0, 0.7, vUv.x);
+          float a = (0.35 + streak * 0.65) * edge * uOpacity;
+          if (a <= 0.01) discard;
+          gl_FragColor = vec4(uColor, a);
+        }
+      `,
+    });
+    const stream = new THREE.Mesh(geo, streamMat);
+    stream.renderOrder = 4;
+    this.track.add(stream);
+
+    // The fall: a curtain of water over the lip, fading out as it drops.
+    const fallH = 15;
+    const fall = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.7, fallH),
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        uniforms: {
+          uTime: this.timeU,
+          uColor: { value: new THREE.Color('#dff4ff') },
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform float uTime;
+          uniform vec3 uColor;
+          varying vec2 vUv;
+          void main() {
+            // Water accelerates as it falls.
+            float t = vUv.y * vUv.y;
+            float flow = fract(vUv.y * 1.6 - uTime * (0.7 + vUv.y * 1.6));
+            float streak = smoothstep(0.0, 0.4, flow) * smoothstep(1.0, 0.45, flow);
+            float edge = smoothstep(0.0, 0.22, vUv.x) * smoothstep(1.0, 0.78, vUv.x);
+            float fade = smoothstep(0.0, 0.22, 1.0 - vUv.y) * 0.4 + 0.6;
+            float a = (0.3 + streak * 0.8) * edge * fade;
+            if (a <= 0.01) discard;
+            gl_FragColor = vec4(uColor, a);
+          }
+        `,
+      }),
+    );
+    fall.userData['bb'] = 1;
+    fall.renderOrder = 4;
+    fall.position.set(lip.x, lip.y - fallH * 0.5 + 0.1, lip.z);
+    this.track.add(fall);
+
+    // Mist where the water disappears into the sky.
+    const mist = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.4, 2.2),
+      new THREE.MeshBasicMaterial({
+        map: this.glowTexture('mist'),
+        color: '#dff4ff',
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false,
+      }),
+    );
+    mist.userData['bb'] = 1;
+    mist.renderOrder = 5;
+    mist.position.set(lip.x, lip.y - fallH + 0.4, lip.z);
+    this.track.add(mist);
+
+    this.waterfalls.push({ fall, mist, stream });
+    void pondIndex;
+    this.audio.splash();
   }
 
   /**

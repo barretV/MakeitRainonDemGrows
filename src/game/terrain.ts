@@ -146,6 +146,49 @@ export class Terrain {
     return hash2(c, r, this.world * 3 + 9) > 0.52;
   }
 
+  /**
+   * A downhill path from a point to the island's edge: the way water would
+   * run. Steps to the lowest neighbour, with a nudge toward the given
+   * direction so it does not stall in a hollow.
+   */
+  downhillPath(x: number, z: number, dirX: number, dirZ: number, maxSteps = 300): { x: number; y: number; z: number }[] {
+    const path: { x: number; y: number; z: number }[] = [];
+    const len = Math.hypot(dirX, dirZ) || 1;
+    const tx = dirX / len;
+    const tz = dirZ / len;
+    let cx = x;
+    let cz = z;
+    for (let step = 0; step < maxSteps; step += 1) {
+      const y = this.heightAt(cx, cz);
+      path.push({ x: cx, y, z: cz });
+      if (this.shoreAt(cx, cz) > 0.01) break;
+      let bestX = cx;
+      let bestZ = cz;
+      let bestY = y;
+      let bestScore = Number.POSITIVE_INFINITY;
+      for (let dz = -1; dz <= 1; dz += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (dx === 0 && dz === 0) continue;
+          const nx = cx + dx * VOX;
+          const nz = cz + dz * VOX;
+          const ny = this.heightAt(nx, nz);
+          const score = ny - (nx - cx) * tx * 0.9 - (nz - cz) * tz * 0.9;
+          if (score < bestScore) {
+            bestScore = score;
+            bestX = nx;
+            bestZ = nz;
+            bestY = ny;
+          }
+        }
+      }
+      if (bestX === cx && bestZ === cz) break;
+      cx = bestX;
+      cz = bestZ;
+      void bestY;
+    }
+    return path;
+  }
+
   heightAt(x: number, z: number): number {
     const c = Math.max(0, Math.min(this.cols - 1, Math.floor((x - this.originX) / VOX)));
     const r = Math.max(0, Math.min(this.rows - 1, Math.floor((z - this.originZ) / VOX)));
