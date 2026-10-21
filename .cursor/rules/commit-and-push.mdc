@@ -35,3 +35,13 @@ Answer-only turns with no repo edits do not need a commit.
 ## Visual / HUD / gameplay changes
 
 After changing how the game looks or feels, open the local dev build in the browser MCP (`http://127.0.0.1:5174/?fresh=1` or the active Vite port), play briefly (rain, move cloud), and screenshot to confirm the result before pushing.
+
+## RUN.game deploys (version bumps)
+
+`rundot deploy` defaults to **Minor** if you omit `--bump` — do not use that for day-to-day work.
+
+- **Hotfixes, tweaks, UI polish, bug fixes:** `npm run deploy` or `rundot deploy --bump Patch` (e.g. 1.4.1 → 1.4.2).
+- **Only when the user asks for a “release” or a big feature drop:** `npm run deploy:minor` or `--bump Minor`.
+- **Major:** only if the user explicitly requests it.
+
+Private test builds are still private (no `--public` unless they want explore visibility).
