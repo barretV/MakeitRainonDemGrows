@@ -135,11 +135,11 @@ function boltMaterial(): THREE.ShaderMaterial {
 }
 
 /**
- * Camera pull-back vs puff size. Kept gentle on purpose: the cloud has to keep
- * reading as bigger after an upgrade, so the rig barely steps back for it.
+ * Camera pull-back vs puff size. Steps back enough to show more land, but
+ * slower than the cloud grows, so a bigger cloud still looks bigger.
  */
 function growPullForScale(scale: number): number {
-  return Math.pow(Math.max(BASE_SCALE, scale) / BASE_SCALE, 0.35);
+  return Math.pow(Math.max(BASE_SCALE, scale) / BASE_SCALE, 0.55);
 }
 
 const TiltShiftShader = {
