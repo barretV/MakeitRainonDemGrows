@@ -896,7 +896,30 @@ function flowerPatch(): THREE.CanvasTexture {
 }
 
 /** 8 frames of 16x16 in one strip. 0-2 dead litter, 3 blank, 4-7 blooms. */
-function floraAtlas(): THREE.CanvasTexture {
+interface FloraPalette {
+  grass: string;
+  grassHi: string;
+  stem: string;
+  bloom: string;
+  bloom2: string;
+  pollen: string;
+  tall: string;
+  frond: string;
+  frondHi: string;
+}
+
+const FLORA_PALETTES: FloraPalette[] = [
+  // The Dead Forest: warm meadow greens and pink blossoms.
+  { grass: '#5cb83a', grassHi: '#a8e870', stem: '#3e8a32', bloom: '#ff8fb8', bloom2: '#7ec8f0', pollen: '#ffe56a', tall: '#c8f28a', frond: '#4caf3a', frondHi: '#a8e870' },
+  // Frostbite Forest: cold greens, ice blue and white flowers.
+  { grass: '#4fb08f', grassHi: '#9fe8d0', stem: '#2f7a62', bloom: '#bfe6fb', bloom2: '#ffffff', pollen: '#ffe56a', tall: '#c8f0e0', frond: '#3f9c80', frondHi: '#8fdcc4' },
+  // Parched Desert: dry olive greens and golden blooms.
+  { grass: '#9aa83a', grassHi: '#d8d86a', stem: '#6a7630', bloom: '#ffb45e', bloom2: '#ff8f5e', pollen: '#fff0a8', tall: '#e0d87a', frond: '#7f8c34', frondHi: '#c2c85e' },
+  // Toxic Sludge Dump: sickly yellow greens and violet flowers.
+  { grass: '#6f9a3a', grassHi: '#b6d86a', stem: '#4a6a2f', bloom: '#c084fc', bloom2: '#ff6f9e', pollen: '#e8ff6a', tall: '#a8c86a', frond: '#5d8a38', frondHi: '#a6c463' },
+];
+
+function floraAtlas(palette: FloraPalette = FLORA_PALETTES[0]!): THREE.CanvasTexture {
   return bake((p) => {
     const at = (frame: number, x: number, y: number, color: string) => p.set(frame * 16 + x, y, color);
     // twig
@@ -913,46 +936,46 @@ function floraAtlas(): THREE.CanvasTexture {
     at(2, 10, 9, '#8d775e');
     at(2, 5, 11, '#6a5642');
     // pink flower
-    for (let y = 9; y < 15; y += 1) at(4, 8, y, '#3e8a32');
-    at(4, 7, 12, '#5cb83a');
-    at(4, 9, 11, '#5cb83a');
-    for (const [x, y] of [[7, 6], [9, 6], [8, 5], [8, 7], [7, 7], [9, 7], [7, 5], [9, 5]] as Array<[number, number]>) at(4, x, y, '#ff8fb8');
+    for (let y = 9; y < 15; y += 1) at(4, 8, y, palette.stem);
+    at(4, 7, 12, palette.grass);
+    at(4, 9, 11, palette.grass);
+    for (const [x, y] of [[7, 6], [9, 6], [8, 5], [8, 7], [7, 7], [9, 7], [7, 5], [9, 5]] as Array<[number, number]>) at(4, x, y, palette.bloom);
     at(4, 8, 6, '#fff3a8');
     // grass tuft
     for (const [x, h] of [[4, 4], [6, 6], [7, 8], [9, 7], [11, 5], [12, 3]] as Array<[number, number]>) {
-      for (let y = 15 - h; y < 15; y += 1) at(5, x, y, y < 15 - h + 2 ? '#a8e870' : '#5cb83a');
+      for (let y = 15 - h; y < 15; y += 1) at(5, x, y, y < 15 - h + 2 ? palette.grassHi : palette.grass);
     }
     // white and blue trio
-    for (const [x, c] of [[4, '#ffffff'], [8, '#7ec8f0'], [12, '#ffffff']] as Array<[number, string]>) {
-      for (let y = 10; y < 15; y += 1) at(6, x, y, '#3e8a32');
+    for (const [x, c] of [[4, '#ffffff'], [8, palette.bloom2], [12, '#ffffff']] as Array<[number, string]>) {
+      for (let y = 10; y < 15; y += 1) at(6, x, y, palette.stem);
       at(6, x - 1, 9, c);
       at(6, x + 1, 9, c);
       at(6, x, 8, c);
       at(6, x, 10, c);
-      at(6, x, 9, '#ffe56a');
+      at(6, x, 9, palette.pollen);
     }
     // blossom bush
     p.ellipse(7 * 16 + 8, 11, 6, 4.2, '#62be46');
     p.ellipse(7 * 16 + 6, 10, 3.5, 3, '#86d65a');
-    for (const [x, y] of [[5, 9], [9, 8], [11, 11], [7, 12], [4, 12]] as Array<[number, number]>) at(7, x, y, '#ff8fb8');
+    for (const [x, y] of [[5, 9], [9, 8], [11, 11], [7, 12], [4, 12]] as Array<[number, number]>) at(7, x, y, palette.bloom);
     at(7, 8, 9, '#ffffff');
     // tall grass
     for (const [x, h] of [[3, 7], [5, 10], [7, 6], [9, 11], [11, 8], [13, 5]] as Array<[number, number]>) {
-      for (let y = 15 - h; y < 15; y += 1) at(8, x, y, y < 15 - h + 2 ? '#c8f28a' : '#5cb83a');
+      for (let y = 15 - h; y < 15; y += 1) at(8, x, y, y < 15 - h + 2 ? palette.tall : palette.grass);
     }
     // cattail reeds
     for (const [x, top] of [[5, 6], [9, 4], [13, 7]] as Array<[number, number]>) {
-      for (let y = top + 2; y < 15; y += 1) at(9, x, y, y < top + 5 ? '#a8dc62' : '#4caf3a');
+      for (let y = top + 2; y < 15; y += 1) at(9, x, y, y < top + 5 ? '#a8dc62' : palette.frond);
       p.ellipse(9 * 16 + x, top, 1.5, 2.6, '#8a5a32');
       at(9, x, top - 2, '#c9a06a');
     }
     // clover patch
     for (const [cx, cy] of [[5, 11], [9, 9], [11, 12], [7, 13]] as Array<[number, number]>) {
-      for (let y = 13; y < 15; y += 1) at(10, cx, y, '#3e8a32');
-      at(10, cx - 1, cy, '#7dce4a');
-      at(10, cx + 1, cy, '#7dce4a');
+      for (let y = 13; y < 15; y += 1) at(10, cx, y, palette.stem);
+      at(10, cx - 1, cy, palette.frondHi);
+      at(10, cx + 1, cy, palette.frondHi);
       at(10, cx, cy - 1, '#b6e86a');
-      at(10, cx, cy + 1, '#5cb83a');
+      at(10, cx, cy + 1, palette.grass);
     }
     // mushroom
     for (let y = 10; y < 15; y += 1) at(11, 8, y, '#f4e3c8');
@@ -963,28 +986,28 @@ function floraAtlas(): THREE.CanvasTexture {
     at(11, 8, 7, '#fff');
     // daisy cluster
     for (const [x, top] of [[4, 9], [8, 7], [12, 10]] as Array<[number, number]>) {
-      for (let y = top + 2; y < 15; y += 1) at(12, x, y, '#3e8a32');
+      for (let y = top + 2; y < 15; y += 1) at(12, x, y, palette.stem);
       for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as Array<[number, number]>) at(12, x + dx, top + dy, '#fff');
-      at(12, x, top, '#ffe56a');
+      at(12, x, top, palette.pollen);
     }
     // fern frond
     for (let x = 4; x < 13; x += 1) {
       const y = 13 - Math.round(Math.sin(((x - 4) / 8) * Math.PI) * 7);
-      at(13, x, y, '#4caf3a');
+      at(13, x, y, palette.frond);
       if (x % 2 === 0) {
-        at(13, x, y - 1, '#7dce4a');
-        at(13, x, y - 2, '#a8e870');
+        at(13, x, y - 1, palette.frondHi);
+        at(13, x, y - 2, palette.grassHi);
       }
     }
     // mossy pebble
     p.ellipse(14 * 16 + 8, 12, 6, 3.4, '#9a938c');
-    p.ellipse(14 * 16 + 7, 10, 3.5, 2, '#7dce4a');
+    p.ellipse(14 * 16 + 7, 10, 3.5, 2, palette.frondHi);
     at(14, 6, 12, '#b6e86a');
     at(14, 10, 13, '#6a645e');
     // golden bud
-    for (let y = 8; y < 15; y += 1) at(15, 8, y, '#3e8a32');
-    at(15, 7, 11, '#5cb83a');
-    at(15, 9, 10, '#5cb83a');
+    for (let y = 8; y < 15; y += 1) at(15, 8, y, palette.stem);
+    at(15, 7, 11, palette.grass);
+    at(15, 9, 10, palette.grass);
     p.ellipse(15 * 16 + 8, 6, 3, 3.6, '#ffd36e');
     at(15, 8, 5, '#fff6c2');
     at(15, 6, 7, '#ffb703');
@@ -1396,6 +1419,8 @@ export interface ArtSet {
   sun: THREE.CanvasTexture;
   barrel: THREE.CanvasTexture;
   flora: THREE.CanvasTexture;
+  /** The same plants, in the colours of each island. */
+  floraByWorld: THREE.CanvasTexture[];
 }
 
 let cached: ArtSet | null = null;
@@ -1494,7 +1519,8 @@ export function getArt(): ArtSet {
     bird: drawBird(),
     sun: drawSun(),
     barrel: barrel(),
-    flora: floraAtlas(),
+    flora: floraAtlas(FLORA_PALETTES[0]!),
+    floraByWorld: FLORA_PALETTES.map((palette) => floraAtlas(palette)),
   };
   return cached;
 }

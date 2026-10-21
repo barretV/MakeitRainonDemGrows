@@ -2262,7 +2262,7 @@ export class RainGame {
     this.track.add(ground);
     if (!this.globe) {
       const flora = terrain.buildFlora(
-        art.flora,
+        art.floraByWorld[world] ?? art.flora,
         this.maskTex,
         this.pulseTex,
         maskSize,
