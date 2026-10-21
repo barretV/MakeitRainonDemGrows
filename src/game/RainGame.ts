@@ -4,7 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { GLOBE_WORLD, TILE, gridOf, worldDef, type Decor } from './balance';
+import { GLOBE_WORLD, TILE, gridOf, tileIsLand, worldDef, type Decor } from './balance';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
 import { litColor, litOpacity, makeLitSprite, makePondWater, setLitMap } from './litSprite';
@@ -2390,6 +2390,13 @@ export class RainGame {
     if (!state) return;
     const art = this.art;
     const spec = state.spec(index);
+    // Nothing grows in the sea.
+    const grid = gridOf(world);
+    if (!tileIsLand(world, index % grid.cols, Math.floor(index / grid.cols))) {
+      view.prop = null;
+      view.pond = null;
+      return;
+    }
     if (spec.kind === 'pond') {
       const group = new THREE.Group();
       group.userData['bb'] = 1;

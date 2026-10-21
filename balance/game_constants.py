@@ -13,13 +13,80 @@ WORLDS = [
     (11, 8, 133, 97, 76, 3),
     (18, 16, 244, 217, 3070, 2),
     (31, 24, 355, 275, 2400, 3),
-    (34, 26, 340, 260, 30000, 20),
-    (14, 9, 800, 120, 1200000, 160),
+    (34, 26, 340, 260, 13700, 9),
+    (14, 9, 800, 120, 1120000, 300),
 ]
 
 BASE_SCALE = 0.48
 PUFF_STEP = 0.085
 OVERHEAD_SEC = 15
+
+
+def island_shore(world: int, dx: float, dz: float, radius: float) -> float:
+    """How far outside an island a point is. Mirrors islandShore() in balance.ts."""
+    r = math.hypot(dx, dz) / radius
+    ang = math.atan2(dz, dx)
+    if world == 1:
+        # Frostbite: a six-armed snowflake.
+        spike = abs(math.cos(3 * ang))
+        return r - (0.72 + 0.3 * spike**0.5)
+    if world == 2:
+        # The desert: a ring of land with a dry lake in the middle.
+        outer = math.hypot(dx, dz) / radius
+        hollow = math.hypot(dx, dz) / (radius * 0.34)
+        return max(outer - 1.02, -(hollow - 1))
+    if world == 3:
+        # The sludge dump: an archipelago.
+        main = math.hypot(dx, dz) / radius - 0.6
+        islet_a = math.hypot(dx - radius * 0.66, dz - radius * 0.44) / (radius * 0.26) - 1
+        islet_b = math.hypot(dx + radius * 0.7, dz - radius * 0.06) / (radius * 0.2) - 1
+        islet_c = math.hypot(dx - radius * 0.04, dz + radius * 0.72) / (radius * 0.17) - 1
+        return min(main, islet_a, islet_b, islet_c)
+    # The first island: a soft round shape with a cove.
+    lobe = (
+        1
+        + 0.13 * math.sin(ang * 3 + 0.7)
+        + 0.08 * math.sin(ang * 5 - 1.2)
+        + 0.06 * math.cos(ang * 2 + 0.4)
+    )
+    cove = max(0.0, 1 - math.hypot(dx + radius * 0.52, dz - radius * 0.34) / (radius * 0.62))
+    return r - lobe + cove * 0.55
+
+
+_LAND_CACHE: dict[int, int] = {}
+_LAND_FRACTION: dict[int, float] = {}
+
+
+def land_cells(world: int) -> int:
+    """How many cells of an island are land. The sea is not part of the island."""
+    if world in _LAND_CACHE:
+        return _LAND_CACHE[world]
+    cols, rows, mc, mr, hp, pay = WORLDS[world]
+    if world == GLOBE_WORLD:
+        _LAND_CACHE[world] = mc * mr
+        _LAND_FRACTION[world] = 1.0
+        return mc * mr
+    w = cols * TILE
+    h = rows * TILE
+    radius = min(w, h) * 0.42
+    cx = -TILE / 2 + w * 0.5
+    cz = -TILE / 2 + h * 0.5
+    count = 0
+    for r in range(mr):
+        for c in range(mc):
+            x = ((c + 0.5) / mc) * w - TILE / 2
+            z = ((r + 0.5) / mr) * h - TILE / 2
+            if island_shore(world, x - cx, z - cz, radius) < 0:
+                count += 1
+    _LAND_CACHE[world] = count
+    _LAND_FRACTION[world] = count / float(mc * mr)
+    return count
+
+
+def land_fraction(world: int) -> float:
+    """How much of an island's board is land."""
+    land_cells(world)
+    return _LAND_FRACTION.get(world, 1.0)
 
 # Blooms are the rare currency: one for every tenth of an island you restore
 # and one more when the island comes back to life. Ten per island.

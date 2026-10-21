@@ -34,6 +34,8 @@ from game_constants import (
     bottle_seconds,
     crit_chance,
     dew_multiplier,
+    land_cells,
+    land_fraction,
     patch_fraction,
     pool_gain,
     prereq,
@@ -49,8 +51,8 @@ def new_state():
 
 
 def mask_count(world: int) -> int:
-    _, _, mc, mr, _, _ = WORLDS[world]
-    return mc * mr
+    """The cells of an island that are land. The sea is not part of it."""
+    return land_cells(world)
 
 
 def playtest_factor(state, world: int) -> float:
@@ -83,6 +85,8 @@ def cells_per_run(state, world: int, filled_ratio: float = 0.0):
         radius = rain_radius(state)
         cell_area = (cols * TILE / mc) * (rows * TILE / mr)
     disc = math.pi * radius * radius / cell_area
+    # Only the land of the island can be restored.
+    disc *= land_fraction(world)
     patch = patch_fraction(state)
     wet = max(1.0, disc * patch * spill_multiplier(patch))
     # Less untouched land under the cloud as the island greens. Meadow Spring keeps

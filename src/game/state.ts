@@ -5,6 +5,7 @@ import {
   type AchievementDef,
   type TileSpec,
   gridOf,
+  landMask,
   tileSpec,
   worldDef,
 } from './balance';
@@ -406,6 +407,9 @@ export class SaveState {
   private growthPulses: GrowthPulseEvent[] = [];
   private lands = new Map<number, LandPack>();
   private revivalMilestones = new Set<number>();
+  /** Which mask cells are land. The sea is not part of the island. */
+  private landCache = new Map<number, Uint8Array>();
+  private landCountCache = new Map<number, number>();
 
   static fresh(): SaveState {
     const s = new SaveState();
@@ -692,6 +696,33 @@ export class SaveState {
     this.refillBottle();
   }
 
+  /** The land cells of an island, and how many there are. */
+  private landOf(world: number, cols: number, rows: number): Uint8Array {
+    let mask = this.landCache.get(world);
+    if (!mask || mask.length !== cols * rows) {
+      mask = landMask(world, cols, rows);
+      this.landCache.set(world, mask);
+      let count = 0;
+      for (let i = 0; i < mask.length; i += 1) count += mask[i] ?? 0;
+      this.landCountCache.set(world, count);
+    }
+    return mask;
+  }
+
+  /** How many cells of the island are land. The sea does not count. */
+  landCells(world = this.world): number {
+    const { cols, rows } = maskOf(world);
+    this.landOf(world, cols, rows);
+    return this.landCountCache.get(world) ?? cols * rows;
+  }
+
+  /** True when the cell is on the island rather than in the sea. */
+  private isLand(c: number, r: number): boolean {
+    const { cols, rows } = maskOf(this.world);
+    const mask = this.landOf(this.world, cols, rows);
+    return (mask[r * cols + c] ?? 1) !== 0;
+  }
+
   private mountWorld(world: number): void {
     const { cols, rows } = maskOf(world);
     const cells = cols * rows;
@@ -700,6 +731,7 @@ export class SaveState {
       pack = this.createLandPack(world);
       this.lands.set(world, pack);
     }
+    this.landOf(world, cols, rows);
     if (!pack.pulse || pack.pulse.length !== cells) pack.pulse = new Uint8Array(cells);
     if (!pack.waterPool || pack.waterPool.length !== cells) pack.waterPool = new Float32Array(cells);
     this.progress = pack.progress;
@@ -1332,17 +1364,19 @@ export class SaveState {
     if (!import.meta.env.DEV) return;
     const { cols, rows } = maskOf(this.world);
     const hp = cellHp(this.world);
+    const land = this.landOf(this.world, cols, rows);
     const cx = cols * 0.5;
     const cz = rows * 0.5;
     const radius = Math.hypot(cx, cz) * Math.sqrt(Math.min(1, Math.max(0, pct)));
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
+        const idx = r * cols + c;
+        if (!land[idx]) continue;
         const d = Math.hypot(c + 0.5 - cx, r + 0.5 - cz);
         const wobble =
           0.86 + 0.1 * Math.sin(c * 0.45 + r * 0.9) + 0.06 * Math.sin(c * 1.7 - r * 0.6);
         const t = d < radius - 2.5 ? 1 : Math.max(0, 1 - (d - (radius - 2.5)) / 5);
         const value = Math.min(1, Math.max(0, t * wobble)) * hp;
-        const idx = r * cols + c;
         if ((this.progress[idx] ?? 0) < value) this.setProgress(idx, value);
       }
     }
@@ -1354,7 +1388,7 @@ export class SaveState {
 
   ratio(world = this.world): number {
     if (world !== this.world) return this.best[world] ?? 0;
-    const count = this.progress.length;
+    const count = this.landCells(this.world);
     if (count === 0) return 0;
     const hp = cellHp(this.world);
     return this.progressSum / (count * hp);
@@ -1362,7 +1396,7 @@ export class SaveState {
 
   /** Match the balance sim (~98% cells full) and HUD rounding to 100%. */
   islandRestored(): boolean {
-    const count = this.progress.length;
+    const count = this.landCells(this.world);
     if (count === 0) return false;
     return this.filled / count >= 0.98 || this.ratio() >= 0.995;
   }
@@ -1700,6 +1734,7 @@ export class SaveState {
       for (let c = bounds.minC; c <= bounds.maxC && used < limit; c += 1) {
         const at = this.cellCenter(c, r, cols, rows);
         if (this.gap(x, z, at.x, at.z) > radius) continue;
+        if (!this.isLand(c, r)) continue;
         if (respectPatches && hash01(c, r) < gate) continue;
         const edge = 1 - this.gap(x, z, at.x, at.z) / Math.max(0.001, radius);
         if (respectPatches && this.ranks.specks >= 2 && hash01(c + 19, r + 3) > gate + edge * 0.28) continue;

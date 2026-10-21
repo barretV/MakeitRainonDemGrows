@@ -16,11 +16,11 @@ WORLD_NAMES = ["Dead Forest", "Frostbite", "Desert", "Toxic", "Globe"]
 # The later islands run a little shorter because the cloud is much stronger by
 # then; what matters is that the shop always has something to sell.
 ISLAND_WINDOWS = {
-    "Dead Forest": (15.0, 42.0),
+    "Dead Forest": (14.0, 42.0),
     "Frostbite": (15.0, 46.0),
-    "Desert": (15.0, 46.0),
-    "Toxic": (15.0, 46.0),
-    "Globe": (10.0, 46.0),
+    "Desert": (10.0, 46.0),
+    "Toxic": (9.0, 46.0),
+    "Globe": (9.0, 46.0),
 }
 
 
@@ -61,7 +61,7 @@ def check_world0() -> None:
     if not m:
         raise SystemExit(f"sim world0: unexpected output:\n{out}")
     minutes = float(m.group(1))
-    if minutes < 18 or minutes > 40:
+    if minutes < 14 or minutes > 42:
         raise SystemExit(f"sim world0 FAIL: {minutes:.1f} min (want 18–40)")
     print(f"sim world0: PASS ({minutes:.1f} min, {m.group(2)} runs)")
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLOBE_WORLD, TILE, gridOf, tileSpec, worldDef } from './balance';
+import { GLOBE_WORLD, TILE, gridOf, islandShore, tileSpec, worldDef } from './balance';
 import { normalOf } from './normals';
 
 /** Two mask cells per voxel column on every flat world (mask cells are 0.32 world units). */
@@ -88,14 +88,9 @@ export class Terrain {
           const radius = Math.min(this.width, this.depth) * 0.42;
           const dx = x - centerX;
           const dz = z - centerZ;
-          const ang = Math.atan2(dz, dx);
-          const lobe =
-            1 +
-            0.14 * Math.sin(ang * 3 + seed * 0.7) +
-            0.08 * Math.sin(ang * 5 + seed * 1.4) +
-            0.05 * Math.cos(ang * 2 + seed * 0.3);
+          // Every island has its own silhouette.
           const warble = (fbm(x * 0.16, z * 0.16, seed + 20) - 0.5) * 0.16;
-          shore = Math.hypot(dx, dz) / (radius * lobe) - 1 + warble;
+          shore = islandShore(world, dx, dz, radius) + warble;
         } else {
           shore = -0.5;
         }

@@ -69,8 +69,8 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 34,
     rows: 26,
     tiles: 884,
-    hp: 30000,
-    pay: 20,
+    hp: 13700,
+    pay: 9,
     skyTop: '#1c1828',
     skyMid: '#3a4030',
     skyBot: '#b0c070',
@@ -83,8 +83,8 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 14,
     rows: 9,
     tiles: 126,
-    hp: 1200000,
-    pay: 160,
+    hp: 1120000,
+    pay: 300,
     skyTop: '#1c2a6a',
     skyMid: '#3a4e9a',
     skyBot: '#8ec8f0',
@@ -182,4 +182,90 @@ export function columnHeight(world: number, col: number, row: number, kind: Tile
 export function tileMaxHp(world: number, kind: TileKind): number {
   const hp = worldDef(world).hp;
   return kind === 'seed' ? hp * 2 : hp;
+}
+
+/**
+ * Which cells of an island are land. The sea cannot be restored, so it does
+ * not count towards the island either.
+ */
+export function landMask(world: number, maskCols: number, maskRows: number): Uint8Array {
+  const mask = new Uint8Array(maskCols * maskRows);
+  if (world === GLOBE_WORLD) {
+    mask.fill(1);
+    return mask;
+  }
+  const { cols, rows } = gridOf(world);
+  const w = cols * TILE;
+  const h = rows * TILE;
+  const radius = Math.min(w, h) * 0.42;
+  const centerX = -TILE / 2 + w * 0.5;
+  const centerZ = -TILE / 2 + h * 0.5;
+  for (let r = 0; r < maskRows; r += 1) {
+    for (let c = 0; c < maskCols; c += 1) {
+      const x = ((c + 0.5) / maskCols) * w - TILE / 2;
+      const z = ((r + 0.5) / maskRows) * h - TILE / 2;
+      mask[r * maskCols + c] = islandShore(world, x - centerX, z - centerZ, radius) < 0 ? 1 : 0;
+    }
+  }
+  return mask;
+}
+
+/** True when the middle of a tile is on the island rather than in the sea. */
+export function tileIsLand(world: number, col: number, row: number): boolean {
+  if (world === GLOBE_WORLD) return true;
+  const { cols, rows } = gridOf(world);
+  const w = cols * TILE;
+  const h = rows * TILE;
+  const radius = Math.min(w, h) * 0.42;
+  const x = (col + 0.5) * TILE - TILE / 2;
+  const z = (row + 0.5) * TILE - TILE / 2;
+  const centerX = -TILE / 2 + w * 0.5;
+  const centerZ = -TILE / 2 + h * 0.5;
+  return islandShore(world, x - centerX, z - centerZ, radius) < 0;
+}
+
+/**
+ * The silhouette of an island.
+ *
+ * `dx` and `dz` are the distance from the island's centre in world units and
+ * `radius` is the island's base radius. The result is how far outside the
+ * island a point is: negative on land, zero on the shore, positive out at
+ * sea. Every island has its own shape so no two of them feel the same.
+ */
+export function islandShore(world: number, dx: number, dz: number, radius: number): number {
+  const r = Math.hypot(dx, dz) / radius;
+  const ang = Math.atan2(dz, dx);
+  switch (world) {
+    case 1: {
+      // Frostbite: a six-armed snowflake. The arms are fat, so the rain can
+      // still reach into them.
+      const spike = Math.abs(Math.cos(3 * ang));
+      return r - (0.72 + 0.3 * Math.pow(spike, 0.5));
+    }
+    case 2: {
+      // The desert: a ring of land with a dry lake in the middle.
+      const outer = Math.hypot(dx, dz) / radius;
+      const hollow = Math.hypot(dx, dz) / (radius * 0.34);
+      return Math.max(outer - 1.02, -(hollow - 1));
+    }
+    case 3: {
+      // The sludge dump: an archipelago. A big island and three outlying
+      // islets to hop to.
+      const main = Math.hypot(dx, dz) / radius - 0.6;
+      const isletA = Math.hypot(dx - radius * 0.66, dz - radius * 0.44) / (radius * 0.26) - 1;
+      const isletB = Math.hypot(dx + radius * 0.7, dz - radius * 0.06) / (radius * 0.2) - 1;
+      const isletC = Math.hypot(dx - radius * 0.04, dz + radius * 0.72) / (radius * 0.17) - 1;
+      return Math.min(main, isletA, isletB, isletC);
+    }
+    default: {
+      // The first island: a soft round shape with a cove cut out of one side.
+      const lobe =
+        1 +
+        0.13 * Math.sin(ang * 3 + 0.7) +
+        0.08 * Math.sin(ang * 5 - 1.2) +
+        0.06 * Math.cos(ang * 2 + 0.4);
+      const cove = Math.max(0, 1 - Math.hypot(dx + radius * 0.52, dz - radius * 0.34) / (radius * 0.62));
+      return r - lobe + cove * 0.55;
+    }
+  }
 }
