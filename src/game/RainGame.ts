@@ -1264,6 +1264,7 @@ export class RainGame {
   /** Workshop → rain: cinematic grow + camera pull when power changed. */
   returnFromWorkshop(): void {
     if (!this.state) return;
+    this.audio.useBed('field');
     const snap = this.workshopSnap;
     const oldScale = snap?.scale ?? this.state.scale();
     const oldReach = snap?.reach ?? this.state.reach();
@@ -1338,6 +1339,7 @@ export class RainGame {
       this.workshopSnap = { scale: this.state.scale(), reach: this.state.reach() };
     }
     this.state?.openWorkshop();
+    this.audio.useBed('workshop');
     this.pushHud(true);
   }
 
@@ -1494,22 +1496,34 @@ export class RainGame {
     this.frame = requestAnimationFrame(this.loop);
   }
 
-  /** Lost in Space, packed as `lost-in-space`. Plays while the music toggle is on. */
+  /** Lost in Space over the islands. Sketchbook inside the workshop. */
   private async loadMainMusic(): Promise<void> {
     if (!this.state || this.dead) return;
     try {
-      const pack = await loadStowKitPack('default', this.renderer);
-      const listener = new THREE.AudioListener();
-      this.camera.add(listener);
-      const clip = await pack.loadAudio('lost-in-space', listener);
-      const buffer = clip.buffer;
-      if (clip.isPlaying) clip.stop();
-      this.camera.remove(listener);
-      if (!buffer || !this.state || this.dead) return;
-      this.audio.attachMusic(buffer);
+      const [field, workshop] = await Promise.all([
+        this.loadMusicClip('lost-in-space'),
+        this.loadMusicClip('sketchbook'),
+      ]);
+      if (!this.state || this.dead) return;
+      if (field) this.audio.setBed('field', field);
+      if (workshop) this.audio.setBed('workshop', workshop);
+      this.audio.useBed(this.state.screen === 'workshop' ? 'workshop' : 'field');
       if (this.state.music && !this.audio.musicOn) this.audio.toggleMusic();
     } catch (err) {
-      console.warn('Lost in Space failed to load', err);
+      console.warn('Music failed to load', err);
+    }
+  }
+
+  private async loadMusicClip(id: string): Promise<AudioBuffer | null> {
+    const pack = await loadStowKitPack('default', this.renderer);
+    const listener = new THREE.AudioListener();
+    this.camera.add(listener);
+    try {
+      const clip = await pack.loadAudio(id, listener);
+      if (clip.isPlaying) clip.stop();
+      return clip.buffer ?? null;
+    } finally {
+      this.camera.remove(listener);
     }
   }
 

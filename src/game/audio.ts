@@ -1,7 +1,9 @@
 /**
- * Web Audio bed. The music toggle plays Lost in Space once it has loaded.
- * A soft chord loop fills in if the track is missing.
+ * Web Audio bed. Lost in Space plays over the islands. Sketchbook plays in the workshop.
+ * A soft chord loop fills in if a track is missing.
  */
+export type MusicBed = 'field' | 'workshop';
+
 export class AudioBus {
   muted = false;
   musicOn = false;
@@ -12,6 +14,8 @@ export class AudioBus {
   private humGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
   private musicTimer = 0;
+  private beds: Record<MusicBed, AudioBuffer | null> = { field: null, workshop: null };
+  private bed: MusicBed = 'field';
   private custom: AudioBuffer | null = null;
   private customNode: AudioBufferSourceNode | null = null;
   private placeholderOn = false;
@@ -31,9 +35,19 @@ export class AudioBus {
     this.syncMusic();
   }
 
-  /** Replace the placeholder bed. Pass null to go back to the soft synth. */
-  attachMusic(buffer: AudioBuffer | null): void {
-    this.custom = buffer;
+  /** Store a loop and start it if that scene is the one on screen. */
+  setBed(which: MusicBed, buffer: AudioBuffer): void {
+    this.beds[which] = buffer;
+    if (this.bed === which) {
+      this.custom = buffer;
+      this.syncMusic();
+    }
+  }
+
+  /** Switch between the island theme and the workshop theme. */
+  useBed(which: MusicBed): void {
+    this.bed = which;
+    this.custom = this.beds[which];
     this.syncMusic();
   }
 

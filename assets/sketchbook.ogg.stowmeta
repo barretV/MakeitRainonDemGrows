@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "stringId": "sketchbook",
+  "tags": [],
+  "pack": "default",
+  "type": "audio",
+  "aacQuality": "medium",
+  "sampleRate": "auto",
+  "cache": {
+    "sourceSize": 1221529,
+    "sourceLastModified": 1791403567064.6853,
+    "settingsHash": "3|aq=2|sr=0"
+  }
+}
