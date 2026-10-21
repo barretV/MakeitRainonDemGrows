@@ -45,9 +45,7 @@ const CLOUD_CLEARANCE = 1.35;
 const CLOUD_LIFT = 2.1;
 const FINALE_DURATION = 5.4;
 /** Metres from root to crown top in the exported hero-tree GLB. */
-const HERO_HEIGHT = 4.889;
 /** The pack strips the armature scale, so fit the measured canopy slightly inside the billboard height. */
-const HERO_FIT = 0.88;
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
@@ -481,13 +479,6 @@ export class RainGame {
   private rainMix = 0;
   private birds: SkyBird[] = [];
   private farTrees: THREE.Mesh[] = [];
-  private heroGroup: THREE.Group | null = null;
-  private heroMixer: THREE.AnimationMixer | null = null;
-  private heroMaterials: THREE.MeshStandardMaterial[] = [];
-  private heroIndex = -1;
-  private heroLoadStarted = false;
-  private heroHeight = HERO_HEIGHT;
-  private heroSun!: THREE.DirectionalLight;
   private parallaxIslands: ParallaxIsland[] = [];
   private animals: Critter[] = [];
   private helpers: THREE.Mesh[] = [];
@@ -528,15 +519,6 @@ export class RainGame {
     this.scene.fog = new THREE.Fog('#4a2038', 24, 52);
     this.scene.add(this.track);
     this.scene.add(this.camera);
-    // The procedural pixel sprites are pre-lit. These lights only touch the
-    // StowKit hero tree's PBR materials.
-    const heroAmbient = new THREE.AmbientLight('#ffe9d6', 1.15);
-    const heroHemi = new THREE.HemisphereLight('#fff1e4', '#3a2030', 1.1);
-    this.heroSun = new THREE.DirectionalLight('#fff1e4', 2.5);
-    this.heroSun.position.set(-7, 11, 6);
-    const heroFill = new THREE.DirectionalLight('#ffe2b8', 0.9);
-    heroFill.position.set(6, 4, 9);
-    this.scene.add(heroAmbient, heroHemi, this.heroSun, heroFill);
     this.abilityVfx = new AbilityVfx(this.track);
 
     this.mountain = this.litBillboard(this.art.mountain, 15, 9.2, 0.12, true);
@@ -1225,7 +1207,6 @@ export class RainGame {
     if (import.meta.env.DEV) {
       (window as unknown as { __rain?: RainGame }).__rain = this;
     }
-    void this.loadHeroTree();
     void this.boot();
   }
 
@@ -1847,7 +1828,6 @@ export class RainGame {
 
     this.placeCamera(dt);
     this.dressSky(t);
-    this.updateHeroLights();
     this.updateTiltCloudMask();
 
     this.dropAcc += dt;
@@ -1903,7 +1883,6 @@ export class RainGame {
     this.applySkyLift(dt);
     this.faceAll();
     this.syncProps(t);
-    if (this.heroGroup?.visible) this.heroMixer?.update(dt);
     this.syncCritters(dt, t);
     this.stepAmbient(dt, t);
     this.stepFx(dt);
@@ -2020,181 +1999,6 @@ export class RainGame {
     this.skyMat.uniforms['uRain']!.value = this.rainMix;
   }
 
-  private async loadHeroTree(): Promise<void> {
-    if (this.heroLoadStarted) return;
-    this.heroLoadStarted = true;
-    try {
-      const pack = await loadStowKitPack('default', this.renderer);
-      const hero = await pack.loadSkinnedMesh('vibrant_billboard_tree_mesh');
-      hero.name = 'hero-tree';
-      hero.visible = false;
-      let skin: THREE.SkinnedMesh | null = (hero.getObjectByProperty('isSkinnedMesh', true) as THREE.SkinnedMesh | undefined) ?? null;
-      hero.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        mesh.frustumCulled = false;
-      });
-      if (!skin) throw new Error('skinned mesh missing from pack');
-
-      // StowKit's skinned-mesh parser collapses a multi-material GLB to one
-      // material. The six textures are packed separately, so rebuild the six
-      // slots here and restore the primitive -> material mapping.
-      const textureIds = ['texture_0', 'texture_1', 'texture_2', 'texture_3', 'texture_4', 'texture_5'];
-      const maps = await Promise.all(textureIds.map((id) => pack.loadTexture(id)));
-      const materials = maps.map((map, index) => {
-        map.colorSpace = THREE.SRGBColorSpace;
-        map.magFilter = THREE.NearestFilter;
-        map.minFilter = THREE.NearestFilter;
-        map.generateMipmaps = false;
-        const clamp = index >= 4;
-        const leaf = index < 4;
-        map.wrapS = clamp ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
-        map.wrapT = clamp ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
-        map.needsUpdate = true;
-        return new THREE.MeshStandardMaterial({
-          map,
-          side: THREE.DoubleSide,
-          alphaTest: 0.05,
-          transparent: false,
-          depthWrite: true,
-          metalness: 0,
-          roughness: 1,
-          emissive: new THREE.Color(leaf ? '#ffffff' : '#000000'),
-          emissiveMap: leaf ? map : null,
-          emissiveIntensity: leaf ? 0.35 : 0,
-        });
-      });
-      const previous = skin.material;
-      skin.material = materials;
-      // Primitive material order from the exported GLB (24 primitives).
-      const slots = [
-        0, 1, 0, 1, 0, 1, 2, 0, 1, 2, 0, 1,
-        2, 1, 2, 1, 2, 1, 2, 3, 1, 4, 5, 1,
-      ];
-      skin.geometry.groups.forEach((group, index) => {
-        group.materialIndex = slots[index] ?? 0;
-      });
-      if (Array.isArray(previous)) previous.forEach((mat) => mat.dispose());
-      else previous?.dispose();
-      this.heroMaterials = materials;
-      // The packer bakes the armature scale away: measure the rest mesh so the
-      // 3D tree matches the billboard height it replaces.
-      const bounds = new THREE.Box3().setFromObject(hero);
-      const measured = bounds.max.y - bounds.min.y;
-      if (measured > 0.1) this.heroHeight = measured;
-
-      this.heroGroup = hero;
-      this.scene.add(hero);
-      this.syncHero();
-      try {
-        const clip = await pack.loadAnimationClip('vibrant_billboard_tree_sway');
-        // The packed clip loses the node/property dot ("canopyquaternion").
-        for (const track of clip.tracks) {
-          const match = /^(.*?)(quaternion|position|scale)$/.exec(track.name);
-          if (!match) continue;
-          const node = match[1] ?? '';
-          const prop = match[2] ?? '';
-          if (node && !node.endsWith('.')) track.name = `${node}.${prop}`;
-        }
-        const mixer = new THREE.AnimationMixer(hero);
-        const action = mixer.clipAction(clip);
-        action.setLoop(THREE.LoopRepeat, Infinity);
-        action.play();
-        this.heroMixer = mixer;
-      } catch (error) {
-        console.warn('[hero-tree] sway animation failed', error);
-      }
-    } catch (error) {
-      console.warn('[hero-tree] load failed', error);
-    }
-  }
-
-  /** Choose the largest healthy oak tree on the current island as the 3D landmark. */
-  private pickHeroTree(world: number): number {
-    const state = this.state;
-    if (!state || this.globe) return -1;
-    const cx = this.terrain ? this.terrain.originX + this.terrain.width * 0.5 : this.camX;
-    const cz = this.terrain ? this.terrain.originZ + this.terrain.depth * 0.5 : this.camZ;
-    let best = -1;
-    let bestScore = -Infinity;
-    for (let i = 0; i < this.views.length; i += 1) {
-      const view = this.views[i];
-      if (!view || !view.prop || view.offIsland) continue;
-      const spec = state.spec(i);
-      if (spec.kind !== 'ground' || spec.decor !== 'tree') continue;
-      const y0 = this.groundY(view.x, view.z);
-      const y1 = this.groundY(view.x + 0.28, view.z);
-      const y2 = this.groundY(view.x, view.z + 0.28);
-      if (Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0)) >= 0.32) continue;
-      const variant = (i + world * 3) % 6;
-      // Favour a large tree on the camera-facing side of the island: on wide
-      // fields a perfectly central tree gets buried behind the tree line.
-      const front = view.z - cz;
-      const depth = front > 0 ? Math.min(front, 10) * 0.02 - Math.max(0, front - 10) * 0.02 : front * 0.03;
-      const side = Math.abs(view.x - cx) * 0.03;
-      const score = this.propBase('tree', 2, i) + (variant === 0 || variant === 4 ? 0.08 : 0) + depth - side;
-      if (score > bestScore) {
-        bestScore = score;
-        best = i;
-      }
-    }
-    return best;
-  }
-
-  /** Keep the hero GLB attached to its mature tree tile, scaled like the old billboard. */
-  private syncHero(): void {
-    const hero = this.heroGroup;
-    if (!hero) return;
-    const state = this.state;
-    const view = this.heroIndex >= 0 ? this.views[this.heroIndex] : null;
-    if (!state || !view || !view.prop || this.globe) {
-      hero.visible = false;
-      return;
-    }
-    const spec = state.spec(this.heroIndex);
-    const wet = state.hillWet(this.heroIndex);
-    const restored = state.isRestored(this.heroIndex);
-    let slopeOk = true;
-    if (this.terrain) {
-      const y0 = this.groundY(view.x, view.z);
-      const y1 = this.groundY(view.x + 0.28, view.z);
-      const y2 = this.groundY(view.x, view.z + 0.28);
-      slopeOk = Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0)) < 0.32;
-    }
-    if (
-      spec.kind !== 'ground' ||
-      spec.decor !== 'tree' ||
-      view.offIsland ||
-      !slopeOk ||
-      view.stage < 2 ||
-      !(restored || wet > 0.14)
-    ) {
-      hero.visible = false;
-      return;
-    }
-    if (hero.parent !== this.scene) this.scene.add(hero);
-    const base = Number(view.prop.userData['s']) || 1.25;
-    const billboardH = Number(view.prop.userData['ph']) || 3.6;
-    const grow = view.growStart > 0 ? easeOutBack(clamp(view.growT, 0, 1)) : 1;
-    hero.scale.setScalar(Math.max(0.001, (base * billboardH * HERO_FIT * grow) / this.heroHeight));
-    hero.position.set(view.x, view.y, view.z);
-    hero.rotation.y = 0.18;
-    hero.visible = true;
-    view.prop.visible = false;
-    const life = restored ? 1 : clamp((wet - 0.12) / 0.72, 0, 1);
-    const tint = this.propDusk.clone().lerp(this.propSun, life);
-    for (let i = 0; i < this.heroMaterials.length; i += 1) {
-      const mat = this.heroMaterials[i]!;
-      mat.color.copy(tint);
-      if (i < 4) mat.emissiveIntensity = 0.35 * life;
-    }
-  }
-
-  private updateHeroLights(): void {
-    this.heroSun.position.copy(this.sunDir).multiplyScalar(12);
-    this.heroSun.color.copy(this.sunColor);
-    this.heroSun.intensity = 2.5 * (1 - this.rainMix * 0.22);
-  }
 
   private rebuild(): void {
     const state = this.state;
@@ -2440,8 +2244,6 @@ export class RainGame {
       tree.visible = false;
     });
 
-    this.heroIndex = this.pickHeroTree(world);
-    this.syncHero();
     this.syncBoxes(true);
     this.syncCritters(0, 0, true);
     this.restoreWaterfalls();
@@ -2594,7 +2396,6 @@ export class RainGame {
       view.pondStage = 2;
     }
     if (view.koi) view.koi.visible = spec.kind === 'pond';
-    if (index === this.heroIndex) this.syncHero();
   }
 
   private onBloom(index: number, result: SoakResult): void {
@@ -2772,13 +2573,6 @@ export class RainGame {
     if (shadows) {
       shadows.count = shadowIndex;
       shadows.instanceMatrix.needsUpdate = true;
-    }
-    this.syncHero();
-    const hero = this.heroGroup;
-    if (hero?.visible) {
-      // The 3D tree leans from its feet as well, in time with the wind.
-      const gust = this.gustAt(hero.position.x, hero.position.z, t);
-      hero.rotation.z = Math.sin(t * 0.85) * 0.022 + gust * 0.05;
     }
   }
 
@@ -4152,11 +3946,16 @@ export class RainGame {
   private propTexture(decor: Decor, step: number, world: number, index: number): THREE.Texture {
     const art = this.art;
     if (decor === 'tree') {
-      if (step === 2) return art.grove[(index + world * 3) % art.grove.length] ?? art.liveTree[0]!;
+      // Every island grows its own grove.
+      const grove = art.groveByWorld[world] ?? art.grove;
+      if (step === 2) return grove[(index + world * 3) % grove.length] ?? art.liveTree[0]!;
       if (step === 1) return art.sapling;
       return art.deadTree[world] ?? art.deadTree[0]!;
     }
-    if (decor === 'bush') return step === 2 ? art.bushLive : step === 1 ? art.bushSprout : art.bushDead;
+    if (decor === 'bush') {
+      if (step === 2) return art.bushByWorld[world] ?? art.bushLive;
+      return step === 1 ? art.bushSprout : art.bushDead;
+    }
     if (decor === 'rock') {
       if (world === 3 && step === 0) return art.barrel;
       return step === 1 ? art.rockMoss : art.rock;

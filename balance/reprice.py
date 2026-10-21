@@ -200,6 +200,16 @@ def fill_ladder(entries: list[Entry]) -> None:
         entries[index].price = price
 
 
+def first_anchor_price(entries: list[Entry]) -> dict[str, float]:
+    """The price of the first rank of every node the campaign bought."""
+    out: dict[str, float] = {}
+    for entry in entries:
+        if entry.anchor is None or entry.node in out:
+            continue
+        out[entry.node] = float(entry.anchor)
+    return out
+
+
 def build_costs(bands, bought):
     """The ladder becomes the price list of the tree."""
     # The purchases in the order they happened.
@@ -240,6 +250,19 @@ def build_costs(bands, bought):
         entries.insert(min(at, len(entries)), entry)
 
     fill_ladder(entries)
+
+    # An island's own powers climb gently from the price the player arrives
+    # with. Their power is big, so the income jumps the moment they are bought;
+    # pricing the next rank off that jump puts it out of reach.
+    for node, first in first_anchor_price(entries).items():
+        if WORLD_MIN.get(node, 0) <= 0:
+            continue
+        for rank in range(len(COSTS[node])):
+            climb = first * (RANK_STEP**rank)
+            for entry in entries:
+                if entry.node == node and entry.rank == rank:
+                    entry.price = max(entry.price, climb) if rank == 0 else climb
+                    break
 
     maxes = build_maxes()
     costs: dict[str, list[int]] = {key: [0] * maxes[key] for key in COSTS}
@@ -299,13 +322,16 @@ def main() -> None:
         new_costs, entries = build_costs(bands, bought)
         # The prices and the campaign depend on each other, and the loop wants
         # to run away. Halve the step every round so it settles.
-        blended: dict[str, list[int]] = {}
-        for key, curve in new_costs.items():
-            old = costs[key]
-            blended[key] = [
-                int((old[index] + curve[index]) / 2) if curve[index] else old[index]
-                for index in range(len(curve))
-            ]
+        if os.environ.get('DAMP', '1') == '1':
+            blended: dict[str, list[int]] = {}
+            for key, curve in new_costs.items():
+                old = costs[key]
+                blended[key] = [
+                    int((old[index] + curve[index]) / 2) if curve[index] else old[index]
+                    for index in range(len(curve))
+                ]
+        else:
+            blended = new_costs
         if blended == costs:
             break
         costs = blended

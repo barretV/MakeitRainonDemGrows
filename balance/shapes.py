@@ -3,7 +3,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from game_constants import WORLDS, GLOBE_WORLD, island_shore, TILE
+from game_constants import WORLDS, GLOBE_WORLD, island_radius, island_shore, TILE
 
 WIDTH = 76
 
@@ -15,7 +15,7 @@ def show(world: int) -> None:
         return
     w = cols * TILE
     h = rows * TILE
-    radius = min(w, h) * 0.42
+    radius = island_radius(world, w, h)
     cx = -TILE / 2 + w * 0.5
     cz = -TILE / 2 + h * 0.5
     height = max(8, int(WIDTH * (h / w) * 0.5))

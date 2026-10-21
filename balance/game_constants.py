@@ -13,13 +13,22 @@ WORLDS = [
     (11, 8, 133, 97, 76, 3),
     (18, 16, 244, 217, 3070, 2),
     (31, 24, 355, 275, 2400, 3),
-    (34, 26, 340, 260, 13700, 9),
+    (34, 26, 340, 260, 13700, 5),
     (14, 9, 800, 120, 1120000, 300),
 ]
 
 BASE_SCALE = 0.48
 PUFF_STEP = 0.085
 OVERHEAD_SEC = 15
+
+
+# How much of its board an island fills.
+ISLAND_FILL = [0.47, 0.5, 0.5, 0.5]
+
+
+def island_radius(world: int, width: float, depth: float) -> float:
+    fill = ISLAND_FILL[world] if world < len(ISLAND_FILL) else 0.47
+    return min(width, depth) * fill
 
 
 def island_shore(world: int, dx: float, dz: float, radius: float) -> float:
@@ -37,10 +46,10 @@ def island_shore(world: int, dx: float, dz: float, radius: float) -> float:
         return max(outer - 1.02, -(hollow - 1))
     if world == 3:
         # The sludge dump: an archipelago.
-        main = math.hypot(dx, dz) / radius - 0.6
-        islet_a = math.hypot(dx - radius * 0.66, dz - radius * 0.44) / (radius * 0.26) - 1
-        islet_b = math.hypot(dx + radius * 0.7, dz - radius * 0.06) / (radius * 0.2) - 1
-        islet_c = math.hypot(dx - radius * 0.04, dz + radius * 0.72) / (radius * 0.17) - 1
+        main = math.hypot(dx, dz) / radius - 0.64
+        islet_a = math.hypot(dx - radius * 0.72, dz - radius * 0.46) / (radius * 0.34) - 1
+        islet_b = math.hypot(dx + radius * 0.78, dz - radius * 0.04) / (radius * 0.28) - 1
+        islet_c = math.hypot(dx - radius * 0.06, dz + radius * 0.78) / (radius * 0.24) - 1
         return min(main, islet_a, islet_b, islet_c)
     # The first island: a soft round shape with a cove.
     lobe = (
@@ -68,7 +77,7 @@ def land_cells(world: int) -> int:
         return mc * mr
     w = cols * TILE
     h = rows * TILE
-    radius = min(w, h) * 0.42
+    radius = island_radius(world, w, h)
     cx = -TILE / 2 + w * 0.5
     cz = -TILE / 2 + h * 0.5
     count = 0

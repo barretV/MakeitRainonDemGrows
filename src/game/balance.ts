@@ -70,7 +70,7 @@ export const WORLDS: readonly WorldDef[] = [
     rows: 26,
     tiles: 884,
     hp: 13700,
-    pay: 9,
+    pay: 5,
     skyTop: '#1c1828',
     skyMid: '#3a4030',
     skyBot: '#b0c070',
@@ -197,7 +197,7 @@ export function landMask(world: number, maskCols: number, maskRows: number): Uin
   const { cols, rows } = gridOf(world);
   const w = cols * TILE;
   const h = rows * TILE;
-  const radius = Math.min(w, h) * 0.42;
+  const radius = islandRadius(world, w, h);
   const centerX = -TILE / 2 + w * 0.5;
   const centerZ = -TILE / 2 + h * 0.5;
   for (let r = 0; r < maskRows; r += 1) {
@@ -216,12 +216,24 @@ export function tileIsLand(world: number, col: number, row: number): boolean {
   const { cols, rows } = gridOf(world);
   const w = cols * TILE;
   const h = rows * TILE;
-  const radius = Math.min(w, h) * 0.42;
+  const radius = islandRadius(world, w, h);
   const x = (col + 0.5) * TILE - TILE / 2;
   const z = (row + 0.5) * TILE - TILE / 2;
   const centerX = -TILE / 2 + w * 0.5;
   const centerZ = -TILE / 2 + h * 0.5;
   return islandShore(world, x - centerX, z - centerZ, radius) < 0;
+}
+
+/**
+ * How much of its board an island fills. The shapes are drawn around this
+ * radius, so a bigger number means more land to walk over.
+ */
+const ISLAND_FILL: readonly number[] = [0.47, 0.5, 0.5, 0.5];
+
+/** The radius of an island's shape, in world units. */
+export function islandRadius(world: number, width: number, depth: number): number {
+  const fill = ISLAND_FILL[world] ?? 0.47;
+  return Math.min(width, depth) * fill;
 }
 
 /**
@@ -251,10 +263,10 @@ export function islandShore(world: number, dx: number, dz: number, radius: numbe
     case 3: {
       // The sludge dump: an archipelago. A big island and three outlying
       // islets to hop to.
-      const main = Math.hypot(dx, dz) / radius - 0.6;
-      const isletA = Math.hypot(dx - radius * 0.66, dz - radius * 0.44) / (radius * 0.26) - 1;
-      const isletB = Math.hypot(dx + radius * 0.7, dz - radius * 0.06) / (radius * 0.2) - 1;
-      const isletC = Math.hypot(dx - radius * 0.04, dz + radius * 0.72) / (radius * 0.17) - 1;
+      const main = Math.hypot(dx, dz) / radius - 0.64;
+      const isletA = Math.hypot(dx - radius * 0.72, dz - radius * 0.46) / (radius * 0.34) - 1;
+      const isletB = Math.hypot(dx + radius * 0.78, dz - radius * 0.04) / (radius * 0.28) - 1;
+      const isletC = Math.hypot(dx - radius * 0.06, dz + radius * 0.78) / (radius * 0.24) - 1;
       return Math.min(main, isletA, isletB, isletC);
     }
     default: {

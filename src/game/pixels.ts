@@ -686,20 +686,43 @@ function bareTree(trunk: string, limb: string): THREE.CanvasTexture {
   }, 48, 64);
 }
 
-function birchTree(): THREE.CanvasTexture {
+const TREE_PALETTES: TreePalette[] = [
+  // The Dead Forest: deep summer green.
+  {
+    crown: '#3f9a3a', crownShade: '#2f7a32', crownLit: '#5cb83a', crownTop: '#7dce4a',
+    edge: '#1f4a22', trunk: '#6b4630', trunkShade: '#4e3222', trunkLight: '#3b2718', accent: '#ff8fb8',
+  },
+  // Frostbite Forest: frosted blue green.
+  {
+    crown: '#5fb0a8', crownShade: '#3f8a86', crownLit: '#9fe0d8', crownTop: '#cdeef4',
+    edge: '#2f6a72', trunk: '#c8d4dc', trunkShade: '#a2b2bc', trunkLight: '#8a9aa6', accent: '#bfe6fb',
+  },
+  // Parched Desert: dry olive.
+  {
+    crown: '#8a9a3a', crownShade: '#6a7a2c', crownLit: '#b6c25a', crownTop: '#d2d97a',
+    edge: '#4a5520', trunk: '#7a5a38', trunkShade: '#5a4028', trunkLight: '#96703f', accent: '#ffb45e',
+  },
+  // Toxic Sludge Dump: sickly violet green.
+  {
+    crown: '#6f9a3a', crownShade: '#4f7028', crownLit: '#9cc44a', crownTop: '#c2d95a',
+    edge: '#3a4a22', trunk: '#6a4a8a', trunkShade: '#4a3360', trunkLight: '#8a6aac', accent: '#c084fc',
+  },
+];
+
+function birchTree(pal: TreePalette): THREE.CanvasTexture {
   return bake((p) => {
     // rounder, fuller crown
-    p.ellipse(24, 13, 12, 10, '#7dce4a');
-    p.ellipse(13, 20, 10, 8, '#5cb83a');
-    p.ellipse(35, 19, 10, 8, '#b6e86a');
-    p.ellipse(24, 24, 11, 7, '#6cc43e');
-    p.outline('#2f6a32');
+    p.ellipse(24, 13, 12, 10, pal.crownTop);
+    p.ellipse(13, 20, 10, 8, pal.crownShade);
+    p.ellipse(35, 19, 10, 8, pal.crownLit);
+    p.ellipse(24, 24, 11, 7, pal.crown);
+    p.outline(pal.edge);
     // solid pale trunk with a gentle lean, warm shadow side
     for (let y = 22; y < 62; y += 1) {
       const x = 23 - Math.round((62 - y) * 0.02);
-      p.set(x, y, '#f0ebdf');
-      p.set(x + 1, y, '#e4ddcc');
-      p.set(x + 2, y, '#cdc5b2');
+      p.set(x, y, pal.trunk);
+      p.set(x + 1, y, pal.trunkShade);
+      p.set(x + 2, y, pal.trunkLight);
     }
     for (let y = 28; y < 58; y += 8) {
       const x = 23 + ((y * 5) % 2);
@@ -710,36 +733,52 @@ function birchTree(): THREE.CanvasTexture {
   }, 48, 64);
 }
 
-function oakTree(): THREE.CanvasTexture {
+/**
+ * The colours of a tree. Every island grows its own kind of tree, so the
+ * palette is a parameter and not a set of constants.
+ */
+interface TreePalette {
+  crown: string;
+  crownShade: string;
+  crownLit: string;
+  crownTop: string;
+  edge: string;
+  trunk: string;
+  trunkShade: string;
+  trunkLight: string;
+  accent: string;
+}
+
+function oakTree(pal: TreePalette): THREE.CanvasTexture {
   return bake((p) => {
-    p.ellipse(24, 24, 16, 13, '#3f9a3a');
-    p.ellipse(12, 28, 10, 8, '#2f7a32');
-    p.ellipse(36, 26, 10, 9, '#5cb83a');
-    p.ellipse(24, 14, 9, 7, '#7dce4a');
-    p.outline('#1f4a22');
-    p.line(24, 62, 24, 34, '#6b4630');
-    p.line(23, 62, 23, 40, '#4e3222');
-    p.line(25, 62, 25, 42, '#3b2718');
+    p.ellipse(24, 24, 16, 13, pal.crown);
+    p.ellipse(12, 28, 10, 8, pal.crownShade);
+    p.ellipse(36, 26, 10, 9, pal.crownLit);
+    p.ellipse(24, 14, 9, 7, pal.crownTop);
+    p.outline(pal.edge);
+    p.line(24, 62, 24, 34, pal.trunk);
+    p.line(23, 62, 23, 40, pal.trunkShade);
+    p.line(25, 62, 25, 42, pal.trunkLight);
     p.set(18, 18, '#e8ffc8');
     p.set(30, 20, '#fff');
   }, 48, 64);
 }
 
-function cherryTree(): THREE.CanvasTexture {
+function cherryTree(pal: TreePalette): THREE.CanvasTexture {
   return bake((p) => {
     const puffs: Array<[number, number, number, string]> = [
-      [24, 24, 14, '#ff8fb8'],
-      [12, 28, 10, '#ffb3d0'],
-      [36, 26, 11, '#ff7aa8'],
-      [20, 16, 8, '#ffd0e2'],
-      [32, 15, 8, '#ff9ec4'],
-      [24, 30, 9, '#ff6f9e'],
+      [24, 24, 14, pal.crown],
+      [12, 28, 10, pal.crownLit],
+      [36, 26, 11, pal.crownShade],
+      [20, 16, 8, pal.crownTop],
+      [32, 15, 8, pal.crown],
+      [24, 30, 9, pal.crownShade],
     ];
     for (const [x, y, r, c] of puffs) p.ellipse(x, y, r, r * 0.82, c);
-    p.outline('#c45b86');
-    p.line(24, 62, 24, 36, '#8d5a38');
-    p.line(23, 62, 23, 40, '#6e4128');
-    p.line(25, 62, 25, 42, '#a56b42');
+    p.outline(pal.edge);
+    p.line(24, 62, 24, 36, pal.trunk);
+    p.line(23, 62, 23, 40, pal.trunkShade);
+    p.line(25, 62, 25, 42, pal.trunkLight);
     p.set(18, 18, '#fff');
     p.set(30, 20, '#fff');
     p.set(24, 12, '#fff');
@@ -839,7 +878,7 @@ function boomboxTree(): THREE.CanvasTexture {
   }, 48, 64);
 }
 
-function bush(live: boolean): THREE.CanvasTexture {
+function bush(live: boolean, pal?: TreePalette): THREE.CanvasTexture {
   return bake((p) => {
     if (!live) {
       p.line(8, 20, 16, 8, '#5c5148');
@@ -848,13 +887,16 @@ function bush(live: boolean): THREE.CanvasTexture {
       p.line(16, 16, 10, 12, '#3e352e');
       return;
     }
-    p.ellipse(16, 16, 12, 8, '#7dce4a');
-    p.ellipse(10, 18, 7, 6, '#b6e86a');
-    p.ellipse(22, 18, 6, 5, '#4caf3a');
-    p.outline('#2f7a32');
-    p.set(8, 14, '#ff8fb8');
+    const crown = pal?.crown ?? '#7dce4a';
+    const lit = pal?.crownTop ?? '#b6e86a';
+    const shade = pal?.crownShade ?? '#4caf3a';
+    p.ellipse(16, 16, 12, 8, crown);
+    p.ellipse(10, 18, 7, 6, lit);
+    p.ellipse(22, 18, 6, 5, shade);
+    p.outline(pal?.edge ?? '#2f7a32');
+    p.set(8, 14, pal?.accent ?? '#ff8fb8');
     p.set(18, 12, '#fff');
-    p.set(14, 16, '#7ec8f0');
+    p.set(14, 16, pal?.crownLit ?? '#7ec8f0');
   }, 32, 28);
 }
 
@@ -1380,6 +1422,9 @@ export interface ArtSet {
   deadTree: THREE.CanvasTexture[];
   liveTree: THREE.CanvasTexture[];
   grove: THREE.CanvasTexture[];
+  /** A grove of trees for each island, in the colours of that island. */
+  groveByWorld: THREE.CanvasTexture[][];
+  bushByWorld: THREE.CanvasTexture[];
   money: THREE.CanvasTexture;
   boombox: THREE.CanvasTexture;
   bushDead: THREE.CanvasTexture;
@@ -1479,8 +1524,59 @@ export function getArt(): ArtSet {
       bareTree('#e7d7b8', '#b8a078'),
       bareTree('#6a8a48', '#445828'),
     ],
-    liveTree: [cherryTree(), pineTree('#9be7ff', '#5eb0d4'), cactusTree(), alienTree()],
-    grove: [oakTree(), birchTree(), cherryTree(), pineTree('#3f9a3a', '#1f4a22'), oakTree(), birchTree()],
+    liveTree: [cherryTree(TREE_PALETTES[0]!), pineTree('#9be7ff', '#5eb0d4'), cactusTree(), alienTree()],
+    grove: [
+      oakTree(TREE_PALETTES[0]!),
+      birchTree(TREE_PALETTES[0]!),
+      cherryTree(TREE_PALETTES[0]!),
+      pineTree('#3f9a3a', '#1f4a22'),
+      oakTree(TREE_PALETTES[0]!),
+      birchTree(TREE_PALETTES[0]!),
+    ],
+    groveByWorld: [
+      // The Dead Forest: oak, birch, cherry and pine.
+      [
+        oakTree(TREE_PALETTES[0]!),
+        birchTree(TREE_PALETTES[0]!),
+        cherryTree(TREE_PALETTES[0]!),
+        pineTree('#3f9a3a', '#1f4a22'),
+        oakTree(TREE_PALETTES[0]!),
+        birchTree(TREE_PALETTES[0]!),
+      ],
+      // Frostbite Forest: frosted pines and pale birches.
+      [
+        pineTree('#9be7ff', '#4a7fa8'),
+        pineTree('#cfeef8', '#5f8fa8'),
+        birchTree(TREE_PALETTES[1]!),
+        oakTree(TREE_PALETTES[1]!),
+        pineTree('#8fd4e8', '#3f6a86'),
+        birchTree(TREE_PALETTES[1]!),
+      ],
+      // Parched Desert: cacti and dry, tough trees.
+      [
+        cactusTree(),
+        oakTree(TREE_PALETTES[2]!),
+        pineTree('#9aa83a', '#5f6a22'),
+        cactusTree(),
+        oakTree(TREE_PALETTES[2]!),
+        pineTree('#b6b055', '#6a6a2c'),
+      ],
+      // Toxic Sludge Dump: things that should not be growing.
+      [
+        alienTree(),
+        pineTree('#c084fc', '#5f3a8a'),
+        oakTree(TREE_PALETTES[3]!),
+        alienTree(),
+        pineTree('#7cf0d2', '#2f6a72'),
+        oakTree(TREE_PALETTES[3]!),
+      ],
+    ],
+    bushByWorld: [
+      bush(true, TREE_PALETTES[0]),
+      bush(true, TREE_PALETTES[1]),
+      bush(true, TREE_PALETTES[2]),
+      bush(true, TREE_PALETTES[3]),
+    ],
     money: moneyTree(),
     boombox: boomboxTree(),
     bushDead: bush(false),
