@@ -110,7 +110,68 @@ export interface AchievementDef {
   name: string;
   desc: string;
   reward: number;
+  /** The island this milestone belongs to, if it belongs to one. */
+  island?: number;
+  /** How much of that island has to be green. */
+  goal?: number;
 }
+
+/** How much of an island has to be green for each of its milestones. */
+const MILESTONE_GOALS = [0.25, 0.5, 0.9, 1];
+
+/**
+ * The ids of the "island is green again" milestones. The first four are the
+ * ones the game shipped with, so old saves keep their unlocks.
+ */
+const CLEAR_IDS = ['forest', 'frost', 'oasis', 'clean', 'globe'];
+
+/** Each island's own story, told in four milestones. */
+const ISLAND_STORIES: ReadonlyArray<ReadonlyArray<readonly [string, string]>> = [
+  // The Dead Forest
+  [
+    ['First Shoots', 'A quarter of the Dead Forest is green again.'],
+    ['Half Awake', 'Half the Dead Forest has come back to life.'],
+    ['Almost Home', 'Only the last of the Dead Forest is still thirsty.'],
+    ['Forest Returns', 'The Dead Forest is green again.'],
+  ],
+  // Frostbite Forest
+  [
+    ['First Thaw', 'A quarter of Frostbite Forest has melted back to life.'],
+    ['Half Melted', 'Half the frost is gone from Frostbite Forest.'],
+    ['Last Snow', 'Only the last of Frostbite Forest is still frozen.'],
+    ['Thawed Out', 'The Frostbite Forest is green again.'],
+  ],
+  // Parched Desert
+  [
+    ['First Rain', 'A quarter of the Parched Desert has bloomed.'],
+    ['Half Bloomed', 'Half the Parched Desert is green again.'],
+    ['Last Mirage', 'Only the last of the Parched Desert is still sand.'],
+    ['Oasis Hours', 'The Parched Desert is green again.'],
+  ],
+  // Toxic Sludge Dump
+  [
+    ['First Purge', 'A quarter of the Toxic Sludge Dump is clean.'],
+    ['Half Clean', 'Half the Toxic Sludge Dump no longer stinks.'],
+    ['Last Ledge', 'Only the last of the Toxic Sludge Dump is still foul.'],
+    ['Superfund Babes', 'The Toxic Sludge Dump is green again.'],
+  ],
+  // The Whole World
+  [
+    ['First Continent', 'A quarter of the world is green again.'],
+    ['Half the Planet', 'Half the world has come back to life.'],
+    ['Last Continent', 'Only the last of the world is still dry.'],
+    ['World Reborn', 'The whole world is green again.'],
+  ],
+];
+
+/** What each milestone pays, island by island. */
+const MILESTONE_REWARDS: ReadonlyArray<readonly number[]> = [
+  [10, 25, 60, 220],
+  [25, 60, 140, 480],
+  [50, 120, 280, 900],
+  [120, 320, 750, 2400],
+  [300, 800, 1900, 6000],
+];
 
 export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: 'first-drop', name: 'First Drop', desc: 'Bloom a tile with your own rain.', reward: 3 },
@@ -118,14 +179,30 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: 'koi', name: 'Koi Season', desc: 'Fill a cracked pond.', reward: 120 },
   { id: 'money', name: 'Money Tree', desc: 'Wake a mega flora.', reward: 280 },
   { id: 'friend', name: 'Friend of the Meadow', desc: 'Pet 10 happy animals.', reward: 140 },
-  { id: 'forest', name: 'Forest Returns', desc: 'Reclaim the Dead Forest.', reward: 220 },
-  { id: 'frost', name: 'Thawed Out', desc: 'Reclaim the Frostbite Forest.', reward: 480 },
-  { id: 'oasis', name: 'Oasis Hours', desc: 'Reclaim the Parched Desert.', reward: 900 },
-  { id: 'clean', name: 'Superfund Babes', desc: 'Reclaim the Toxic Sludge Dump.', reward: 2400 },
   { id: 'band', name: 'Dew Bandit', desc: 'Earn 1,000 dew.', reward: 0 },
   { id: 'mogul', name: 'Cloud Mogul', desc: 'Earn 50,000 dew.', reward: 600 },
   { id: 'drip-check', name: 'Big Mood', desc: 'Grow Cloud Puff to rank 4.', reward: 80 },
+  ...ISLAND_STORIES.flatMap((story, island) =>
+    story.map(([name, desc], index) => ({
+      id:
+        index === MILESTONE_GOALS.length - 1
+          ? (CLEAR_IDS[island] ?? `w${island}-100`)
+          : `w${island}-${Math.round(MILESTONE_GOALS[index]! * 100)}`,
+      name,
+      desc,
+      reward: MILESTONE_REWARDS[island]?.[index] ?? 0,
+      island,
+      goal: MILESTONE_GOALS[index]!,
+    })),
+  ),
 ];
+
+/** The island a milestone belongs to, if it is one. */
+export function milestoneIsland(id: string): { island: number; goal: number } | null {
+  const found = ACHIEVEMENTS.find((a) => a.id === id);
+  if (!found || found.island === undefined || found.goal === undefined) return null;
+  return { island: found.island, goal: found.goal };
+}
 
 export const TILE = 3.2;
 export const BASE_LITERS = 260;

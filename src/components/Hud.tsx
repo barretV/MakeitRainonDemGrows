@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RainGame } from '../game/RainGame';
-import { worldDef } from '../game/balance';
+import { milestoneIsland, worldDef } from '../game/balance';
 import { formatDew, walletDew, type HudModel } from '../game/state';
 import { TWEAK_KNOBS } from '../tweak';
 import { Bottle } from './Bottle';
@@ -390,8 +390,8 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
         <p className="results-keyhint pixel" aria-hidden>A / D or arrows · Enter to choose</p>
         <div className="achievements-panel achievements-panel--sheet text-left" ref={bindBars}>
           <div className="results-ach-title">Achievements</div>
-          <ul className="achievements-list achievements-list--grid">
-            {model.achievements.map((a) => {
+          {(() => {
+            const card = (a: (typeof model.achievements)[number]) => {
               const ratio = a.goal > 0 ? Math.max(0, Math.min(1, a.current / a.goal)) : 0;
               return (
                 <li key={a.id} className={a.done ? 'ach-card ach-card--done' : 'ach-card'}>
@@ -407,13 +407,34 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
                     </span>
                   </span>
                   <span className="ach-card__side">
-                    {a.done ? <span className="achievements-list__check">Done</span> : <span className="ach-card__count">{trackText(a.id, a.current, a.goal)}</span>}
+                    {a.done ? (
+                      <span className="achievements-list__check">Done</span>
+                    ) : (
+                      <span className="ach-card__count">{trackText(a.id, a.current, a.goal)}</span>
+                    )}
                     {a.reward > 0 && <span className="ach-card__pay">+{a.reward}</span>}
                   </span>
                 </li>
               );
-            })}
-          </ul>
+            };
+            const plain = model.achievements.filter((a) => a.island === undefined);
+            const islands = Array.from(new Set(model.achievements.map((a) => a.island))).filter(
+              (island): island is number => island !== undefined,
+            );
+            return (
+              <>
+                {plain.length > 0 && <ul className="achievements-list achievements-list--grid">{plain.map(card)}</ul>}
+                {islands.map((island) => (
+                  <div key={island} className="ach-island">
+                    <div className="ach-island__title">{worldDef(island).name}</div>
+                    <ul className="achievements-list achievements-list--grid">
+                      {model.achievements.filter((a) => a.island === island).map(card)}
+                    </ul>
+                  </div>
+                ))}
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -498,7 +519,9 @@ function Worlds({ model, game, start = false }: { model: HudModel; game: RainGam
 }
 
 function trackText(id: string, current: number, goal: number): string {
-  if (id === 'forest' || id === 'frost' || id === 'oasis' || id === 'clean') {
+  // The island milestones are all a share of the island, so they read as a
+  // percentage of what is green.
+  if (milestoneIsland(id)) {
     return `${Math.round(Math.min(1, Math.max(0, current)) * 100)}%`;
   }
   if (goal >= 1000) {
@@ -651,10 +674,20 @@ function AchSvg({ id }: { id: string }) {
           <ellipse cx="11" cy="8" rx="3" ry="2.4" fill="#fff" />
         </svg>
       );
-    default:
+    case 'globe':
       return (
         <svg {...common}>
-          <path d="M8 2c2 3 3 4.2 3 6a3 3 0 0 1-6 0c0-1.8 1-3 3-6Z" fill="#9ee7ff" />
+          <circle cx="8" cy="8" r="5.5" fill="#7ec8f0" />
+          <path d="M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11" stroke="#3f7fa8" strokeWidth="1" />
+          <path d="M4 5.5c2-1.5 6-1.5 8 0" stroke="#b6ff7a" strokeWidth="1.6" />
+        </svg>
+      );
+    default:
+      // The island milestones: a little island with a cloud over it.
+      return (
+        <svg {...common}>
+          <path d="M3 12h10l-2-3H5l-2 3Z" fill="#7dce4a" />
+          <path d="M4.5 8.5h7a3.5 3.5 0 0 0-7 0Z" fill="#e8f4ff" />
         </svg>
       );
   }

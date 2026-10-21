@@ -6,6 +6,7 @@ import {
   type TileSpec,
   gridOf,
   landMask,
+  milestoneIsland,
   tileSpec,
   worldDef,
 } from './balance';
@@ -1437,6 +1438,8 @@ export class SaveState {
     }
     this.rebuildMaskPixels();
     this.refreshGreenFromProgress();
+    this.trackProgress();
+    this.claim();
     this.maskDirty = true;
     this.pulseDirty = true;
   }
@@ -1824,6 +1827,7 @@ export class SaveState {
     }
     for (const hill of hills) this.considerHill(hill);
     if (filled > 0) {
+      this.trackProgress();
       this.claim();
       this.checkRevivalMilestones();
       this.finishIfDone();
@@ -2102,6 +2106,16 @@ export class SaveState {
     if (ratio > this.runReached) this.runReached = ratio;
   }
 
+  /**
+   * Keep the best share of green each island has reached. The island
+   * milestones watch this, so it has to move while the rain falls and not
+   * only when the bottle is empty.
+   */
+  private trackProgress(): void {
+    const ratio = Math.max(this.ratio(), this.runReached);
+    if (ratio > (this.best[this.world] ?? 0)) this.best[this.world] = ratio;
+  }
+
   private noteBest(): void {
     const ratio = Math.max(this.ratio(), this.runReached);
     const before = this.best[this.world] ?? 0;
@@ -2110,6 +2124,11 @@ export class SaveState {
   }
 
   private achievementTrack(id: string): { current: number; goal: number } {
+    const milestone = milestoneIsland(id);
+    if (milestone) {
+      // How much of that island has been green at its best.
+      return { current: this.best[milestone.island] ?? 0, goal: milestone.goal };
+    }
     switch (id) {
       case 'gardener':
         return { current: this.stats.tiles, goal: 80 };
@@ -2187,6 +2206,10 @@ export class SaveState {
   }
 
   private meets(id: string): boolean {
+    const milestone = milestoneIsland(id);
+    if (milestone) {
+      return (this.best[milestone.island] ?? 0) >= milestone.goal;
+    }
     switch (id) {
       case 'first-drop':
         return this.stats.tiles >= 1 && this.runTiles >= 1;

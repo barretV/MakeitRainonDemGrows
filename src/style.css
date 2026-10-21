@@ -1810,6 +1810,21 @@ canvas {
   column-gap: 16px;
 }
 
+/* One block of milestones per island. */
+.ach-island {
+  margin-top: 14px;
+}
+
+.ach-island__title {
+  font-size: 13px;
+  line-height: 1;
+  color: #b6ff7a;
+  text-shadow: 0 2px 0 #070d1f;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(182, 255, 122, 0.22);
+}
+
 .achievements-list {
   list-style: none;
   margin: 4px 0 0;
