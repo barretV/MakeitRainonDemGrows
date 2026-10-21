@@ -10,13 +10,23 @@ interface Toast {
  * this shows them one at a time so a burst of good news is never swallowed by
  * the next line.
  */
-export function HudToast({ toasts }: { toasts: Toast[] }) {
+export function HudToast({ toasts, active }: { toasts: Toast[]; active: boolean }) {
   const [queue, setQueue] = useState<Toast[]>([]);
   const [shown, setShown] = useState<Toast | null>(null);
   const lastSeq = useRef(0);
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
+    if (!active) {
+      setShown(null);
+      setQueue([]);
+      if (timer.current != null) window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }, [active]);
+
+  useEffect(() => {
+    if (!active) return;
     let newest = lastSeq.current;
     const fresh: Toast[] = [];
     for (const toast of toasts) {
@@ -27,10 +37,10 @@ export function HudToast({ toasts }: { toasts: Toast[] }) {
     if (fresh.length === 0) return;
     lastSeq.current = newest;
     setQueue((prev) => [...prev, ...fresh].slice(-8));
-  }, [toasts]);
+  }, [toasts, active]);
 
   useEffect(() => {
-    if (shown || queue.length === 0) return;
+    if (!active || shown || queue.length === 0) return;
     const next = queue[0];
     if (!next) return;
     setShown(next);
@@ -42,9 +52,9 @@ export function HudToast({ toasts }: { toasts: Toast[] }) {
     return () => {
       if (timer.current != null) window.clearTimeout(timer.current);
     };
-  }, [queue, shown]);
+  }, [queue, shown, active]);
 
-  if (!shown) return null;
+  if (!active || !shown) return null;
   const achievement = shown.text.startsWith('Achievement');
   const bloom = shown.text.includes('bloom');
   return (

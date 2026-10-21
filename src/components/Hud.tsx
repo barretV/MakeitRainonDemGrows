@@ -116,7 +116,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
 
   return (
     <div className="pointer-events-none absolute inset-0">
-      <HudToast toasts={model.toasts} />
+      <HudToast toasts={model.toasts} active={playing} />
       {playing && (
         <>
           <div
