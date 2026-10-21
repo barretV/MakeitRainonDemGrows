@@ -38,8 +38,6 @@ const CAM_ZOOM_MAX = 1.85;
  * instead of shrinking the cloud into a speck.
  */
 const CAM_FRAME_SPAN = 19.2;
-/** Where the rig aims relative to the ground it is over: just under the surface. */
-const CAM_LOOK = -0.92;
 /** How high the cloud hovers over the ground, and how much of that is size. */
 const CLOUD_CLEARANCE = 1.35;
 const CLOUD_LIFT = 2.1;
@@ -135,11 +133,12 @@ function boltMaterial(): THREE.ShaderMaterial {
 }
 
 /**
- * Camera pull-back vs puff size. Steps back enough to show more land, but
- * slower than the cloud grows, so a bigger cloud still looks bigger.
+ * Katamari-style pull: distance grows with the cloud, a little slower than
+ * the sprite, so the island shrinks in frame and the face stays readable.
  */
 function growPullForScale(scale: number): number {
-  return Math.pow(Math.max(BASE_SCALE, scale) / BASE_SCALE, 0.55);
+  const t = Math.max(BASE_SCALE, scale) / BASE_SCALE;
+  return Math.pow(t, 0.88);
 }
 
 const TiltShiftShader = {
@@ -984,7 +983,8 @@ export class RainGame {
       });
     }
 
-    this.cloud = this.litBillboard(this.art.cloud.idle, 4.6, 3.0, 0.12);
+    // No fog: a pulled-back camera was dissolving the face into the sky.
+    this.cloud = this.litBillboard(this.art.cloud.idle, 4.6, 3.0, 0.12, true);
     const cloudMat = this.cloud.material as THREE.ShaderMaterial;
     cloudMat.toneMapped = false;
     // The cloud is the player's avatar: a tree, the hero canopy or a ridge must
@@ -1501,7 +1501,21 @@ export class RainGame {
     // Every boot opens on the world picker: the player picks a land, then it rains.
     this.state.openStart();
     if (fresh) await this.saveNow();
-    this.lastPhase = this.state.phase;
+    // Dev: `?finale` plays the 100% wave from a dry island. `?puff=10` previews the zoom-out.
+    if (import.meta.env.DEV) {
+      const params = new URLSearchParams(window.location.search);
+      const puff = Number(params.get('puff'));
+      if (Number.isFinite(puff) && puff > 0) {
+        this.state.ranks.puff = Math.max(0, Math.min(10, Math.floor(puff)));
+      }
+      if (params.has('finale')) {
+        this.state.screen = 'play';
+        this.state.phase = 'play';
+        this.state.beginFinale();
+        this.lastPhase = 'play';
+      }
+    }
+    if (this.lastPhase !== 'play' || this.state.phase !== 'finale') this.lastPhase = this.state.phase;
     this.audio.setMuted(!this.state.sfx);
     this.audio.setSfxVolume(this.state.sfxVolume);
     this.audio.setMusicVolume(this.state.musicVolume);
@@ -1969,19 +1983,10 @@ export class RainGame {
     const reach = state.reach();
     const cx = focal.x;
     const cz = focal.z;
-    for (let i = 0; i < this.views.length; i += 1) {
-      const view = this.views[i];
-      if (!view) continue;
-      if (!view.dressed) this.dressTile(i);
-      else {
-        view.growStart = this.clock.elapsedTime;
-        view.growT = 0;
-      }
-      const at = this.tilePos(i);
-      this.burst(at.x, 1.15, at.z, 12);
-      state.stampWaveAt(at.x, at.z, 1.35);
-      this.rippleAt(at.x, at.z, '#9ed86a');
-    }
+    // Growth follows the wave. Dressing every tile here pops the whole island at once.
+    this.burst(cx, 1.4, cz, 18);
+    state.stampWaveAt(cx, cz, 1.6);
+    this.rippleAt(cx, cz, '#9ed86a');
     state.maskDirty = true;
     state.pulseDirty = true;
     this.abilityVfx.play('rainbow', cx, 2.4, cz, reach * 1.6);
@@ -3165,17 +3170,17 @@ export class RainGame {
       const spin = finale * 0.48;
       const yaw = finale > 0 ? this.finaleCamYaw0 + spin : this.camYaw;
       const zoom = finale > 0 ? this.finaleCamZoom0 * zoomOut : this.camZoom;
-      const lift = span * 0.42 * zoom * pull;
-      const back = span * 0.92 * zoom * pull;
+      const lift = span * 0.38 * zoom * pull;
+      const back = span * 0.78 * zoom * pull;
       const camOffX = Math.sin(yaw);
       const camOffZ = Math.cos(yaw);
       const targetX = finale > 0 ? this.finaleFocalX + (this.camX - this.finaleFocalX) * (1 - finale * 0.35) : this.camX;
       const targetZ = finale > 0 ? this.finaleFocalZ + (this.camZ - this.finaleFocalZ) * (1 - finale * 0.35) : this.camZ;
-      // The rig rides the ground it is over, so a hill lifts the shot instead of
-      // swallowing the cloud behind the crest. The aim rises with the cloud so a
-      // big cloud keeps the same spot in frame instead of drifting off the top.
+      // Aim just under the cloud so the face stays in frame as it grows,
+      // with the island still filling the view below.
       const grown = this.state?.scale() ?? BASE_SCALE;
-      const targetY = gy + CAM_LOOK + CLOUD_LIFT * (grown - BASE_SCALE);
+      const faceY = gy + CLOUD_CLEARANCE + CLOUD_LIFT * grown;
+      const targetY = faceY - 1.05;
       this.camera.position.set(
         targetX + camOffX * back + jx,
         targetY + lift + jy,
@@ -3648,7 +3653,7 @@ export class RainGame {
     const pull = this.cameraGrowPull(dt);
     if (this.globe) return (9 + 6 / pull) * Math.pow(pull, 0.35);
     // Local rig: the fog band follows the close framing, not the whole island.
-    return clamp(CAM_FRAME_SPAN * 0.42 * pull, 8, 20);
+    return clamp(CAM_FRAME_SPAN * 0.34 * pull, 6.2, 36);
   }
 
   /** Point on a virtual sky shell at the given screen NDC position (sun, clouds, distant islands). */

@@ -864,6 +864,7 @@ export class SaveState {
 
   private syncPhaseAfterLoad(): void {
     if (this.islandRestored()) {
+      this.paintRestoredSurface();
       this.phase = 'clear';
       this.screen = 'results';
       this.toast = `${worldDef(this.world).name} is green again.`;
@@ -1500,14 +1501,14 @@ export class SaveState {
     return { x: sx / n, z: sz / n };
   }
 
-  /** Furthest dry land from the island centre — size of the finale green wave. */
+  /** Furthest visible top from the island centre — size of the finale green wave. */
   islandCoverRadius(): number {
     const focal = this.islandFocal();
     const { cols, rows } = maskOf(this.world);
     let max = 0;
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
-        if (!this.isLand(c, r)) continue;
+        if (!this.isSurface(c, r, cols, rows)) continue;
         const at = this.cellCenter(c, r, cols, rows);
         max = Math.max(max, this.gap(focal.x, focal.z, at.x, at.z));
       }
@@ -1645,7 +1646,7 @@ export class SaveState {
     const centerZ = -TILE / 2 + h * 0.5;
     const x = (col + 0.5) * TILE - TILE / 2;
     const z = (row + 0.5) * TILE - TILE / 2;
-    return islandShore(this.world, x - centerX, z - centerZ, radius) <= 0.16;
+    return islandShore(this.world, x - centerX, z - centerZ, radius) <= 0.26;
   }
 
   /** Average mask soak for one board tile (0–1). Drives staged props before the hill is "green". */
@@ -2273,22 +2274,26 @@ export class SaveState {
     if (this.phase !== 'finale' || radius <= 0) return 0;
     const hp = cellHp(this.world);
     const { cols, rows } = maskOf(this.world);
-    const bounds = this.cellBounds(originX, originZ, radius, cols, rows);
+    const bounds = this.cellBounds(originX, originZ, radius + 0.4, cols, rows);
+    const lead = 2.1;
     let changed = 0;
     for (let r = bounds.minR; r <= bounds.maxR; r += 1) {
       for (let c = bounds.minC; c <= bounds.maxC; c += 1) {
-        if (!this.isLand(c, r)) {
-          if (this.paintFinaleFringe(c, r, cols, rows, originX, originZ, radius)) changed += 1;
-          continue;
-        }
+        if (!this.isSurface(c, r, cols, rows)) continue;
         const at = this.cellCenter(c, r, cols, rows);
         const d = this.gap(originX, originZ, at.x, at.z);
         if (d > radius) continue;
         const i = r * cols + c;
+        const land = this.isLand(c, r);
+        const front = Math.min(1, (radius - d) / lead);
+        if (!land) {
+          const wet = 0.62 + 0.38 * front;
+          if (this.writeMaskWet(i, front >= 1 ? 1 : wet)) changed += 1;
+          continue;
+        }
         const was = this.progress[i] ?? 0;
         if (was >= hp) continue;
-        const edge = 1 - (d / Math.max(0.001, radius));
-        const target = hp * (0.12 + 0.88 * edge * edge);
+        const target = front >= 1 ? hp : hp * (0.58 + 0.42 * front);
         const next = Math.min(hp, Math.max(was, target));
         if (next <= was + 0.002) continue;
         this.setProgress(i, next);
@@ -2304,6 +2309,7 @@ export class SaveState {
           if (hill >= 0) this.syncHillFromMask(hill);
         } else {
           this.pixels[pixel] = Math.min(254, Math.floor((now / hp) * 254));
+          this.pulse[i] = Math.max(this.pulse[i] ?? 0, Math.floor(160 * front));
         }
         changed += 1;
       }
@@ -2314,29 +2320,6 @@ export class SaveState {
       this.pulseDirty = true;
     }
     return changed;
-  }
-
-  /**
-   * Rim columns the cloud can never water (shore just outside the counted
-   * land). Paint the mask only — they must not push the island past 100%.
-   */
-  private paintFinaleFringe(
-    c: number,
-    r: number,
-    cols: number,
-    rows: number,
-    originX: number,
-    originZ: number,
-    radius: number,
-  ): boolean {
-    const shore = this.cellShore(c, r, cols, rows);
-    if (shore < 0 || shore > 0.16) return false;
-    const at = this.cellCenter(c, r, cols, rows);
-    const d = this.gap(originX, originZ, at.x, at.z);
-    if (d > radius) return false;
-    const edge = 1 - d / Math.max(0.001, radius);
-    const wet = Math.min(1, 0.2 + 0.8 * edge * edge);
-    return this.writeMaskWet(r * cols + c, wet);
   }
 
   private cellShore(c: number, r: number, cols: number, rows: number): number {
@@ -2361,42 +2344,47 @@ export class SaveState {
     return true;
   }
 
+  /**
+   * Every column the camera can see as ground, including the noisy shore the
+   * score mask used to leave brown after the island already read 100%.
+   */
+  private isSurface(c: number, r: number, cols: number, rows: number): boolean {
+    if (this.isLand(c, r)) return true;
+    return this.cellShore(c, r, cols, rows) <= 0.26;
+  }
+
+  /** Fill every visible top. Scored land updates progress; the rim is paint-only. */
+  paintRestoredSurface(): void {
+    const hp = cellHp(this.world);
+    const { cols, rows } = maskOf(this.world);
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        if (!this.isSurface(c, r, cols, rows)) continue;
+        const i = r * cols + c;
+        if (!this.isLand(c, r)) {
+          this.writeMaskWet(i, 1);
+          continue;
+        }
+        if ((this.progress[i] ?? 0) < hp) this.setProgress(i, hp);
+        const pixel = i * 4;
+        this.pixels[pixel] = 255;
+        this.pixels[pixel + 1] = 0;
+        this.pixels[pixel + 2] = 0;
+        const hill = this.hillIndex(c, r, cols, rows);
+        if (hill >= 0) this.syncHillFromMask(hill);
+      }
+    }
+    this.recountLand();
+    this.dryCache = null;
+    this.maskDirty = true;
+  }
+
   /** Snap any stragglers to full green before the results screen. */
   sealFinaleLandscape(): void {
     if (this.phase !== 'finale') return;
-    const hp = cellHp(this.world);
-    const { cols, rows } = maskOf(this.world);
-    let changed = 0;
-    for (let r = 0; r < rows; r += 1) {
-      for (let c = 0; c < cols; c += 1) {
-        if (!this.isLand(c, r)) {
-          if (this.writeMaskWet(r * cols + c, this.cellShore(c, r, cols, rows) <= 0.16 ? 1 : 0)) changed += 1;
-          continue;
-        }
-        const i = r * cols + c;
-        const was = this.progress[i] ?? 0;
-        if (was >= hp) continue;
-        this.setProgress(i, hp);
-        const pixel = i * 4;
-        this.pixels[pixel] = 255;
-        this.pixels[pixel + 1] = 255;
-        this.pulse[i] = 255;
-        if (was < hp) this.filled += 1;
-        this.splashRipple(i);
-        const hill = this.hillIndex(c, r, cols, rows);
-        if (hill >= 0) {
-          this.syncHillFromMask(hill);
-          this.considerHill(hill);
-        }
-        changed += 1;
-      }
-    }
+    this.paintRestoredSurface();
     this.trackProgress();
-    if (changed > 0) {
-      this.dryCache = null;
-      this.maskDirty = true;
-      this.pulseDirty = true;
-    }
+    this.pulseDirty = true;
   }
 
   endFinale(): void {
