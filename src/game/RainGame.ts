@@ -12,7 +12,7 @@ import { AbilityVfx } from './abilityVfx';
 import { BASE_SCALE, maskOf, upgradeNode, type NodeId, type Ranks } from './tree';
 import { AudioBus } from './audio';
 import { clearProgress, readProgress, writeProgress } from './save';
-import { SaveState, formatDew, walletDew, type HudModel, type RunPhase, type SoakResult } from './state';
+import { SaveState, formatDew, walletDew, type DryTarget, type HudModel, type RunPhase, type SoakResult } from './state';
 import { loadStowKitPack } from '../loadStowKitPack';
 
 function formatSplashDew(n: number): string {
@@ -54,6 +54,8 @@ const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow
 /** The rain ring is a plane: its face is +Z, and it lies flat when tipped -90° about X. */
 const RING_FACE = new THREE.Vector3(0, 0, 1);
 const RING_AXIS = new THREE.Vector3(1, 0, 0);
+/** How many thirsty pockets can glow at once. */
+const AURA_COUNT = 10;
 
 /** A jagged lightning ribbon, built in the XY plane so the billboard faces the camera. */
 function boltGeometry(height: number, width: number): THREE.BufferGeometry {
@@ -440,6 +442,12 @@ export class RainGame {
   private cloud: THREE.Mesh;
   private curtain: THREE.Mesh;
   private rainRing: THREE.Mesh;
+  private auras: { ring: THREE.Mesh; wisp: THREE.Mesh }[] = [];
+  private aimArrow: THREE.Mesh;
+  private auraTick = 0;
+  private auraTargets: DryTarget[] = [];
+  private auraCells = 0;
+  private auraActive = false;
   private puddle: THREE.Mesh;
   private mountain: THREE.Mesh;
   private spaceDome!: THREE.Mesh;
@@ -451,9 +459,6 @@ export class RainGame {
   private shafts: THREE.Mesh[] = [];
   private sunSpots: { x: number; z: number; w: number }[] = [];
   private sunSpotTick = -1;
-  private thirsts: THREE.Mesh[] = [];
-  private thirstSpots: { x: number; z: number; dry: number }[] = [];
-  private thirstTick = -1;
   private puffs: THREE.Mesh[] = [];
   private puffDrift: number[] = [];
   private softClouds: SoftCloud[] = [];
@@ -613,7 +618,6 @@ export class RainGame {
       pin.userData['gw'] = 0.7;
       pin.userData['ph'] = 18;
       pin.userData['shaftPhase'] = i * 1.4;
-      this.thirsts.push(pin);
       this.scene.add(pin);
     }
 
@@ -1076,6 +1080,65 @@ export class RainGame {
     this.rainRing.renderOrder = 6;
     this.rainRing.visible = false;
     this.scene.add(this.rainRing);
+
+    // The thirst auras: a pool of light on the patches that still need water.
+    const auraRing = this.glowTexture('aura');
+    const auraWisp = this.glowTexture('wisp');
+    for (let i = 0; i < AURA_COUNT; i += 1) {
+      const ring = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({
+          map: auraRing,
+          color: '#bfe9ff',
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.renderOrder = 5;
+      ring.visible = false;
+      this.scene.add(ring);
+      const wisp = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({
+          map: auraWisp,
+          color: '#dff4ff',
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        }),
+      );
+      wisp.userData['bb'] = 1;
+      wisp.renderOrder = 6;
+      wisp.visible = false;
+      this.scene.add(wisp);
+      this.auras.push({ ring, wisp });
+    }
+
+    // An arrow at the screen edge that points at the nearest thirsty patch.
+    const arrowGeo = new THREE.BufferGeometry();
+    arrowGeo.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute([0, 0.5, 0, -0.4, -0.34, 0, 0.4, -0.34, 0], 3),
+    );
+    this.aimArrow = new THREE.Mesh(
+      arrowGeo,
+      new THREE.MeshBasicMaterial({
+        color: '#dff4ff',
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    this.aimArrow.renderOrder = 40;
+    this.aimArrow.visible = false;
+    this.scene.add(this.aimArrow);
 
     this.puddle = new THREE.Mesh(
       new THREE.CircleGeometry(1, 28),
@@ -1680,6 +1743,7 @@ export class RainGame {
       if (mat.uniforms['uSeek']) mat.uniforms['uSeek'].value = clamp((state.ratio() - 0.68) / 0.16, 0, 1);
     }
     this.updateRainRing(raining, state.reach());
+    this.updateAuras(t, dt);
     if (raining) {
       const reach = state.reach();
       const gy = this.globe ? this.cloud.position.y - 1.6 : this.groundY(this.cloudX, this.cloudZ);
@@ -3002,8 +3066,7 @@ export class RainGame {
    * Park the rain ring on a flat plane at the height of the tallest block under
    * the cloud. One level, one clean circle, and nothing slices it.
    */
-  private updateRainRing(raining: boolean, reach: number): void {
-    const mat = this.rainRing.material as THREE.ShaderMaterial;
+  private updateRainRing(raining: boolean, reach: number): void {    const mat = this.rainRing.material as THREE.ShaderMaterial;
     const half = Math.max(0.25, reach * 1.14);
     mat.uniforms['uHalf']!.value = half;
     mat.uniforms['uReach']!.value = reach;
@@ -3024,6 +3087,88 @@ export class RainGame {
       : this.groundY(this.cloudX, this.cloudZ);
     this.rainRing.position.set(this.cloudX, top + 0.08, this.cloudZ);
     this.rainRing.quaternion.setFromAxisAngle(RING_AXIS, -Math.PI / 2);
+  }
+
+  /**
+   * The thirst auras: a soft pool of light on the ground over every pocket
+   * that still needs water, and a beam once the island is nearly done. An arrow
+   * at the screen edge points at the nearest one when it is out of frame.
+   */
+  private updateAuras(t: number, dt: number): void {
+    const state = this.state;
+    if (!state) return;
+    this.auraTick += dt;
+    const survey = state.drySurvey(AURA_COUNT);
+    this.auraTargets = survey.targets;
+    this.auraCells = survey.cells;
+    // The last stretch turns the hint into a beacon. Before that the whole
+    // island is thirsty, so pointing at pockets would be noise.
+    const dryFraction = survey.total > 0 ? survey.cells / survey.total : 0;
+    const show = dryFraction > 0 && dryFraction < 0.15;
+    const nearly = show && dryFraction < 0.05;
+    this.auraActive = show;
+    const pulse = 0.5 + 0.5 * Math.sin(t * (nearly ? 3.4 : 1.5));
+    for (let i = 0; i < this.auras.length; i += 1) {
+      const marker = this.auras[i];
+      const target = show ? survey.targets[i] : undefined;
+      if (!marker || !target) {
+        if (marker) {
+          marker.ring.visible = false;
+          marker.wisp.visible = false;
+        }
+        continue;
+      }
+      const y = this.groundY(target.x, target.z);
+      const size = Math.min(4, 1.8 + Math.sqrt(target.cells) * 0.2);
+      marker.ring.visible = true;
+      marker.ring.position.set(target.x, y + 0.06, target.z);
+      marker.ring.scale.set(size * (1 + pulse * 0.06), size * (1 + pulse * 0.06), 1);
+      const ringMat = marker.ring.material as THREE.MeshBasicMaterial;
+      ringMat.opacity = (nearly ? 0.95 : 0.6) * (0.7 + pulse * 0.3);
+      // The beam stands taller than the trees so it can be seen over the canopy.
+      const beamH = nearly ? 5.4 + Math.min(2.4, target.cells * 0.05) : 2.4 + Math.min(1.6, target.cells * 0.04);
+      marker.wisp.visible = true;
+      marker.wisp.position.set(target.x, y + beamH * 0.5, target.z);
+      marker.wisp.scale.set(nearly ? 1.5 : 0.9, beamH, 1);
+      const wispMat = marker.wisp.material as THREE.MeshBasicMaterial;
+      wispMat.opacity = (nearly ? 1 : 0.5) * (0.65 + pulse * 0.35);
+    }
+    this.updateAimArrow();
+  }
+
+  /** Point the edge arrow at the nearest thirsty patch when it is off screen. */
+  private updateAimArrow(): void {
+    const arrow = this.aimArrow;
+    const target = this.auraTargets[0];
+    if (!target || this.auraCells <= 0 || !this.auraActive) {
+      arrow.visible = false;
+      return;
+    }
+    const world = new THREE.Vector3(target.x, this.groundY(target.x, target.z) + 1.1, target.z);
+    const view = world.clone().applyMatrix4(this.camera.matrixWorldInverse);
+    const behind = view.z > -this.camera.near;
+    const ndc = world.clone().project(this.camera);
+    let nx = ndc.x;
+    let ny = ndc.y;
+    // A target behind the camera mirrors to the opposite edge of the screen.
+    if (behind) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const onScreen = !behind && Math.abs(nx) < 0.88 && Math.abs(ny) < 0.84;
+    if (onScreen) {
+      arrow.visible = false;
+      return;
+    }
+    arrow.visible = true;
+    const dir = new THREE.Vector2(nx, ny);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 1);
+    dir.normalize().multiplyScalar(0.86);
+    const edge = new THREE.Vector3(dir.x, dir.y, 0.5).unproject(this.camera);
+    const forward = edge.sub(this.camera.position).normalize();
+    arrow.position.copy(this.camera.position).addScaledVector(forward, 13);
+    arrow.quaternion.copy(this.camera.quaternion);
+    arrow.rotateZ(Math.atan2(dir.y, dir.x) - Math.PI / 2);
   }
 
   /**
@@ -3214,31 +3359,8 @@ export class RainGame {
         mat.opacity = (0.14 + spot.w * 0.22) * (0.86 + Math.sin(t * 0.65 + phase) * 0.14) * weather;
         shaft.visible = true;
       });
-      const seek = clamp((ratio - 0.68) / 0.16, 0, 1);
-      if (seek > 0.02 && spotTick !== this.thirstTick) {
-        this.thirstTick = spotTick;
-        this.thirstSpots = state.thirstySpots(this.thirsts.length);
-      } else if (seek <= 0.02) {
-        this.thirstSpots = [];
-      }
-      this.thirsts.forEach((pin, i) => {
-        const spot = this.thirstSpots[i];
-        if (!spot || seek <= 0.02) {
-          pin.visible = false;
-          return;
-        }
-        const phase = Number(pin.userData['shaftPhase']) || 0;
-        const x = spot.x + Math.sin(t * 0.4 + phase) * 0.04;
-        const z = spot.z;
-        const gy = this.groundY(x, z);
-        const h = 15 + (i % 2) * 2.2;
-        pin.position.set(x, gy + h * 0.5, z);
-        this.sizeTo(pin, 1.15, h);
-        pin.userData['tiltZ'] = 0;
-        const mat = pin.material as THREE.MeshBasicMaterial;
-        mat.opacity = seek * (0.62 + 0.28 * Math.sin(t * 2.6 + phase));
-        pin.visible = mat.opacity > 0.08;
-      });
+      // The thirst auras take over from here: they point at the pockets that
+      // still need water, and they look nothing like the warm praise shafts.
 
       const bowStrength = clamp((ratio - 0.55) / 0.35, 0, 1);
       const finale = state.phase === 'finale' ? clamp(state.finaleProgress * 2.2, 0, 1) : 0;
@@ -3259,7 +3381,6 @@ export class RainGame {
       this.rainbow.visible = false;
       this.mist.visible = false;
       this.shafts.forEach((shaft) => (shaft.visible = false));
-      this.thirsts.forEach((pin) => (pin.visible = false));
     }
     this.softClouds.forEach((cloud, i) => {
       if (this.globe) {
@@ -3676,10 +3797,10 @@ export class RainGame {
     return step === 1 ? art.flowers : art.twig;
   }
 
-  private glowTexture(kind: 'shaft' | 'soft' | 'mist' | 'halo'): THREE.CanvasTexture {
+  private glowTexture(kind: 'shaft' | 'soft' | 'mist' | 'halo' | 'aura' | 'wisp'): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
-    canvas.width = kind === 'mist' ? 256 : kind === 'halo' ? 128 : 64;
-    canvas.height = kind === 'mist' ? 64 : kind === 'halo' ? 128 : 256;
+    canvas.width = kind === 'mist' ? 256 : kind === 'halo' ? 128 : kind === 'aura' ? 96 : 64;
+    canvas.height = kind === 'mist' ? 64 : kind === 'halo' ? 128 : kind === 'aura' ? 96 : 256;
     const ctx = canvas.getContext('2d');
     if (ctx) {
       if (kind === 'halo') {
@@ -3690,6 +3811,33 @@ export class RainGame {
         rg.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = rg;
         ctx.fillRect(0, 0, 128, 128);
+      } else if (kind === 'aura') {
+        // A cold ring of light on the ground: a bright edge with a soft pool
+        // inside, so it reads on grass as well as on stone.
+        const rg = ctx.createRadialGradient(48, 48, 2, 48, 48, 48);
+        rg.addColorStop(0, 'rgba(150, 220, 255, 0.14)');
+        rg.addColorStop(0.5, 'rgba(170, 230, 255, 0.2)');
+        rg.addColorStop(0.76, 'rgba(214, 246, 255, 0.95)');
+        rg.addColorStop(0.88, 'rgba(180, 235, 255, 0.45)');
+        rg.addColorStop(1, 'rgba(150, 220, 255, 0)');
+        ctx.fillStyle = rg;
+        ctx.fillRect(0, 0, 96, 96);
+      } else if (kind === 'wisp') {
+        // A column of light: bright at the ground, thinning as it rises.
+        for (let y = 0; y < 256; y += 1) {
+          const t = y / 255;
+          const band = Math.pow(t, 0.8);
+          ctx.fillStyle = `rgba(216, 242, 255, ${(0.95 * band).toFixed(3)})`;
+          ctx.fillRect(0, y, 64, 1);
+        }
+        ctx.globalCompositeOperation = 'destination-in';
+        const sideMask = ctx.createLinearGradient(0, 0, 64, 0);
+        sideMask.addColorStop(0, 'rgba(0,0,0,0)');
+        sideMask.addColorStop(0.5, 'rgba(0,0,0,1)');
+        sideMask.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = sideMask;
+        ctx.fillRect(0, 0, 64, 256);
+        ctx.globalCompositeOperation = 'source-over';
       } else if (kind === 'mist') {
         for (let y = 0; y < 64; y += 1) {
           const vy = 1 - Math.abs(y / 63 - 0.5) * 2;

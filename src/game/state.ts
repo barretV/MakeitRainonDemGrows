@@ -68,6 +68,19 @@ export interface TileState {
   cracked: boolean;
 }
 
+/** A pocket of land that still needs water. */
+export interface DryTarget {
+  /** World position of the pocket's centre. */
+  x: number;
+  z: number;
+  /** Mask cells still short inside this pocket. */
+  cells: number;
+  /** 0–1, how thirsty the pocket is. */
+  dry: number;
+  /** 0–1, how close the pocket already is to done. */
+  nearly: number;
+}
+
 export interface RunLogEntry {
   /** Island the bottle was poured on. */
   world: number;
@@ -160,6 +173,12 @@ export interface HudModel {
   spendableBlooms: number;
   /** Every message the game wants to show, oldest first. */
   toasts: { seq: number; text: string }[];
+  /** Mask cells that still need water on this island. */
+  patchesLeft: number;
+  /** Separate pockets of thirsty land. */
+  pocketsLeft: number;
+  /** How much of the island is still thirsty, 0-1. */
+  dryFraction: number;
   nextAbility: string;
   abilityCdNorm: number;
   revivalGlow: number;
@@ -316,6 +335,9 @@ export class SaveState {
   pendingBlooms = 0;
   /** Revival milestone hit this session (percent), waiting for a fanfare. */
   pendingMilestone = 0;
+  /** Cached scan of the thirsty land, so the mask is not walked every frame. */
+  private dryCache: { cells: number; pockets: DryTarget[]; total: number } | null = null;
+  private dryCacheAt = 0;
   achievements: string[] = [];
   sfx = true;
   music = false;
@@ -1354,33 +1376,73 @@ export class SaveState {
    * One pin per pocket so the last percent is somewhere you can see.
    */
   thirstySpots(limit: number): { x: number; z: number; dry: number }[] {
-    if (this.world === GLOBE_WORLD || limit <= 0 || this.ratio() < 0.68) return [];
+    return this.drySurvey(limit).targets.map((t) => ({ x: t.x, z: t.z, dry: t.dry }));
+  }
+
+  /**
+   * Where the land still needs water.
+   *
+   * Groups the thirsty mask cells into pockets so the player can be pointed at
+   * a place rather than a pixel, and counts what is left so the HUD can say
+   * "3 patches" instead of an ambiguous percentage. The scan is cached: it
+   * walks every mask cell, so it must not run every frame.
+   */
+  drySurvey(limit: number): { cells: number; pockets: number; total: number; targets: DryTarget[] } {
+    if (this.world === GLOBE_WORLD || limit <= 0) return { cells: 0, pockets: 0, total: 0, targets: [] };
+    const now = Date.now();
+    if (!this.dryCache || now - this.dryCacheAt > 300) {
+      this.dryCache = this.scanDryPockets();
+      this.dryCacheAt = now;
+    }
+    const cache = this.dryCache;
+    const targets: DryTarget[] = [];
+    for (const target of cache.pockets) {
+      if (targets.some((p) => (p.x - target.x) ** 2 + (p.z - target.z) ** 2 < 36)) continue;
+      targets.push(target);
+      if (targets.length >= limit) break;
+    }
+    return { cells: cache.cells, pockets: cache.pockets.length, total: cache.total, targets };
+  }
+
+  /** One pass over the mask, grouping the thirsty cells into pockets. */
+  private scanDryPockets(): { cells: number; pockets: DryTarget[]; total: number } {
     const { cols, rows } = maskOf(this.world);
     const hp = Math.max(1, cellHp(this.world));
-    const stride = this.ratio() > 0.9 ? 1 : Math.max(1, Math.floor(Math.sqrt((cols * rows) / 8000)));
-    const hits: { x: number; z: number; dry: number }[] = [];
-    for (let r = 0; r < rows; r += stride) {
-      for (let c = 0; c < cols; c += stride) {
-        const wet = Math.min(1, (this.progress[r * cols + c] ?? 0) / hp);
-        if (wet >= 0.88) continue;
+    const bucket = 2.4;
+    const map = new Map<string, { x: number; z: number; cells: number; dry: number; wet: number }>();
+    let cells = 0;
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        const p = this.progress[r * cols + c] ?? 0;
+        if (p >= hp) continue;
+        cells += 1;
         const at = this.cellCenter(c, r, cols, rows);
-        hits.push({ x: at.x, z: at.z, dry: 1 - wet });
-      }
-    }
-    hits.sort((a, b) => b.dry - a.dry);
-    const picked: { x: number; z: number; dry: number }[] = [];
-    for (const hit of hits) {
-      if (picked.length >= limit) break;
-      let crowded = false;
-      for (const spot of picked) {
-        if ((spot.x - hit.x) ** 2 + (spot.z - hit.z) ** 2 < 7.5) {
-          crowded = true;
-          break;
+        const key = `${Math.floor(at.x / bucket)}:${Math.floor(at.z / bucket)}`;
+        const entry = map.get(key);
+        const wet = p / hp;
+        if (entry) {
+          entry.x += at.x;
+          entry.z += at.z;
+          entry.cells += 1;
+          entry.dry += 1 - wet;
+          entry.wet += wet;
+        } else {
+          map.set(key, { x: at.x, z: at.z, cells: 1, dry: 1 - wet, wet });
         }
       }
-      if (!crowded) picked.push(hit);
     }
-    return picked;
+    const pockets: DryTarget[] = [];
+    for (const entry of map.values()) {
+      pockets.push({
+        x: entry.x / entry.cells,
+        z: entry.z / entry.cells,
+        cells: entry.cells,
+        dry: entry.dry / entry.cells,
+        nearly: entry.wet / entry.cells,
+      });
+    }
+    pockets.sort((a, b) => b.cells - a.cells || b.dry - a.dry);
+    return { cells, pockets, total: cols * rows };
   }
 
   /** Average mask soak for one board tile (0–1). Drives staged props before the hill is "green". */
@@ -1498,6 +1560,7 @@ export class SaveState {
       dew: walletDew(this.dew),
       blooms: this.spendableBlooms(),
     };
+    const dry = this.drySurvey(1);
     return {
       ready: true,
       dew: this.dew,
@@ -1548,6 +1611,9 @@ export class SaveState {
       }),
       spendableBlooms: wallet.blooms,
       toasts: this.toastLog.map((t) => ({ ...t })),
+      patchesLeft: dry.cells,
+      pocketsLeft: dry.pockets,
+      dryFraction: dry.total > 0 ? dry.cells / dry.total : 0,
       nextAbility: this.abilityTelegraph().id,
       abilityCdNorm: this.abilityTelegraph().cdNorm,
       revivalGlow: this.phase === 'finale' ? Math.max(this.revivalGlow, 0.85 + this.finaleProgress * 0.4) : this.revivalGlow,

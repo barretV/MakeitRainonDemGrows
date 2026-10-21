@@ -243,6 +243,42 @@ canvas {
   }
 }
 
+.hud-patches {
+  position: absolute;
+  bottom: calc(2.4% + 44px);
+  left: 1.4%;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4em;
+  margin-top: 6px;
+  padding: 6px 11px 7px;
+  border-radius: 4px;
+  background: rgba(8, 26, 20, 0.7);
+  border: 1px solid rgba(150, 255, 200, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(4px);
+}
+
+.hud-patches__count {
+  font-size: clamp(14px, 1.7vw, 20px);
+  font-weight: 700;
+  color: #b6ffd8;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+
+.hud-patches__label {
+  font-size: clamp(9px, 1.05vw, 12px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226, 255, 240, 0.78);
+}
+
+.hud-patches__spots {
+  font-size: clamp(9px, 1vw, 11px);
+  letter-spacing: 0.06em;
+  color: rgba(182, 255, 216, 0.6);
+}
+
 .hud-bottom-bar {
   max-width: min(94vw, 720px);
 }

@@ -561,7 +561,9 @@ const VOXEL_FRAG = /* glsl */ `
     col *= exposure;
     col += vec3(1.0, 0.62, 0.7) * smoothstep(0.08, 0.32, life) * (1.0 - smoothstep(0.55, 0.9, life)) * 0.18;
     col += uSunColor * smoothstep(0.72, 1.0, wrap) * 0.08 * life * (1.0 - uGlobe);
-    float thirsty = uSeek * (1.0 - smoothstep(0.05, 0.48, life));
+    // Thirsty ground shimmers. It keeps shimmering for patches that are nearly
+    // done, so the last few cells of an island never go quiet.
+    float thirsty = uSeek * (1.0 - smoothstep(0.05, 0.92, life));
     float blink = 0.55 + 0.45 * sin(uTime * 2.8 + vWorld.x * 0.9 + vWorld.z * 0.55);
     col = mix(col, vec3(1.0, 0.78, 0.22), thirsty * blink * (vUp > 0.5 ? 0.82 : 0.35));
     if (vUp > 0.5) {
