@@ -334,10 +334,16 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     rectRef.current = { w: r.width, h: r.height, left: r.left, top: r.top };
   };
 
-  const localPt = (clientX: number, clientY: number) => ({
-    x: clientX - rectRef.current.left,
-    y: clientY - rectRef.current.top,
-  });
+  const localPt = (clientX: number, clientY: number) => {
+    const el = canvasRef.current;
+    if (!el) {
+      return { x: clientX - rectRef.current.left, y: clientY - rectRef.current.top };
+    }
+    const r = el.getBoundingClientRect();
+    const sx = r.width / Math.max(1, el.clientWidth);
+    const sy = r.height / Math.max(1, el.clientHeight);
+    return { x: (clientX - r.left) / sx, y: (clientY - r.top) / sy };
+  };
 
   const blocksPan = (target: EventTarget | null) =>
     target instanceof Element &&
@@ -353,54 +359,53 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   };
 
   const attachCanvasGestures = (el: HTMLDivElement) => {
-    const onDown = (e: PointerEvent) => {
-      if (blocksPan(e.target)) return;
-      if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
-      measureCanvasRect(el);
-      const p = localPt(e.clientX, e.clientY);
-      pointersRef.current.set(e.pointerId, p);
-      moved.current = false;
-      tweenRef.current = null;
-      if (pointersRef.current.size === 1) {
-        panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
-        pinchStart.current = null;
-        try {
-          el.setPointerCapture(e.pointerId);
-        } catch {
-          /* ignored */
-        }
-      } else if (pointersRef.current.size === 2) {
-        const pts = [...pointersRef.current.values()];
-        const a = pts[0];
-        const b = pts[1];
-        if (!a || !b) return;
-        pinchStart.current = {
-          dist: Math.hypot(a.x - b.x, a.y - b.y),
-          midX: (a.x + b.x) / 2,
-          midY: (a.y + b.y) / 2,
-          view: { ...viewRef.current },
-        };
-        panStart.current = null;
-        try {
-          el.setPointerCapture(e.pointerId);
-        } catch {
-          /* ignored */
-        }
-      }
+    // The game frame is CSS-scaled. Touch hit-testing inside that transform is
+    // unreliable in the RUN webview (Chimney Fisher keeps its tree outside the
+    // scaled frame). Listen on document so pan/pinch still arrive, and convert
+    // screen pixels back into the frame's layout pixels.
+    const touches = new Map<number, { x: number; y: number }>();
+
+    const toLocal = (clientX: number, clientY: number) => {
+      const r = el.getBoundingClientRect();
+      const sx = r.width / Math.max(1, el.clientWidth);
+      const sy = r.height / Math.max(1, el.clientHeight);
+      rectRef.current = { w: r.width, h: r.height, left: r.left, top: r.top };
+      return { x: (clientX - r.left) / sx, y: (clientY - r.top) / sy };
     };
 
-    const onMove = (e: PointerEvent) => {
-      if (!pointersRef.current.has(e.pointerId)) return;
-      if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
-      measureCanvasRect(el);
-      const p = localPt(e.clientX, e.clientY);
-      pointersRef.current.set(e.pointerId, p);
-      if (pointersRef.current.size >= 2 && pinchStart.current) {
-        const pts = [...pointersRef.current.values()];
+    const overCanvas = (clientX: number, clientY: number) => {
+      const r = el.getBoundingClientRect();
+      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    };
+
+    const armPan = () => {
+      const only = [...touches.values()][0];
+      if (!only) return;
+      panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: only.x, cy: only.y };
+      pinchStart.current = null;
+    };
+
+    const armPinch = () => {
+      const pts = [...touches.values()];
+      const a = pts[0];
+      const b = pts[1];
+      if (!a || !b) return;
+      pinchStart.current = {
+        dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+        midX: (a.x + b.x) / 2,
+        midY: (a.y + b.y) / 2,
+        view: { ...viewRef.current },
+      };
+      panStart.current = null;
+    };
+
+    const applyGesture = () => {
+      if (touches.size >= 2 && pinchStart.current) {
+        const pts = [...touches.values()];
         const a = pts[0];
         const b = pts[1];
         if (!a || !b) return;
-        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
         const midX = (a.x + b.x) / 2;
         const midY = (a.y + b.y) / 2;
         const ps = pinchStart.current;
@@ -410,10 +415,14 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
         viewRef.current = { x: midX - tx * ns, y: midY - ty * ns, s: ns };
         applyTransform();
         moved.current = true;
-      } else if (panStart.current) {
+        return;
+      }
+      if (panStart.current && touches.size === 1) {
+        const p = [...touches.values()][0];
+        if (!p) return;
         const dx = p.x - panStart.current.cx;
         const dy = p.y - panStart.current.cy;
-        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved.current = true;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved.current = true;
         viewRef.current = {
           x: panStart.current.vx + dx,
           y: panStart.current.vy + dy,
@@ -423,42 +432,103 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       }
     };
 
-    const onUp = (e: PointerEvent) => {
-      if (el.hasPointerCapture(e.pointerId)) {
-        try {
-          el.releasePointerCapture(e.pointerId);
-        } catch {
-          /* ignored */
-        }
+    const onTouchStart = (e: TouchEvent) => {
+      let claimed = false;
+      for (const t of Array.from(e.changedTouches)) {
+        if (touches.size === 0 && !overCanvas(t.clientX, t.clientY)) continue;
+        if (touches.size === 0 && blocksPan(e.target)) continue;
+        touches.set(t.identifier, toLocal(t.clientX, t.clientY));
+        claimed = true;
       }
-      pointersRef.current.delete(e.pointerId);
-      if (pointersRef.current.size < 2) pinchStart.current = null;
-      if (pointersRef.current.size === 0) {
+      if (!claimed) return;
+      tweenRef.current = null;
+      if (touches.size === 1) {
+        moved.current = false;
+        armPan();
+      } else if (touches.size >= 2) {
+        e.preventDefault();
+        armPinch();
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (touches.size === 0) return;
+      let tracked = false;
+      for (const t of Array.from(e.touches)) {
+        if (!touches.has(t.identifier)) continue;
+        touches.set(t.identifier, toLocal(t.clientX, t.clientY));
+        tracked = true;
+      }
+      if (!tracked) return;
+      e.preventDefault();
+      applyGesture();
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      for (const t of Array.from(e.changedTouches)) touches.delete(t.identifier);
+      if (touches.size >= 2) armPinch();
+      else if (touches.size === 1) armPan();
+      else {
+        pinchStart.current = null;
         panStart.current = null;
         persistView();
       }
     };
 
-    const passiveFalse = { passive: false } as const;
-    el.addEventListener('pointerdown', onDown, passiveFalse);
-    el.addEventListener('pointermove', onMove, passiveFalse);
-    el.addEventListener('pointerup', onUp);
-    el.addEventListener('pointercancel', onUp);
-    window.addEventListener('pointermove', onMove, passiveFalse);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    const onResize = () => measureCanvasRect(el);
-    window.addEventListener('resize', onResize);
+    const onMouseDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      if (blocksPan(e.target)) return;
+      if (!overCanvas(e.clientX, e.clientY)) return;
+      const p = toLocal(e.clientX, e.clientY);
+      pointersRef.current.set(e.pointerId, p);
+      moved.current = false;
+      tweenRef.current = null;
+      panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
+    };
+
+    const onMouseMove = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || !pointersRef.current.has(e.pointerId) || !panStart.current) return;
+      const p = toLocal(e.clientX, e.clientY);
+      pointersRef.current.set(e.pointerId, p);
+      const dx = p.x - panStart.current.cx;
+      const dy = p.y - panStart.current.cy;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved.current = true;
+      viewRef.current = {
+        x: panStart.current.vx + dx,
+        y: panStart.current.vy + dy,
+        s: viewRef.current.s,
+      };
+      applyTransform();
+    };
+
+    const onMouseUp = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      if (!pointersRef.current.has(e.pointerId)) return;
+      pointersRef.current.delete(e.pointerId);
+      panStart.current = null;
+      persistView();
+    };
+
+    const capture = { capture: true, passive: false } as const;
+    document.addEventListener('touchstart', onTouchStart, capture);
+    document.addEventListener('touchmove', onTouchMove, capture);
+    document.addEventListener('touchend', onTouchEnd, capture);
+    document.addEventListener('touchcancel', onTouchEnd, capture);
+    window.addEventListener('pointerdown', onMouseDown);
+    window.addEventListener('pointermove', onMouseMove);
+    window.addEventListener('pointerup', onMouseUp);
+    window.addEventListener('pointercancel', onMouseUp);
 
     return () => {
-      el.removeEventListener('pointerdown', onDown);
-      el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerup', onUp);
-      el.removeEventListener('pointercancel', onUp);
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      window.removeEventListener('resize', onResize);
+      document.removeEventListener('touchstart', onTouchStart, capture);
+      document.removeEventListener('touchmove', onTouchMove, capture);
+      document.removeEventListener('touchend', onTouchEnd, capture);
+      document.removeEventListener('touchcancel', onTouchEnd, capture);
+      window.removeEventListener('pointerdown', onMouseDown);
+      window.removeEventListener('pointermove', onMouseMove);
+      window.removeEventListener('pointerup', onMouseUp);
+      window.removeEventListener('pointercancel', onMouseUp);
+      touches.clear();
     };
   };
 

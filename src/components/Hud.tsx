@@ -115,7 +115,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
   const jugScale = 0.88 + Math.min(0.22, Math.max(0, (model.liters - 260) / 900) * 0.22);
 
   return (
-    <div className="pointer-events-none absolute inset-0">
+    <div className="pointer-events-none absolute inset-0 z-10">
       <HudToast toasts={model.toasts} active={playing} />
       {playing && (
         <>

@@ -54,7 +54,7 @@ function App() {
       </div>
       <div id="app-frame" ref={bindFrame}>
         <div id="app-frame-inner">
-          <div ref={mount} className="absolute inset-0" />
+          <div ref={mount} className="absolute inset-0 z-0" />
           {model?.ready && gameRef.current && <Hud model={model} game={gameRef.current} />}
         </div>
       </div>

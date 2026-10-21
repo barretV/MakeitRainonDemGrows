@@ -766,6 +766,8 @@ canvas {
 
 /* Workshop upgrade tree — pan/zoom canvas, no scrollbars */
 .workshop {
+  z-index: 30;
+  touch-action: none;
   background: linear-gradient(180deg, rgba(36, 28, 52, 0.94) 0%, rgba(18, 16, 28, 0.96) 100%);
 }
 

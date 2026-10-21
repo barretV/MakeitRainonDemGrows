@@ -4196,6 +4196,10 @@ export class RainGame {
       pond = state.pondFill(center);
     }
     const sleepy = state.tank <= 0.01;
+    // Menus sit on top of the WebGL canvas. Leave it click-through or it eats
+    // workshop drags and pinches in the mobile webview.
+    const playing = state.screen === 'play';
+    this.renderer.domElement.style.pointerEvents = playing ? 'auto' : 'none';
     if (force || this.hudAcc >= 0) {
       this.onHud(
         state.snapshot({
