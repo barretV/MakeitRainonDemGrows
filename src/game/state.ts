@@ -465,6 +465,7 @@ export class SaveState {
           Array.isArray(data.lands)
         ) {
           s.importLands(data.lands);
+          s.correctSavedBests();
         }
         if (data.v === 4 || data.v === 5) {
           // The petal shop is gone: its purchases become bloom branch ranks.
@@ -748,19 +749,72 @@ export class SaveState {
     this.waves = [];
     this.growthPulses = [];
     this.pulse.fill(0);
+    // Ocean progress used to inflate the percentage. Drop it before the pixels rebuild.
+    this.scrubSea();
     this.rebuildMaskPixels();
     this.refreshGreenFromProgress();
-    // Cache the mask totals so the ratio never walks every cell.
-    const hp = cellHp(world);
+    this.recountLand();
+  }
+
+  /**
+   * The sea is not part of the island. Spill used to soak it anyway, and those
+   * cells were added to the restored total, so a half-brown island could read 100%.
+   */
+  private scrubSea(): void {
+    const { cols, rows } = maskOf(this.world);
+    const land = this.landOf(this.world, cols, rows);
+    for (let i = 0; i < this.progress.length; i += 1) {
+      if (land[i]) continue;
+      this.progress[i] = 0;
+    }
+  }
+
+  /**
+   * Saved bests were written from the inflated total. Pull each one back to
+   * the land that is actually green, and forget ocean progress on the way.
+   */
+  private correctSavedBests(): void {
+    for (let world = 0; world <= GLOBE_WORLD; world += 1) {
+      const pack = this.lands.get(world);
+      if (!pack) continue;
+      const { cols, rows } = maskOf(world);
+      const land = this.landOf(world, cols, rows);
+      const hp = cellHp(world);
+      let sum = 0;
+      let count = 0;
+      const n = Math.min(land.length, pack.progress.length);
+      for (let i = 0; i < n; i += 1) {
+        if (!land[i]) {
+          pack.progress[i] = 0;
+          continue;
+        }
+        count += 1;
+        sum += Math.min(hp, pack.progress[i] ?? 0);
+      }
+      const real = count > 0 ? sum / (count * hp) : 0;
+      if ((this.best[world] ?? 0) > real) this.best[world] = real;
+    }
+  }
+
+  /** Restored total for land cells only. Also pulls a saved best back down if the sea had inflated it. */
+  private recountLand(): void {
+    const { cols, rows } = maskOf(this.world);
+    const land = this.landOf(this.world, cols, rows);
+    const hp = cellHp(this.world);
     let sum = 0;
     let full = 0;
+    let count = 0;
     for (let i = 0; i < this.progress.length; i += 1) {
+      if (!land[i]) continue;
+      count += 1;
       const value = Math.min(hp, this.progress[i] ?? 0);
       sum += value;
       if (value >= hp) full += 1;
     }
     this.progressSum = sum;
     this.filled = full;
+    const real = count > 0 ? sum / (count * hp) : 0;
+    if ((this.best[this.world] ?? 0) > real) this.best[this.world] = real;
   }
 
   private createLandPack(world: number): LandPack {
@@ -888,6 +942,7 @@ export class SaveState {
     let done = 0;
     for (let r = r0; r < r1; r += 1) {
       for (let c = c0; c < c1; c += 1) {
+        if (!this.isLand(c, r)) continue;
         seen += 1;
         if ((this.progress[r * maskCols + c] ?? 0) >= hp) done += 1;
       }
@@ -1534,6 +1589,7 @@ export class SaveState {
     let seen = 0;
     for (let r = r0; r < r1; r += 1) {
       for (let c = c0; c < c1; c += 1) {
+        if (!this.isLand(c, r)) continue;
         seen += 1;
         sum += Math.min(hp, this.progress[r * maskCols + c] ?? 0) / hp;
       }
@@ -1570,6 +1626,7 @@ export class SaveState {
     let seen = 0;
     for (let r = r0; r < r1; r += 1) {
       for (let c = c0; c < c1; c += 1) {
+        if (!this.isLand(c, r)) continue;
         seen += 1;
         sum += growthStage(this.progress[r * maskCols + c] ?? 0, hp);
       }
@@ -1798,6 +1855,7 @@ export class SaveState {
           const nc = c0 + dc;
           const nr = r0 + dr;
           if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+          if (!this.isLand(nc, nr)) continue;
           const ni = nr * cols + nc;
           if ((this.progress[ni] ?? 0) >= hp) continue;
           const at = this.cellCenter(nc, nr, cols, rows);
@@ -1926,6 +1984,7 @@ export class SaveState {
       const nr = pair[1];
       if (nc === undefined || nr === undefined) continue;
       if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+      if (!this.isLand(nc, nr)) continue;
       if (respectPatches && hash01(nc, nr) < gate) continue;
       const i = nr * cols + nc;
       const was = this.progress[i] ?? 0;
@@ -1992,6 +2051,7 @@ export class SaveState {
     let done = 0;
     for (let r = r0; r < r1; r += 1) {
       for (let c = c0; c < c1; c += 1) {
+        if (!this.isLand(c, r)) continue;
         seen += 1;
         if ((this.progress[r * maskCols + c] ?? 0) >= hp) done += 1;
       }
