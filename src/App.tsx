@@ -20,7 +20,7 @@ function App() {
 
   return (
     <div className="flex h-full w-full items-center justify-center bg-[#241528]">
-      <div className="relative aspect-video w-[min(100vw,calc(100vh*16/9))] overflow-hidden bg-[#f3d5e4] shadow-[0_0_0_8px_#1a1020]">
+      <div className="relative aspect-[9/16] w-[min(100vw,calc(100vh*9/16),720px)] max-h-[min(100vh,1280px)] overflow-hidden bg-[#f3d5e4] shadow-[0_0_0_8px_#1a1020]">
         <div ref={mount} className="absolute inset-0" />
         {model?.ready && gameRef.current && <Hud model={model} game={gameRef.current} />}
       </div>

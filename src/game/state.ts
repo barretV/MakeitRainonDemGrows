@@ -153,6 +153,8 @@ export interface HudModel {
   nextLocked: boolean;
   sfx: boolean;
   music: boolean;
+  sfxVolume: number;
+  musicVolume: number;
   toast: string;
   boost: boolean;
   pond: number | null;
@@ -213,6 +215,8 @@ interface PersistedV6 {
   lands: PersistedLand[];
   sfx: boolean;
   music: boolean;
+  sfxVolume?: number;
+  musicVolume?: number;
   lastSave: number;
 }
 
@@ -348,6 +352,10 @@ export class SaveState {
   achievements: string[] = [];
   sfx = true;
   music = true;
+  /** How loud the effects are, 0 to 1. */
+  sfxVolume = 1;
+  /** How loud the music bed is, 0 to 1. */
+  musicVolume = 1;
   lastSave = Date.now();
   /** Latest message. Every write also lands in the toast log so the HUD can
    * show them one at a time instead of overwriting each other. */
@@ -1720,6 +1728,8 @@ export class SaveState {
       canNext: this.world < GLOBE_WORLD,
       nextLocked: this.world < GLOBE_WORLD && this.world + 1 > this.unlocked,
       sfx: this.sfx,
+      sfxVolume: this.sfxVolume,
+      musicVolume: this.musicVolume,
       music: extra.music,
       toast: this.toast,
       boost: false,
@@ -2179,12 +2189,93 @@ export class SaveState {
     this.phase = 'finale';
     this.screen = 'play';
     this.finaleProgress = 0;
-    this.revivalGlow = 1.5;
+    this.revivalGlow = 0.45;
     this.toast = '';
+    this.dryCache = null;
+  }
+
+  /**
+   * During the 100% spectacle, a wave of life sweeps across whatever dry land
+   * is still left so the island reads fully restored, not “mostly green.”
+   */
+  applyFinaleWave(originX: number, originZ: number, radius: number): number {
+    if (this.phase !== 'finale' || radius <= 0) return 0;
+    const hp = cellHp(this.world);
+    const { cols, rows } = maskOf(this.world);
+    const bounds = this.cellBounds(originX, originZ, radius, cols, rows);
+    let changed = 0;
+    for (let r = bounds.minR; r <= bounds.maxR; r += 1) {
+      for (let c = bounds.minC; c <= bounds.maxC; c += 1) {
+        if (!this.isLand(c, r)) continue;
+        const at = this.cellCenter(c, r, cols, rows);
+        const d = this.gap(originX, originZ, at.x, at.z);
+        if (d > radius) continue;
+        const i = r * cols + c;
+        const was = this.progress[i] ?? 0;
+        if (was >= hp) continue;
+        const edge = 1 - (d / Math.max(0.001, radius));
+        const target = hp * (0.12 + 0.88 * edge * edge);
+        const next = Math.min(hp, Math.max(was, target));
+        if (next <= was + 0.002) continue;
+        this.setProgress(i, next);
+        const now = this.progress[i] ?? 0;
+        const pixel = i * 4;
+        if (now >= hp) {
+          this.pixels[pixel] = 255;
+          this.pixels[pixel + 1] = 255;
+          this.pulse[i] = 255;
+          if (was < hp) this.filled += 1;
+          this.splashRipple(i);
+          const hill = this.hillIndex(c, r, cols, rows);
+          if (hill >= 0) this.syncHillFromMask(hill);
+        } else {
+          this.pixels[pixel] = Math.min(254, Math.floor((now / hp) * 254));
+        }
+        changed += 1;
+      }
+    }
+    if (changed > 0) {
+      this.dryCache = null;
+      this.maskDirty = true;
+      this.pulseDirty = true;
+    }
+    return changed;
+  }
+
+  /** Snap any stragglers to full green before the results screen. */
+  sealFinaleLandscape(): void {
+    if (this.phase !== 'finale') return;
+    const hp = cellHp(this.world);
+    const { cols, rows } = maskOf(this.world);
+    let changed = 0;
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        if (!this.isLand(c, r)) continue;
+        const i = r * cols + c;
+        const was = this.progress[i] ?? 0;
+        if (was >= hp) continue;
+        this.setProgress(i, hp);
+        const pixel = i * 4;
+        this.pixels[pixel] = 255;
+        this.pixels[pixel + 1] = 255;
+        this.pulse[i] = 255;
+        this.filled += 1;
+        this.splashRipple(i);
+        const hill = this.hillIndex(c, r, cols, rows);
+        if (hill >= 0) this.syncHillFromMask(hill);
+        changed += 1;
+      }
+    }
+    if (changed > 0) {
+      this.dryCache = null;
+      this.maskDirty = true;
+      this.pulseDirty = true;
+    }
   }
 
   endFinale(): void {
     if (this.phase !== 'finale') return;
+    this.sealFinaleLandscape();
     this.phase = 'clear';
     this.finaleProgress = 1;
     this.noteBest();

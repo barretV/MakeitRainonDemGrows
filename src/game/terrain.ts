@@ -612,7 +612,7 @@ const VOXEL_FRAG = /* glsl */ `
     // done, so the last few cells of an island never go quiet.
     float thirsty = uSeek * (1.0 - smoothstep(0.05, 0.92, life));
     float blink = 0.55 + 0.45 * sin(uTime * 2.8 + vWorld.x * 0.9 + vWorld.z * 0.55);
-    col = mix(col, vec3(1.0, 0.78, 0.22), thirsty * blink * (vUp > 0.5 ? 0.82 : 0.35));
+    col = mix(col, vec3(0.72, 0.88, 0.62), thirsty * blink * (vUp > 0.5 ? 0.28 : 0.12));
     if (vUp > 0.5) {
       float cd = length(vWorld.xz - uCloud.xy);
       float shadow = (1.0 - smoothstep(uCloud.z * 0.28, uCloud.z, cd)) * (1.0 - uGlobe);

@@ -1421,10 +1421,17 @@ canvas {
 }
 
 .results-card {
-  width: min(760px, 100%);
-  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 420px);
+  max-height: min(96dvh, 100%);
   overflow: hidden;
-  padding: 12px 14px 10px;
+  padding: 10px 12px 8px;
+  gap: 6px;
+}
+
+.results-card__head {
+  flex: 0 0 auto;
 }
 
 .results-card .menu-card__title {
@@ -1789,12 +1796,22 @@ canvas {
 }
 
 .achievements-panel--sheet {
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: none;
-  overflow: visible;
-  margin-top: 6px;
-  padding: 6px 10px 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-top: 2px;
+  padding: 6px 8px 4px;
   background: #0b1022;
   border: 2px solid #6d84c4;
+  -webkit-overflow-scrolling: touch;
+}
+
+.achievements-list--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .results-ach-title {
@@ -1829,6 +1846,19 @@ canvas {
   list-style: none;
   margin: 4px 0 0;
   padding: 0;
+}
+
+.achievements-list--stack .ach-card {
+  padding: 4px 2px;
+}
+
+.achievements-list--stack .achievements-list__name {
+  font-size: 13px;
+}
+
+.achievements-list--stack .achievements-list__desc {
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .achievements-list__name {

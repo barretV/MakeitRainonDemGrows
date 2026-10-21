@@ -352,90 +352,86 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
     requestAnimationFrame(() => el.focus({ preventScroll: true }));
   }, []);
 
+  const islandAchievements = useMemo(
+    () => model.achievements.filter((a) => a.island === model.worldIndex),
+    [model.achievements, model.worldIndex],
+  );
+
   return (
     <div ref={bindResultsVeil} className="menu-veil menu-veil--results pointer-events-auto" tabIndex={-1}>
       <div className="menu-card menu-card--pop results-card text-center">
-        <div className="menu-card__title">{model.cleared ? 'A living world' : 'Bottle empty'}</div>
-        <p className="menu-card__sub">{model.worldName}</p>
-        <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
-        {model.runDew > 0 && (
-          <p className="results-earned">Rain earned {formatDew(model.runDew)} dew · {model.runBlooms > 0 ? `${model.runBlooms} bloom${model.runBlooms > 1 ? 's' : ''} · ` : ''}{model.runTiles} patches</p>
-        )}
-        <div className="results-stats">
-          <Stat label="This bottle" value="" count={model.runDew} suffix=" dew" />
-          <Stat
-            label="Reached"
-            value={pct}
-            tag={model.newBest ? 'New best' : reached > 0.0005 && reached + 0.0005 >= model.best ? 'Personal best' : undefined}
-            hot={model.newBest}
-          />
-          <Stat label="Best" value={best} />
+        <div className="results-card__head">
+          <div className="menu-card__title">{model.cleared ? 'A living world' : 'Bottle empty'}</div>
+          <p className="menu-card__sub">{model.worldName}</p>
+          <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
+          {model.runDew > 0 && (
+            <p className="results-earned">
+              Rain earned {formatDew(model.runDew)} dew
+              {model.runBlooms > 0 ? ` · ${model.runBlooms} bloom${model.runBlooms > 1 ? 's' : ''}` : ''} · {model.runTiles}{' '}
+              patches
+            </p>
+          )}
+          <div className="results-stats">
+            <Stat label="This bottle" value="" count={model.runDew} suffix=" dew" />
+            <Stat
+              label="Reached"
+              value={pct}
+              tag={model.newBest ? 'New best' : reached > 0.0005 && reached + 0.0005 >= model.best ? 'Personal best' : undefined}
+              hot={model.newBest}
+            />
+            <Stat label="Best" value={best} />
+          </div>
+          <div className="results-actions" role="toolbar" aria-label="Results actions">
+            {actions.map((action, i) => (
+              <ResultsAction
+                key={action.id}
+                selected={i === focusIdx}
+                onClick={() => {
+                  focusRef.current = i;
+                  setFocus(i);
+                  game.audio.ui();
+                  action.run();
+                }}
+              >
+                {action.label}
+              </ResultsAction>
+            ))}
+          </div>
+          <p className="results-keyhint pixel" aria-hidden>A / D or arrows · Enter to choose</p>
         </div>
-        <div className="results-actions" role="toolbar" aria-label="Results actions">
-          {actions.map((action, i) => (
-            <ResultsAction
-              key={action.id}
-              selected={i === focusIdx}
-              onClick={() => {
-                focusRef.current = i;
-                setFocus(i);
-                game.audio.ui();
-                action.run();
-              }}
-            >
-              {action.label}
-            </ResultsAction>
-          ))}
-        </div>
-        <p className="results-keyhint pixel" aria-hidden>A / D or arrows · Enter to choose</p>
-        <div className="achievements-panel achievements-panel--sheet text-left" ref={bindBars}>
-          <div className="results-ach-title">Achievements</div>
-          {(() => {
-            const card = (a: (typeof model.achievements)[number]) => {
-              const ratio = a.goal > 0 ? Math.max(0, Math.min(1, a.current / a.goal)) : 0;
-              return (
-                <li key={a.id} className={a.done ? 'ach-card ach-card--done' : 'ach-card'}>
-                  <AchIcon id={a.id} />
-                  <span className="ach-card__copy">
-                    <span className="achievements-list__name">{a.name}</span>
-                    <span className="achievements-list__desc">{a.desc}</span>
-                    <span className="ach-meter" aria-hidden>
-                      <span
-                        className={barsOn ? 'ach-meter__fill ach-meter__fill--on' : 'ach-meter__fill'}
-                        style={{ ['--p' as string]: String(a.done ? 1 : ratio) }}
-                      />
+        {islandAchievements.length > 0 && (
+          <div className="achievements-panel achievements-panel--sheet text-left" ref={bindBars}>
+            <div className="results-ach-title">{model.worldName} milestones</div>
+            <ul className="achievements-list achievements-list--stack">
+              {islandAchievements.map((a) => {
+                const ratio = a.goal > 0 ? Math.max(0, Math.min(1, a.current / a.goal)) : 0;
+                return (
+                  <li key={a.id} className={a.done ? 'ach-card ach-card--done' : 'ach-card'}>
+                    <AchIcon id={a.id} />
+                    <span className="ach-card__copy">
+                      <span className="achievements-list__name">{a.name}</span>
+                      <span className="achievements-list__desc">{a.desc}</span>
+                      <span className="ach-meter" aria-hidden>
+                        <span
+                          className={barsOn ? 'ach-meter__fill ach-meter__fill--on' : 'ach-meter__fill'}
+                          style={{ ['--p' as string]: String(a.done ? 1 : ratio) }}
+                        />
+                      </span>
                     </span>
-                  </span>
-                  <span className="ach-card__side">
-                    {a.done ? (
-                      <span className="achievements-list__check">Done</span>
-                    ) : (
-                      <span className="ach-card__count">{trackText(a.id, a.current, a.goal)}</span>
-                    )}
-                    {a.reward > 0 && <span className="ach-card__pay">+{a.reward}</span>}
-                  </span>
-                </li>
-              );
-            };
-            const plain = model.achievements.filter((a) => a.island === undefined);
-            const islands = Array.from(new Set(model.achievements.map((a) => a.island))).filter(
-              (island): island is number => island !== undefined,
-            );
-            return (
-              <>
-                {plain.length > 0 && <ul className="achievements-list achievements-list--grid">{plain.map(card)}</ul>}
-                {islands.map((island) => (
-                  <div key={island} className="ach-island">
-                    <div className="ach-island__title">{worldDef(island).name}</div>
-                    <ul className="achievements-list achievements-list--grid">
-                      {model.achievements.filter((a) => a.island === island).map(card)}
-                    </ul>
-                  </div>
-                ))}
-              </>
-            );
-          })()}
-        </div>
+                    <span className="ach-card__side">
+                      {a.done ? (
+                        <span className="achievements-list__check">Done</span>
+                      ) : (
+                        <span className="ach-card__count">{trackText(a.id, a.current, a.goal)}</span>
+                      )}
+                      {a.reward > 0 && <span className="ach-card__pay">+{a.reward}</span>}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

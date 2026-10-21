@@ -1803,7 +1803,15 @@ export class RainGame {
     this.curtain.visible = raining;
     this.puddle.visible = false;
     for (const mat of this.maskMats) {
-      if (mat.uniforms['uSeek']) mat.uniforms['uSeek'].value = clamp((state.ratio() - 0.68) / 0.16, 0, 1);
+      if (!mat.uniforms['uSeek']) continue;
+      if (state.phase === 'finale') {
+        mat.uniforms['uSeek'].value = 0;
+      } else {
+        const ratio = state.ratio();
+        const seek = clamp((ratio - 0.7) / 0.12, 0, 1);
+        const fade = 1 - clamp((ratio - 0.84) / 0.1, 0, 1);
+        mat.uniforms['uSeek'].value = seek * fade * 0.55;
+      }
     }
     this.updateRainRing(raining, state.reach());
     this.updateAuras(t, dt);
@@ -1925,7 +1933,7 @@ export class RainGame {
       const at = this.tilePos(i);
       this.burst(at.x, 1.15, at.z, 12);
       state.stampWaveAt(at.x, at.z, 1.35);
-      this.rippleAt(at.x, at.z, '#ffe56a');
+      this.rippleAt(at.x, at.z, '#9ed86a');
     }
     state.maskDirty = true;
     state.pulseDirty = true;
@@ -1945,6 +1953,15 @@ export class RainGame {
     const cx = this.terrain ? this.terrain.originX + this.terrain.width * 0.5 : this.camX;
     const cz = this.terrain ? this.terrain.originZ + this.terrain.depth * 0.5 : this.camZ;
     const reach = state.reach();
+    const waveEase = state.finaleProgress * state.finaleProgress * (3 - 2 * state.finaleProgress);
+    const waveR = reach * (0.35 + waveEase * 1.55);
+    if (state.applyFinaleWave(cx, cz, waveR) > 0) {
+      this.syncMask();
+      this.syncPulse();
+      for (let i = 0; i < this.views.length; i += 1) {
+        if (state.isRestored(i) && this.views[i] && !this.views[i]!.dressed) this.dressTile(i);
+      }
+    }
     if (prev < 1.1 && this.finaleT >= 1.1) {
       this.audio.bloom();
       this.abilityVfx.play('monsoon', cx, 2.8, cz, reach * 1.4);
@@ -1968,6 +1985,12 @@ export class RainGame {
     if (this.finaleHudAcc > 0.12) {
       this.finaleHudAcc = 0;
       this.pushHud(false);
+    }
+    if (state.finaleProgress >= 0.94 && prev / FINALE_DURATION < 0.94) {
+      state.sealFinaleLandscape();
+      this.syncMask();
+      this.syncPulse();
+      this.syncProps(t);
     }
     if (this.finaleT >= FINALE_DURATION) {
       state.endFinale();
@@ -3028,6 +3051,15 @@ export class RainGame {
   private updateAuras(t: number, dt: number): void {
     const state = this.state;
     if (!state) return;
+    if (state.phase === 'finale') {
+      for (const marker of this.auras) {
+        marker.ring.visible = false;
+        marker.wisp.visible = false;
+      }
+      this.aimArrow.visible = false;
+      this.auraActive = false;
+      return;
+    }
     this.auraTick += dt;
     const survey = state.drySurvey(AURA_COUNT * 4);
     this.auraCells = survey.cells;
@@ -3036,8 +3068,8 @@ export class RainGame {
     // pockets that are left are small and easy to walk past, which is exactly
     // when the player needs telling where to go.
     const reclaimed = state.ratio();
-    const show = reclaimed > 0.4 && reclaimed < 0.985;
-    const nearly = show && reclaimed > 0.9;
+    const show = reclaimed > 0.42 && reclaimed < 0.86;
+    const nearly = show && reclaimed > 0.72 && reclaimed < 0.84;
     // The nearest pocket first: the arrow and the auras should point at the
     // thirsty ground that is closest to the cloud.
     const cloudX = this.cloud.position.x;
@@ -3053,7 +3085,7 @@ export class RainGame {
     const pulse = 0.5 + 0.5 * Math.sin(t * (nearly ? 3.4 : 1.5));
     for (let i = 0; i < this.auras.length; i += 1) {
       const marker = this.auras[i];
-      const target = show ? survey.targets[i] : undefined;
+      const target = show ? this.auraTargets[i] : undefined;
       if (!marker || !target) {
         if (marker) {
           marker.ring.visible = false;
@@ -3072,16 +3104,14 @@ export class RainGame {
       );
       marker.ring.scale.set(size * (1 + pulse * 0.06), size * (1 + pulse * 0.06), 1);
       const ringMat = marker.ring.material as THREE.MeshBasicMaterial;
-      ringMat.opacity = (nearly ? 0.95 : 0.78) * (0.7 + pulse * 0.3);
-      // Only the closest pockets get a beam. A dozen of them would fog the
-      // island up, which is the opposite of the point.
-      const beamH = nearly ? 5.4 + Math.min(2.4, target.cells * 0.05) : 2.4 + Math.min(1.6, target.cells * 0.04);
-      marker.wisp.visible = i < 2 && !this.globe;
+      ringMat.opacity = (nearly ? 0.62 : 0.5) * (0.7 + pulse * 0.25);
+      const beamH = 1.8 + Math.min(1.2, target.cells * 0.035);
+      marker.wisp.visible = i < 1 && !this.globe && nearly;
       if (marker.wisp.visible) {
         marker.wisp.position.set(spot.x, spot.y + beamH * 0.5, spot.z);
-        marker.wisp.scale.set(nearly ? 0.8 : 0.5, beamH, 1);
+        marker.wisp.scale.set(0.42, beamH, 1);
         const wispMat = marker.wisp.material as THREE.MeshBasicMaterial;
-        wispMat.opacity = (nearly ? 0.85 : 0.34) * (0.65 + pulse * 0.35);
+        wispMat.opacity = 0.22 * (0.65 + pulse * 0.35);
       }
     }
     this.updateAimArrow();
