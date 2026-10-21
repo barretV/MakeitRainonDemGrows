@@ -170,13 +170,13 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             </div>
             <ControlHints />
           </div>
-          {model.patchesLeft > 0 && model.dryFraction < 0.25 && (
-            <div className="hud-patches pixel" aria-label={`${model.patchesLeft} patches left to restore`}>
-              <span className="hud-patches__count tabular-nums">{model.patchesLeft}</span>
+          {model.patchesLeft > 0 && model.restored > 0.35 && model.restored < 0.99 && (
+            <div className="hud-patches pixel" aria-label={`${model.pocketsLeft} spots left to restore`}>
+              <span className="hud-patches__count tabular-nums">{model.pocketsLeft}</span>
               <span className="hud-patches__label">
-                {model.patchesLeft === 1 ? 'patch left' : 'patches left'}
+                {model.pocketsLeft === 1 ? 'spot left' : 'spots left'}
               </span>
-              {model.pocketsLeft > 1 && <span className="hud-patches__spots">{model.pocketsLeft} spots</span>}
+              {model.pocketsLeft > 1 && <span className="hud-patches__spots">follow the light</span>}
             </div>
           )}
           {model.nextGoal && (

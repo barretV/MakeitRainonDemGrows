@@ -56,7 +56,9 @@ const easeOutBack = (t: number) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow
 const RING_FACE = new THREE.Vector3(0, 0, 1);
 const RING_AXIS = new THREE.Vector3(1, 0, 0);
 /** How many thirsty pockets can glow at once. */
-const AURA_COUNT = 10;
+const AURA_COUNT = 6;
+/** The face of the aura ring, so it can lie flat on the ground or on the globe. */
+const AURA_NORMAL = new THREE.Vector3(0, 0, 1);
 
 /** A jagged lightning ribbon, built in the XY plane so the billboard faces the camera. */
 function boltGeometry(height: number, width: number): THREE.BufferGeometry {
@@ -146,7 +148,7 @@ const TiltShiftShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
     /** Screen height (0 = bottom) where the far-distance blur starts. */
-    uFocus: { value: 0.84 },
+    uFocus: { value: 0.9 },
     /** The cloud on screen, so the blur never smears the player's own avatar. */
     uCloud: { value: new THREE.Vector2(0.5, 0.5) },
     uCloudSize: { value: new THREE.Vector2(0.08, 0.05) },
@@ -183,7 +185,7 @@ const TiltShiftShader = {
       col /= wsum;
       vec2 vigUv = (vUv - 0.5) * vec2(1.1, 1.2);
       float vig = smoothstep(0.98, 0.32, length(vigUv));
-      col.rgb *= mix(0.82, 1.0, vig);
+      col.rgb *= mix(0.74, 1.0, vig);
       gl_FragColor = col;
     }
   `,
@@ -1104,7 +1106,7 @@ export class RainGame {
         new THREE.PlaneGeometry(1, 1),
         new THREE.MeshBasicMaterial({
           map: auraRing,
-          color: '#bfe9ff',
+          color: '#8fe0ff',
           transparent: true,
           opacity: 0,
           depthWrite: false,
@@ -1112,7 +1114,7 @@ export class RainGame {
           side: THREE.DoubleSide,
         }),
       );
-      ring.rotation.x = -Math.PI / 2;
+      ring.rotation.set(0, 0, 0);
       ring.renderOrder = 5;
       ring.visible = false;
       this.scene.add(ring);
@@ -3176,14 +3178,26 @@ export class RainGame {
     const state = this.state;
     if (!state) return;
     this.auraTick += dt;
-    const survey = state.drySurvey(AURA_COUNT);
-    this.auraTargets = survey.targets;
+    const survey = state.drySurvey(AURA_COUNT * 4);
     this.auraCells = survey.cells;
-    // The last stretch turns the hint into a beacon. Before that the whole
-    // island is thirsty, so pointing at pockets would be noise.
-    const dryFraction = survey.total > 0 ? survey.cells / survey.total : 0;
-    const show = dryFraction > 0 && dryFraction < 0.15;
-    const nearly = show && dryFraction < 0.05;
+    // The hint comes on once the island is mostly green. Before that the
+    // whole island is thirsty and there is nothing to point at; after it the
+    // pockets that are left are small and easy to walk past, which is exactly
+    // when the player needs telling where to go.
+    const reclaimed = state.ratio();
+    const show = reclaimed > 0.4 && reclaimed < 0.985;
+    const nearly = show && reclaimed > 0.9;
+    // The nearest pocket first: the arrow and the auras should point at the
+    // thirsty ground that is closest to the cloud.
+    const cloudX = this.cloud.position.x;
+    const cloudZ = this.cloud.position.z;
+    this.auraTargets = survey.targets
+      .slice()
+      .sort(
+        (a, b) =>
+          (a.x - cloudX) ** 2 + (a.z - cloudZ) ** 2 - ((b.x - cloudX) ** 2 + (b.z - cloudZ) ** 2),
+      )
+      .slice(0, AURA_COUNT);
     this.auraActive = show;
     const pulse = 0.5 + 0.5 * Math.sin(t * (nearly ? 3.4 : 1.5));
     for (let i = 0; i < this.auras.length; i += 1) {
@@ -3196,22 +3210,44 @@ export class RainGame {
         }
         continue;
       }
-      const y = this.groundY(target.x, target.z);
-      const size = Math.min(4, 1.8 + Math.sqrt(target.cells) * 0.2);
+      const spot = this.auraSpot(target.x, target.z);
+      const size = Math.min(2.6, 1.1 + Math.sqrt(target.cells) * 0.1);
       marker.ring.visible = true;
-      marker.ring.position.set(target.x, y + 0.06, target.z);
+      marker.ring.position.set(spot.x, spot.y, spot.z);
+      // The ring lies flat on the ground, or on the curve of the globe.
+      marker.ring.quaternion.setFromUnitVectors(
+        AURA_NORMAL,
+        spot.normal.set(spot.x, spot.y, spot.z).normalize(),
+      );
       marker.ring.scale.set(size * (1 + pulse * 0.06), size * (1 + pulse * 0.06), 1);
       const ringMat = marker.ring.material as THREE.MeshBasicMaterial;
-      ringMat.opacity = (nearly ? 0.95 : 0.6) * (0.7 + pulse * 0.3);
-      // The beam stands taller than the trees so it can be seen over the canopy.
+      ringMat.opacity = (nearly ? 0.95 : 0.78) * (0.7 + pulse * 0.3);
+      // Only the closest pockets get a beam. A dozen of them would fog the
+      // island up, which is the opposite of the point.
       const beamH = nearly ? 5.4 + Math.min(2.4, target.cells * 0.05) : 2.4 + Math.min(1.6, target.cells * 0.04);
-      marker.wisp.visible = true;
-      marker.wisp.position.set(target.x, y + beamH * 0.5, target.z);
-      marker.wisp.scale.set(nearly ? 1.5 : 0.9, beamH, 1);
-      const wispMat = marker.wisp.material as THREE.MeshBasicMaterial;
-      wispMat.opacity = (nearly ? 1 : 0.5) * (0.65 + pulse * 0.35);
+      marker.wisp.visible = i < 2 && !this.globe;
+      if (marker.wisp.visible) {
+        marker.wisp.position.set(spot.x, spot.y + beamH * 0.5, spot.z);
+        marker.wisp.scale.set(nearly ? 0.8 : 0.5, beamH, 1);
+        const wispMat = marker.wisp.material as THREE.MeshBasicMaterial;
+        wispMat.opacity = (nearly ? 0.85 : 0.34) * (0.65 + pulse * 0.35);
+      }
     }
     this.updateAimArrow();
+  }
+
+  /** Where a patch of thirsty ground sits in the world, flat or on the globe. */
+  private auraSpot(x: number, z: number): { x: number; y: number; z: number; normal: THREE.Vector3 } {
+    if (this.globe) {
+      const point = this.lonLatPoint(x, z, 6.9);
+      return { ...point, normal: new THREE.Vector3(point.x, point.y, point.z).normalize() };
+    }
+    return {
+      x,
+      y: this.groundY(x, z) + 0.06,
+      z,
+      normal: new THREE.Vector3(0, 1, 0),
+    };
   }
 
   /** Point the edge arrow at the nearest thirsty patch when it is off screen. */
@@ -3222,7 +3258,8 @@ export class RainGame {
       arrow.visible = false;
       return;
     }
-    const world = new THREE.Vector3(target.x, this.groundY(target.x, target.z) + 1.1, target.z);
+    const spot = this.auraSpot(target.x, target.z);
+    const world = new THREE.Vector3(spot.x, spot.y + 1.1, spot.z);
     const view = world.clone().applyMatrix4(this.camera.matrixWorldInverse);
     const behind = view.z > -this.camera.near;
     const ndc = world.clone().project(this.camera);

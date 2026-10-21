@@ -1457,7 +1457,7 @@ export class SaveState {
    * walks every mask cell, so it must not run every frame.
    */
   drySurvey(limit: number): { cells: number; pockets: number; total: number; targets: DryTarget[] } {
-    if (this.world === GLOBE_WORLD || limit <= 0) return { cells: 0, pockets: 0, total: 0, targets: [] };
+    if (limit <= 0) return { cells: 0, pockets: 0, total: 0, targets: [] };
     const now = Date.now();
     if (!this.dryCache || now - this.dryCacheAt > 300) {
       this.dryCache = this.scanDryPockets();
@@ -1477,12 +1477,16 @@ export class SaveState {
   private scanDryPockets(): { cells: number; pockets: DryTarget[]; total: number } {
     const { cols, rows } = maskOf(this.world);
     const hp = Math.max(1, cellHp(this.world));
+    const land = this.landOf(this.world, cols, rows);
     const bucket = 2.4;
     const map = new Map<string, { x: number; z: number; cells: number; dry: number; wet: number }>();
     let cells = 0;
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
-        const p = this.progress[r * cols + c] ?? 0;
+        const index = r * cols + c;
+        // The sea is not thirsty. Only the island is.
+        if (!land[index]) continue;
+        const p = this.progress[index] ?? 0;
         if (p >= hp) continue;
         cells += 1;
         const at = this.cellCenter(c, r, cols, rows);
@@ -1511,7 +1515,8 @@ export class SaveState {
       });
     }
     pockets.sort((a, b) => b.cells - a.cells || b.dry - a.dry);
-    return { cells, pockets, total: cols * rows };
+    // The total is the land of the island, not the whole grid.
+    return { cells, pockets, total: this.landCells(this.world) };
   }
 
   /** Average mask soak for one board tile (0–1). Drives staged props before the hill is "green". */
