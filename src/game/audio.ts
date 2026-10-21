@@ -9,7 +9,7 @@ export class AudioBus {
   muted = false;
   musicOn = false;
   /** How loud the effects are, 0 to 1. */
-  sfxVolume = 1;
+  sfxVolume = 0.7;
   /** How loud the music bed is, 0 to 1. */
   musicVolume = 1;
   private ctx: AudioContext | null = null;

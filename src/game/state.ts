@@ -353,7 +353,7 @@ export class SaveState {
   sfx = true;
   music = true;
   /** How loud the effects are, 0 to 1. */
-  sfxVolume = 1;
+  sfxVolume = 0.7;
   /** How loud the music bed is, 0 to 1. */
   musicVolume = 1;
   lastSave = Date.now();
@@ -452,7 +452,7 @@ export class SaveState {
       s.music = data.music === true;
       const sfxVolume = (data as { sfxVolume?: unknown }).sfxVolume;
       const musicVolume = (data as { musicVolume?: unknown }).musicVolume;
-      s.sfxVolume = typeof sfxVolume === 'number' ? Math.max(0, Math.min(1, sfxVolume)) : 1;
+      s.sfxVolume = typeof sfxVolume === 'number' ? Math.max(0, Math.min(1, sfxVolume)) : 0.7;
       s.musicVolume = typeof musicVolume === 'number' ? Math.max(0, Math.min(1, musicVolume)) : 1;
       if (data.v === 1) {
         s.dew = 0;
