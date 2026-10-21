@@ -5,9 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "_build": "tsc && vite build",
-    "build": "npm run _build",
-    "build:bundled": "cross-env RUNDOT_GAME_DISABLE_EMBEDDED_LIBS=true npm run _build",
+    "build": "node scripts/build.mjs",
+    "build:bundled": "cross-env RUNDOT_GAME_DISABLE_EMBEDDED_LIBS=true node scripts/build.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && rundot deploy",
     "format": "prettier \"{src,public}/**/*.{ts,tsx,js,jsx,json,css,html}\" --write",
@@ -18,7 +17,8 @@
     "balance:feel": "python balance/feel.py",
     "balance:diagnose": "python balance/diagnose.py",
     "balance:check": "python balance/check_balance.py",
-    "balance:bloom": "python balance/bloom_feel.py"
+    "balance:bloom": "python balance/bloom_feel.py",
+    "build:fast": "node scripts/build.mjs --no-ts"
   },
   "keywords": [
     "react",
