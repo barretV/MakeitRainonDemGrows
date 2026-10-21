@@ -15,3 +15,4 @@ rundot/docs/
 *.stowcache
 !public/cdn-assets/CLAUDE.md
 .rundot/3d-engine-docs
+__pycache__/

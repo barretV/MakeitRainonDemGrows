@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
 """Price the upgrade tree off a fresh island.
 
-Each bottle starts from bare ground. The next ranks you can actually buy are
-priced at most of that bottle's dew (and blooms, when the rank already costs
-blooms), so the shop naturally sells about one upgrade per bottle.
+The shop should sell about one upgrade per bottle, and there should always be
+something in reach: a player who earns dew and has nothing to spend it on feels
+like the game has stopped.
+
+So the tree is priced like this:
+
+1. Play the campaign as the player plays it: everything affordable gets bought.
+   Every purchase is priced at 85% of the money in hand, so the shop always
+   asks for about one bottle of income.
+2. The ranks the campaign never reached are slotted in behind the rank they
+   follow on their branch, and their price is interpolated between the
+   purchases around them. That keeps the ladder dense: no stretch of income is
+   left without a rung in reach, which is what makes an island feel like a
+   stand-still.
+3. The prices and the campaign depend on each other, so the tool plays the
+   campaign, re-prices from what it bought, and plays again until the two agree.
 
     python balance/reprice.py           # print the curve
     python balance/reprice.py --write   # write costs back into src/game/tree.ts
@@ -14,20 +27,43 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import re
 from pathlib import Path
 
+from upgrade_loader import build_maxes
 from game_constants import (
     BLOOM_COSTS,
     COSTS,
     OVERHEAD_SEC,
     PRIORITY_UNIQUE,
+    WORLD_MIN,
     bottle_seconds,
 )
 from sim import cells_per_run, island_blooms, mask_count, new_state, next_buy
 
 # Nodes bought with blooms only: their dew price stays at zero.
 BLOOM_ONLY = ("blush", "bow", "trail", "buddy", "sparkle", "hum", "press")
+
+# How much an un-reached rank costs more than the last one of its branch, when
+# there is no purchase around it to interpolate against.
+TAIL_STEP = float(os.environ.get('TAIL_STEP', '1.12'))
+
+# How much a rank costs more than the rank before it on the same branch.
+RANK_STEP = float(os.environ.get('RANK_STEP', '1.15'))
+
+# What share of the money in hand a purchase costs.
+INCOME_SHARE = 0.85
+
+# How many times the campaign is played while the prices settle.
+ITERATIONS = int(os.environ.get('ITERATIONS', '14'))
+
+# How many ranks one bottle buys while the prices are being worked out. A
+# player takes one upgrade per bottle, not the whole shop.
+BUYS_PER_BOTTLE = 1
+
+# Price a rank against the best the island ever paid, or against the last bottle.
+USE_PEAK = os.environ.get('USE_PEAK', '1') == '1'
 
 ROOT = Path(__file__).resolve().parents[1]
 TREE = ROOT / "src" / "game" / "tree.ts"
@@ -43,231 +79,184 @@ def nice(value: float) -> int:
     return max(1, int(target // step * step))
 
 
-def enforce_one_buy(costs: dict[str, list[int]]) -> None:
-    """Raise any rank that a greedy shop would buy as a second purchase."""
-    for _pass in range(40):
-        state = new_state()
-        dew = 0.0
-        bloom_wallet = 0.0
-        bloom_awarded = 0
-        changed = False
-        for world in range(5):
-            total = mask_count(world)
-            restored = 0.0
-            for _ in range(500):
-                ratio = restored / total if total else 1.0
-                cells, income, _seconds = cells_per_run(state, world, ratio)
-                restored = min(float(total), restored + cells)
-                if total <= 0 or restored / total >= 0.98:
-                    break
-                spendable = dew + income
-                dew += income
-                restored_ratio = restored / total if total else 1.0
-                earned_blooms = island_blooms(restored, total)
-                bloom_wallet += max(0, earned_blooms - bloom_awarded)
-                bloom_awarded = earned_blooms
-                first_cost = None
-                while True:
-                    pick, cost, bloom_cost = next_buy(state, dew, bloom_wallet, world)
-                    if pick is None:
-                        break
-                    if first_cost is None:
-                        first_cost = cost
-                        dew -= cost
-                        bloom_wallet -= bloom_cost
-                        state[pick] += 1
-                        continue
-                    level = state[pick]
-                    need = math.floor(spendable - first_cost) + 1
-                    if costs[pick][level] < need:
-                        costs[pick][level] = int(need)
-                        changed = True
-                    break
-        if not changed:
-            return
-    raise SystemExit("could not pin the shop to one upgrade per bottle")
+class Entry:
+    """One rank of one node, and where it sits in the ladder."""
+
+    __slots__ = ("node", "rank", "anchor", "price")
+
+    def __init__(self, node: str, rank: int, anchor: float | None):
+        self.node = node
+        self.rank = rank
+        self.anchor = anchor
+        self.price = 0.0
 
 
-def reprice():
-    original_costs = {key: list(values) for key, values in COSTS.items()}
-    original_blooms = {key: list(BLOOM_COSTS[key]) for key in COSTS}
-    for key in COSTS:
-        COSTS[key][:] = original_costs[key]
-        BLOOM_COSTS[key][:] = original_blooms[key]
-    costs = COSTS
-    blooms = BLOOM_COSTS
+def play(costs, bloom_costs):
+    """Play the campaign as the player plays it. One band of purchases per island."""
     state = new_state()
     dew = 0.0
-    bloom_wallet = 0.0
+    blooms = 0.0
     bloom_awarded = 0
-    report: list[dict] = []
+    bands: list[list[Entry]] = [[] for _ in range(5)]
+    bought: dict[str, int] = {node: 0 for node in COSTS}
+    minutes = 0.0
+    runs = 0
+    dry = 0
+    per_world = []
 
     for world in range(5):
         restored = 0.0
         total = mask_count(world)
+        world_runs = 0
+        world_dry = 0
+        world_minutes = 0.0
+        peak = 0.0
+        entering = 0.0
         for _ in range(400):
             ratio = restored / total if total else 1.0
             cells, income, seconds = cells_per_run(state, world, ratio)
             restored = min(float(total), restored + cells)
-            earned_blooms = island_blooms(restored, total)
-            if earned_blooms > bloom_awarded:
-                bloom_wallet += earned_blooms - bloom_awarded
-                bloom_awarded = earned_blooms
-            if total <= 0 or restored / total >= 0.98:
-                report.append(
-                    {
-                        "world": world,
-                        "cleared": True,
-                        "cover": cells / total,
-                        "buys": 0,
-                        "seconds": seconds,
-                        "income": income,
-                    }
-                )
-                break
-            node, _, _ = next_buy(state, 1e18, 1e18, world)
-            if node is None:
-                report.append(
-                    {
-                        "world": world,
-                        "cleared": False,
-                        "cover": cells / total,
-                        "buys": 0,
-                        "seconds": seconds,
-                        "income": income,
-                    }
-                )
-                break
-
-            spendable_dew = dew + income
-            spendable_blooms = bloom_wallet
-            dew_price = min(nice(income * 0.85), max(1, int(spendable_dew * 0.85)))
-            # Every rank on the shelf this bottle, not only the one we take.
-            for candidate in PRIORITY_UNIQUE:
-                level = state[candidate]
-                if level >= len(costs[candidate]):
-                    continue
-                if next_buy({**state, candidate: level}, 1e18, 1e18, world)[0] != candidate and candidate != node:
-                    # prereq / island gate closed — next_buy walks priority, so test directly
-                    pass
-                trial = dict(state)
-                # Affordability probe: skip nodes that aren't the next legal one in a solo tree.
-                solo = new_state()
-                solo.update(state)
-                # Use next_buy's own filters by asking if this node would be chosen
-                # when it is the only one under the price we are about to set.
-            legal = []
-            saved = {key: list(costs[key]) for key in costs}
-            saved_b = {key: list(blooms[key]) for key in blooms}
-            for candidate in PRIORITY_UNIQUE:
-                level = state[candidate]
-                if level >= len(costs[candidate]):
-                    continue
-                costs[candidate][level] = 1
-                blooms[candidate][level] = 0
-                picked, _, _ = next_buy(state, 1e18, 1e18, world)
-                costs[candidate][level] = saved[candidate][level]
-                blooms[candidate][level] = saved_b[candidate][level]
-                if picked == candidate:
-                    legal.append(candidate)
-                # Putting this one at 1 may have shadowed later nodes. Restore and
-                # only keep candidates that are currently unlocked, re-checked below.
-
-            legal = []
-            for candidate in PRIORITY_UNIQUE:
-                level = state[candidate]
-                if level >= len(costs[candidate]):
-                    continue
-                snapshot_c = costs[candidate][level]
-                snapshot_b = blooms[candidate][level]
-                costs[candidate][level] = 1
-                blooms[candidate][level] = 0
-                # Hide every other unfinished node behind a price this probe can't pay,
-                # then see if `candidate` itself is legal.
-                hidden = []
-                for other in PRIORITY_UNIQUE:
-                    if other == candidate:
-                        continue
-                    olev = state[other]
-                    if olev >= len(costs[other]):
-                        continue
-                    hidden.append((other, olev, costs[other][olev], blooms[other][olev]))
-                    costs[other][olev] = 10**12
-                    blooms[other][olev] = 10**12
-                picked, _, _ = next_buy(state, 1e18, 1e18, world)
-                costs[candidate][level] = snapshot_c
-                blooms[candidate][level] = snapshot_b
-                for other, olev, oc, ob in hidden:
-                    costs[other][olev] = oc
-                    blooms[other][olev] = ob
-                if picked == candidate:
-                    legal.append(candidate)
-
-            if node not in legal:
-                legal.insert(0, node)
-
-            for candidate in legal:
-                level = state[candidate]
-                prev = costs[candidate][level - 1] if level else 0
-                priced = dew_price
-                if prev and priced < int(prev * 1.15):
-                    priced = int(prev * 1.15)
-                priced = min(priced, max(1, int(spendable_dew * 0.9)))
-                if candidate in BLOOM_ONLY or original_costs[candidate][level] == 0:
-                    # A bloom-only node stays free in dew.
-                    costs[candidate][level] = 0
-                else:
-                    costs[candidate][level] = max(1, priced)
-
+            earned = island_blooms(restored, total)
+            blooms += max(0, earned - bloom_awarded)
+            bloom_awarded = earned
             dew += income
-            bloom_wallet += cells
-            bought = 0
-            bought_names: list[str] = []
-            pick, cost, bloom_cost = next_buy(state, dew, bloom_wallet, world)
-            if pick is not None:
+            world_runs += 1
+            world_minutes += (seconds + OVERHEAD_SEC) / 60
+            if entering <= 0:
+                entering = income
+            if total <= 0 or restored / total >= 0.98:
+                break
+            # The walk plays the way a player plays: it buys what it can
+            # afford. The price of a rank is then about one bottle of income,
+            # which is what the shop asks.
+            taken = 0
+            while True:
+                node, cost, bloom_cost = next_buy(state, dew, blooms, world, costs, bloom_costs)
+                if node is None:
+                    break
+                # An island pays less and less as it fills up, so the price of
+                # a rank follows the best the island ever paid, not the last
+                # bottle. Otherwise the whole end of an island is priced at
+                # almost nothing.
+                peak = max(peak, income) if USE_PEAK else income
+                price = peak
+                if state[node] == 0 and WORLD_MIN.get(node, 0) == world:
+                    # The power an island brings with it is priced at what the
+                    # player has when they arrive, so it can be bought there.
+                    price = entering
+                bands[world].append(Entry(node, bought[node], nice(price * INCOME_SHARE)))
+                bought[node] += 1
+                state[node] += 1
                 dew -= cost
-                bloom_wallet -= bloom_cost
-                state[pick] += 1
-                bought = 1
-                bought_names.append(f"{pick}{state[pick]}")
-            report.append(
-                {
-                    "world": world,
-                    "cleared": False,
-                    "cover": cells / total,
-                    "buys": bought,
-                    "bought": bought_names,
-                    "seconds": seconds,
-                    "income": income,
-                    "dew": dew,
-                }
-            )
-        else:
+                blooms -= bloom_cost
+                taken += 1
+            if taken == 0:
+                world_dry += 1
+        minutes += world_minutes
+        runs += world_runs
+        dry += world_dry
+        per_world.append((world_runs, world_minutes, world_dry))
+    return bands, bought, per_world
+
+
+def fill_ladder(entries: list[Entry]) -> None:
+    """Price the ladder: the purchases keep their price, the ranks the campaign
+    never reached are interpolated between the purchases around them."""
+    if not entries:
+        return
+    anchors = [index for index, entry in enumerate(entries) if entry.anchor is not None]
+    for entry in entries:
+        if entry.anchor is not None:
+            entry.price = float(entry.anchor)
+
+    for position in range(len(anchors) - 1):
+        start = anchors[position]
+        end = anchors[position + 1]
+        gap = end - start - 1
+        if gap <= 0:
             continue
-        # break landed via cleared/stuck; keep going to the next world
-    enforce_one_buy(costs)
-    # Ranks we never reached should not be a bargain compared with the last price.
+        low = entries[start].price
+        high = entries[end].price
+        if high <= low:
+            high = low * TAIL_STEP
+        ratio = (high / low) ** (1.0 / (gap + 1))
+        price = low
+        for step in range(1, gap + 1):
+            price *= ratio
+            entries[start + step].price = price
+
+    last = anchors[-1]
+    price = entries[last].price
+    for index in range(last + 1, len(entries)):
+        price *= TAIL_STEP
+        entries[index].price = price
+
+    # The head: the ranks that come before the first purchase, priced down from
+    # it. Without these a node the campaign never bought would be free.
+    first = anchors[0]
+    price = entries[first].price
+    for index in range(first - 1, -1, -1):
+        price /= TAIL_STEP
+        entries[index].price = price
+
+
+def build_costs(bands, bought):
+    """The ladder becomes the price list of the tree."""
+    # The purchases in the order they happened.
+    entries: list[Entry] = []
+    band_ranges: list[list[int]] = []
+    for band in bands:
+        start = len(entries)
+        entries.extend(band)
+        band_ranges.append([start, len(entries)])
+
+    # The ranks the campaign never reached are bought later, so they belong to
+    # the later islands. Spread them over those islands by how much each one
+    # buys, or the late islands end up with a price list of their own and
+    # nothing to spend it on.
+    inserts: list[tuple[int, Entry]] = []
+    for node, count in bought.items():
+        missing = [rank for rank in range(count, len(COSTS[node]))]
+        if not missing:
+            continue
+        home = len(band_ranges) - 1
+        for index, (start, end) in enumerate(band_ranges):
+            if any(e.node == node and e.anchor is not None for e in entries[start:end]):
+                home = index
+                break
+        later = list(range(home, len(band_ranges))) or [home]
+        sizes = [max(1, band_ranges[b][1] - band_ranges[b][0]) for b in later]
+        total = sum(sizes)
+        cursor = 0
+        for b_index, size in zip(later, sizes):
+            share = round(len(missing) * size / total)
+            take = missing[cursor:cursor + share]
+            cursor += share
+            for offset, rank in enumerate(take):
+                inserts.append((band_ranges[b_index][1] + offset, Entry(node, rank, None)))
+        for rank in missing[cursor:]:
+            inserts.append((len(entries), Entry(node, rank, None)))
+    for at, entry in sorted(inserts, key=lambda pair: -pair[0]):
+        entries.insert(min(at, len(entries)), entry)
+
+    fill_ladder(entries)
+
+    maxes = build_maxes()
+    costs: dict[str, list[int]] = {key: [0] * maxes[key] for key in COSTS}
+    for entry in entries:
+        if entry.node in BLOOM_ONLY:
+            continue
+        costs[entry.node][entry.rank] = max(1, nice(entry.price))
+    # Every branch climbs: a rank never costs less than 15% more than the rank
+    # before it, so a branch always reads as a climb.
     for key, curve in costs.items():
-        last = 0
-        for index, price in enumerate(curve):
-            if key in BLOOM_ONLY or original_costs[key][index] == 0:
-                # A bloom-only node stays free in dew.
-                curve[index] = 0
-                continue
-            if index < state[key]:
-                last = price
-                continue
-            last = nice(max(price, last * 2.15))
-            curve[index] = last
-    # Bloom prices are hand designed: blooms are a rare currency, not an income.
-    for key in blooms:
-        for index in range(len(blooms[key])):
-            blooms[key][index] = original_blooms[key][index]
-
-    return state, costs, blooms, report
+        for index in range(1, len(curve)):
+            if curve[index - 1] and curve[index] < int(curve[index - 1] * RANK_STEP):
+                curve[index] = int(curve[index - 1] * RANK_STEP)
+    return costs, entries
 
 
-def write_tree(costs: dict[str, list[int]], blooms: dict[str, list[int]]) -> None:
+def write_tree(costs: dict[str, list[int]]) -> None:
     text = TREE.read_text(encoding="utf-8")
     for node_id, curve in costs.items():
         text, n = re.subn(
@@ -278,56 +267,51 @@ def write_tree(costs: dict[str, list[int]], blooms: dict[str, list[int]]) -> Non
         )
         if n != 1:
             raise SystemExit(f"could not find costs for {node_id}")
-        bloom_values = blooms.get(node_id) or []
-        if not any(bloom_values):
-            continue
-        text, n = re.subn(
-            rf"(id: '{node_id}',[\s\S]*?blooms: )\[[^\]]*\]",
-            lambda m, bloom_values=bloom_values: m.group(1) + "[" + ", ".join(str(v) for v in bloom_values) + "]",
-            text,
-            count=1,
-        )
-        if n != 1:
-            raise SystemExit(f"could not find blooms for {node_id}")
-    TREE.write_text(text, encoding="utf-8")
+    TREE.write_text(text)
 
 
-def summarize(report: list[dict]) -> None:
+def summarize(bands, per_world) -> None:
     print("=== FRESH ISLAND CADENCE (prices follow one bottle of income) ===")
-    minutes = 0.0
-    for world in range(5):
-        rows = [row for row in report if row["world"] == world]
-        played = [row for row in rows if not row["cleared"]]
-        buys = [row["buys"] for row in played]
-        multi = sum(1 for n in buys if n >= 2)
-        dry = sum(1 for n in buys if n == 0)
-        minutes_w = sum((row["seconds"] + OVERHEAD_SEC) / 60 for row in played)
-        minutes += minutes_w
-        end = rows[-1]["cover"] if rows else 0
-        print(
-            f"world {world}: {len(played):3} bottles  {minutes_w:5.1f} min  "
-            f"buys/bottle { (sum(buys)/len(buys) if buys else 0):.2f}  "
-            f"multi {multi}  dry {dry}  end {100*end:.0f}%"
-        )
-    early = [row["buys"] for row in report if row["world"] == 0 and not row["cleared"]][:25]
-    dry25 = sum(1 for n in early if n == 0)
-    print(f"total {minutes:.0f} min")
-    print(f"world 0 first 25 dry runs: {dry25}/25")
-    print("sample world 0:", ", ".join(
-        f"r{i+1}:{','.join(row['bought']) if row['bought'] else '-'}"
-        for i, row in enumerate(row for row in report if row["world"] == 0 and not row["cleared"])
-        if i < 12
-    ))
+    total_minutes = 0.0
+    for index, (runs, minutes, dry) in enumerate(per_world):
+        total_minutes += minutes
+        print(f"world {index}: {runs:3} bottles  {minutes:5.1f} min  dry {dry}/{runs}")
+    print(f"total {total_minutes:.0f} min")
+    rungs = sorted(entry.price for entry in bands if entry.price > 0)
+    if len(rungs) > 1:
+        biggest = max((rungs[i] / rungs[i - 1], rungs[i - 1], rungs[i]) for i in range(1, len(rungs)))
+        print(f"ladder: {len(rungs)} rungs, biggest step x{biggest[0]:.2f} "
+              f"({biggest[1]:.0f} -> {biggest[2]:.0f})")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
-    _state, costs, blooms, report = reprice()
-    summarize(report)
+
+    maxes = build_maxes()
+    costs = {key: list(values) for key, values in COSTS.items()}
+    for key, values in costs.items():
+        while len(values) < maxes[key]:
+            values.append(values[-1] if values else 0)
+    for iteration in range(ITERATIONS):
+        bands, bought, per_world = play(costs, BLOOM_COSTS)
+        new_costs, entries = build_costs(bands, bought)
+        # The prices and the campaign depend on each other, and the loop wants
+        # to run away. Halve the step every round so it settles.
+        blended: dict[str, list[int]] = {}
+        for key, curve in new_costs.items():
+            old = costs[key]
+            blended[key] = [
+                int((old[index] + curve[index]) / 2) if curve[index] else old[index]
+                for index in range(len(curve))
+            ]
+        if blended == costs:
+            break
+        costs = blended
+    summarize(entries, per_world)
     if args.write:
-        write_tree(costs, blooms)
+        write_tree(costs)
         print(f"wrote {TREE}")
 
 

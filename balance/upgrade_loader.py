@@ -52,5 +52,11 @@ def build_priority_unique() -> list[str]:
     return order
 
 
+def build_maxes() -> dict[str, int]:
+    """How many ranks each node has."""
+    data = load_catalog()
+    return {node["id"]: int(node["max"]) for node in data["nodes"]}
+
+
 def node_ids() -> list[str]:
     return list(load_catalog()["nodeIds"])

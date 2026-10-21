@@ -11,10 +11,10 @@ GLOBE_WORLD = 4
 # hp is tuned so that pour still takes about twenty minutes to finish an island.
 WORLDS = [
     (11, 8, 133, 97, 76, 3),
-    (18, 16, 244, 217, 2579, 2),
-    (31, 24, 355, 275, 1500, 3),
-    (34, 26, 340, 260, 3730, 4),
-    (14, 9, 800, 120, 97889, 4),
+    (18, 16, 244, 217, 3070, 2),
+    (31, 24, 355, 275, 2400, 3),
+    (34, 26, 340, 260, 30000, 20),
+    (14, 9, 800, 120, 1200000, 160),
 ]
 
 BASE_SCALE = 0.48
@@ -119,17 +119,17 @@ def max_liters(state):
 def rain_radius(state):
     grown = cloud_scale(state) / BASE_SCALE
     reach = (
-        (1 + 0.23 * state["circle"])
-        * (1 + 0.21 * state["wide"])
-        * (1 + 0.19 * state["horizon"])
-        * (1 + 0.12 * state["harvest"])
+        (1 + 0.12 * state["circle"])
+        * (1 + 0.11 * state["wide"])
+        * (1 + 0.1 * state["horizon"])
+        * (1 + 0.008 * state["harvest"])
         * (1 + 0.16 * state["sprinkler"])
         * (1 + 0.06 * state["spin"])
         * (1 + 0.12 * state["lightning"])
         * (1 + 0.04 * state["zap"])
         * (1 + 0.12 * state["tornado"])
         * (1 + 0.04 * state["twist"])
-        * (1 + 0.7 * state["monsoon"])
+        * (1 + 0.12 * state["monsoon"])
     )
     return 0.92 * grown * reach
 

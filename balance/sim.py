@@ -138,9 +138,21 @@ def cells_per_run(state, world: int, filled_ratio: float = 0.0):
     return cells, dew, seconds
 
 
-def next_buy(state, dew, blooms, world_unlocked):
-    """First node in priority order the player can actually buy (both wallets + island gate)."""
-    for node in PRIORITY_UNIQUE:
+def next_buy(state, dew, blooms, world_unlocked, costs=None, bloom_costs=None):
+    """First node in priority order the player can actually buy (both wallets + island gate).
+
+    The island you just reached comes first: its own powers are what the player
+    is excited about, and the price of those powers is set by that island's
+    income, so they have to be bought there or never.
+    """
+    costs = costs if costs is not None else COSTS
+    bloom_costs = bloom_costs if bloom_costs is not None else BLOOM_COSTS
+    order = PRIORITY_UNIQUE
+    if world_unlocked > 0:
+        fresh = [node for node in order if WORLD_MIN.get(node, 0) == world_unlocked]
+        if fresh:
+            order = fresh + [node for node in order if WORLD_MIN.get(node, 0) != world_unlocked]
+    for node in order:
         level = state[node]
         if level >= MAXED[node]:
             continue
@@ -148,19 +160,20 @@ def next_buy(state, dew, blooms, world_unlocked):
             continue
         if WORLD_MIN[node] > world_unlocked:
             continue
-        cost = COSTS[node][level]
-        bloom_cost = BLOOM_COSTS[node][level]
+        cost = costs[node][level]
+        bloom_cost = bloom_costs[node][level]
         if dew >= cost and blooms >= bloom_cost:
             return node, cost, bloom_cost
     return None, 0, 0
 
 
-def buy_all_affordable(state, dew, blooms, world_unlocked=0, max_buys: int | None = None):
+def buy_all_affordable(state, dew, blooms, world_unlocked=0, max_buys: int | None = None,
+                       costs=None, bloom_costs=None):
     bought = []
     while True:
         if max_buys is not None and len(bought) >= max_buys:
             break
-        node, cost, bloom_cost = next_buy(state, dew, blooms, world_unlocked)
+        node, cost, bloom_cost = next_buy(state, dew, blooms, world_unlocked, costs, bloom_costs)
         if node is None:
             break
         dew -= cost
@@ -254,7 +267,8 @@ def report(max_buys_per_run: int | None = None):
         total_runs += res["runs"]
         print(
             f"{WORLD_NAMES[world]:12} {res['runs']:4}  {res['minutes']:7.1f}  {res['cells']:8.0f}  "
-            f"{secs:7.1f}  {radius:6.2f}  {res['pct'] * 100:7.1f}%  {dew:8.0f}  {blooms:7.0f}  enter {incoming:.0f}"
+            f"{secs:7.1f}  {radius:6.2f}  {res['pct'] * 100:7.1f}%  {dew:8.0f}  {blooms:7.0f}  "
+            f"enter {incoming:.0f}  dry {res['dry_runs']}/{res['runs']}"
         )
         if res["runs"] >= 400:
             print("  DID NOT CLEAR. ranks:", {k: v for k, v in state.items() if v})
