@@ -1423,10 +1423,10 @@ canvas {
 .results-card {
   display: flex;
   flex-direction: column;
-  width: min(100%, 420px);
+  width: min(760px, 100%);
   max-height: min(96dvh, 100%);
   overflow: hidden;
-  padding: 10px 12px 8px;
+  padding: 12px 14px 10px;
   gap: 6px;
 }
 
@@ -1830,6 +1830,71 @@ canvas {
 /* One block of milestones per island. */
 .ach-island {
   margin-top: 14px;
+}
+
+/* Volume sliders in the settings card. */
+.vol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vol-row__label {
+  font-size: 11px;
+  line-height: 1;
+  color: #d8e6ff;
+  min-width: 52px;
+}
+
+.vol-row__slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 18px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.vol-row__slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #6ea8ff 0%, #6ea8ff var(--fill, 100%), rgba(255, 255, 255, 0.16) var(--fill, 100%));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.vol-row__slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.vol-row__slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 3px;
+  background: #e8f2ff;
+  border: 1px solid #4a6ea8;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.vol-row__slider::-moz-range-thumb {
+  width: 12px;
+  height: 14px;
+  border-radius: 3px;
+  background: #e8f2ff;
+  border: 1px solid #4a6ea8;
+}
+
+.vol-row__value {
+  font-size: 11px;
+  line-height: 1;
+  color: #ffe56a;
+  min-width: 34px;
+  text-align: right;
 }
 
 .ach-island__title {
