@@ -1473,6 +1473,40 @@ export class SaveState {
     return this.filled / count >= 0.98 || this.ratio() >= 0.995;
   }
 
+  /** Centre of playable land in world space (finale camera and restoration wave). */
+  islandFocal(): { x: number; z: number } {
+    const { cols, rows } = maskOf(this.world);
+    let sx = 0;
+    let sz = 0;
+    let n = 0;
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        if (!this.isLand(c, r)) continue;
+        const at = this.cellCenter(c, r, cols, rows);
+        sx += at.x;
+        sz += at.z;
+        n += 1;
+      }
+    }
+    if (n === 0) return { x: 0, z: 0 };
+    return { x: sx / n, z: sz / n };
+  }
+
+  /** Furthest dry land from the island centre — size of the finale green wave. */
+  islandCoverRadius(): number {
+    const focal = this.islandFocal();
+    const { cols, rows } = maskOf(this.world);
+    let max = 0;
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        if (!this.isLand(c, r)) continue;
+        const at = this.cellCenter(c, r, cols, rows);
+        max = Math.max(max, this.gap(focal.x, focal.z, at.x, at.z));
+      }
+    }
+    return max + 2.5;
+  }
+
   isRestored(index: number, world = this.world): boolean {
     if (world !== this.world) return (this.best[world] ?? 0) >= 1;
     return this.green[index] === true;
@@ -2265,13 +2299,17 @@ export class SaveState {
         this.pixels[pixel] = 255;
         this.pixels[pixel + 1] = 255;
         this.pulse[i] = 255;
-        this.filled += 1;
+        if (was < hp) this.filled += 1;
         this.splashRipple(i);
         const hill = this.hillIndex(c, r, cols, rows);
-        if (hill >= 0) this.syncHillFromMask(hill);
+        if (hill >= 0) {
+          this.syncHillFromMask(hill);
+          this.considerHill(hill);
+        }
         changed += 1;
       }
     }
+    this.trackProgress();
     if (changed > 0) {
       this.dryCache = null;
       this.maskDirty = true;

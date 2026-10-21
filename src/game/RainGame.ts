@@ -43,7 +43,8 @@ const CAM_LOOK = -0.92;
 /** How high the cloud hovers over the ground, and how much of that is size. */
 const CLOUD_CLEARANCE = 1.35;
 const CLOUD_LIFT = 2.1;
-const FINALE_DURATION = 5.4;
+const FINALE_DURATION = 7.2;
+const smoothstep = (t: number) => t * t * (3 - 2 * t);
 /** Metres from root to crown top in the exported hero-tree GLB. */
 /** The pack strips the armature scale, so fit the measured canopy slightly inside the billboard height. */
 
@@ -417,6 +418,10 @@ export class RainGame {
   private camZoomPulse = 0;
   /** Full orbit around the island. 0 puts the camera on +Z (screen-up is −Z). */
   private camYaw = 0;
+  private finaleCamYaw0 = 0;
+  private finaleCamZoom0 = 1;
+  private finaleFocalX = 0;
+  private finaleFocalZ = 0;
   private skyDome: THREE.Mesh;
   private skyMat!: THREE.ShaderMaterial;
   private skyMotes!: THREE.Points;
@@ -1877,7 +1882,14 @@ export class RainGame {
     state.decayPulse(dt);
     state.tickRestorationWaves(dt);
     this.drainFanfare();
-    if (state.maskDirty || !this.maskTex || (this.wantsRain() && state.phase === 'play' && state.tank > 0.01)) this.syncMask();
+    if (
+      state.maskDirty ||
+      !this.maskTex ||
+      inFinale ||
+      (this.wantsRain() && state.phase === 'play' && state.tank > 0.01)
+    ) {
+      this.syncMask();
+    }
     if (state.pulseDirty || !this.pulseTex) this.syncPulse();
     this.abilityVfx.update(dt);
     for (const pulse of state.takeGrowthPulses()) {
@@ -1934,11 +1946,18 @@ export class RainGame {
     this.shake = 0.52;
     this.grin = 1.2;
     this.cloudPop = 1.38;
-    this.camZoomPulse = 0.85;
+    this.camZoomPulse = 0;
+    this.finaleCamYaw0 = this.camYaw;
+    this.finaleCamZoom0 = this.camZoom;
+    const focal = state.islandFocal();
+    this.finaleFocalX = focal.x;
+    this.finaleFocalZ = focal.z;
+    this.camX = focal.x;
+    this.camZ = focal.z;
     this.audio.victory();
     const reach = state.reach();
-    const cx = this.terrain ? this.terrain.originX + this.terrain.width * 0.5 : this.camX;
-    const cz = this.terrain ? this.terrain.originZ + this.terrain.depth * 0.5 : this.camZ;
+    const cx = focal.x;
+    const cz = focal.z;
     for (let i = 0; i < this.views.length; i += 1) {
       const view = this.views[i];
       if (!view) continue;
@@ -1967,11 +1986,15 @@ export class RainGame {
     this.finaleT += dt;
     state.finaleProgress = Math.min(1, this.finaleT / FINALE_DURATION);
     this.shake = Math.max(0, 0.42 * (1 - this.finaleT / 1.4));
-    const cx = this.terrain ? this.terrain.originX + this.terrain.width * 0.5 : this.camX;
-    const cz = this.terrain ? this.terrain.originZ + this.terrain.depth * 0.5 : this.camZ;
+    const focal = state.islandFocal();
+    const cx = focal.x;
+    const cz = focal.z;
     const reach = state.reach();
-    const waveEase = state.finaleProgress * state.finaleProgress * (3 - 2 * state.finaleProgress);
-    const waveR = reach * (0.35 + waveEase * 1.55);
+    const camPull = 1 - Math.pow(0.001, dt);
+    this.camX += (cx - this.camX) * camPull;
+    this.camZ += (cz - this.camZ) * camPull;
+    const waveEase = smoothstep(state.finaleProgress);
+    const waveR = state.islandCoverRadius() * waveEase;
     if (state.applyFinaleWave(cx, cz, waveR) > 0) {
       this.syncMask();
       this.syncPulse();
@@ -2003,11 +2026,14 @@ export class RainGame {
       this.finaleHudAcc = 0;
       this.pushHud(false);
     }
-    if (state.finaleProgress >= 0.94 && prev / FINALE_DURATION < 0.94) {
+    if (state.finaleProgress >= 0.92 && prev / FINALE_DURATION < 0.92) {
       state.sealFinaleLandscape();
       this.syncMask();
       this.syncPulse();
       this.syncProps(t);
+      for (let i = 0; i < this.views.length; i += 1) {
+        if (this.views[i] && !this.views[i]!.dressed) this.dressTile(i);
+      }
     }
     if (this.finaleT >= FINALE_DURATION) {
       state.endFinale();
@@ -2959,7 +2985,7 @@ export class RainGame {
   }
 
   private placeCamera(dt: number): void {
-    if (this.camZoomPulse > 0 && dt > 0) {
+    if (this.camZoomPulse > 0 && dt > 0 && this.state?.phase !== 'finale') {
       this.camZoomPulse = Math.max(0, this.camZoomPulse - dt);
       this.camZoom += (1 - this.camZoom) * Math.min(1, dt * 5.5);
     }
@@ -2980,17 +3006,19 @@ export class RainGame {
     }
     const gy = this.camGroundY;
     if (this.terrain) {
-      // Close follow rig: the cloud stays the subject of the shot and the land
-      // scrolls past it. A bigger island means more to cross, not a tinier cloud.
       const span = CAM_FRAME_SPAN;
       const pull = this.cameraGrowPull(dt);
-      const lift = span * 0.42 * this.camZoom * pull;
-      const back = span * 0.92 * this.camZoom * pull;
-      const yaw = this.camYaw;
+      const finale = this.state?.phase === 'finale' ? smoothstep(this.state.finaleProgress) : 0;
+      const zoomOut = 1 + finale * 1.85;
+      const spin = finale * 0.48;
+      const yaw = finale > 0 ? this.finaleCamYaw0 + spin : this.camYaw;
+      const zoom = finale > 0 ? this.finaleCamZoom0 * zoomOut : this.camZoom;
+      const lift = span * 0.42 * zoom * pull;
+      const back = span * 0.92 * zoom * pull;
       const camOffX = Math.sin(yaw);
       const camOffZ = Math.cos(yaw);
-      const targetX = this.camX;
-      const targetZ = this.camZ;
+      const targetX = finale > 0 ? this.finaleFocalX + (this.camX - this.finaleFocalX) * (1 - finale * 0.35) : this.camX;
+      const targetZ = finale > 0 ? this.finaleFocalZ + (this.camZ - this.finaleFocalZ) * (1 - finale * 0.35) : this.camZ;
       // The rig rides the ground it is over, so a hill lifts the shot instead of
       // swallowing the cloud behind the crest. The aim rises with the cloud so a
       // big cloud keeps the same spot in frame instead of drifting off the top.
