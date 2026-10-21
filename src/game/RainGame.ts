@@ -1242,6 +1242,7 @@ export class RainGame {
 
   retry(): void {
     if (!this.state) return;
+    void this.saveNow();
     this.state.retryRun();
     this.rebuild();
     this.dropCloud(this.spawnAt());
@@ -1399,6 +1400,7 @@ export class RainGame {
 
   goto(world: number): void {
     if (!this.state) return;
+    void this.saveNow();
     if (!this.state.goto(world)) {
       this.pushHud(true);
       return;

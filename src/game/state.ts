@@ -322,7 +322,7 @@ function sanitizeLoadedState(s: SaveState): void {
     s.ranks[id] = Math.max(0, Math.min(node.max, Math.floor(s.ranks[id] ?? 0)));
   }
   // Day one: no upgrades and no saved restoration means wallet stays empty.
-  if (rankTotal(s.ranks) === 0 && !s.hasLandProgress()) {
+  if (rankTotal(s.ranks) === 0 && !s.hasLandProgress() && s.dew < 0.5 && s.stats.dewEarned < 0.5) {
     s.dew = 0;
     s.achievements = [];
     s.stats = emptyStats();
@@ -416,6 +416,9 @@ export class SaveState {
   private ripples = 0;
   private waves: RestorationWave[] = [];
   private growthPulses: GrowthPulseEvent[] = [];
+  /** Where rain is falling this splash — spill, bleed, and pools stay under the cloud. */
+  private rainX = 0;
+  private rainZ = 0;
   private lands = new Map<number, LandPack>();
   private revivalMilestones = new Set<number>();
   /** Which mask cells are land. The sea is not part of the island. */
@@ -1021,6 +1024,7 @@ export class SaveState {
     this.runTiles = 0;
     this.runReached = 0;
     this.newBest = false;
+    this.runOpen = true;
     this.screen = 'play';
     this.syncPhaseAfterLoad();
     this.toast = worldDef(this.world).name;
@@ -1380,6 +1384,8 @@ export class SaveState {
       if (nProg < hp) {
         const bc = t.to % cols;
         const br = Math.floor(t.to / cols);
+        const at = this.cellCenter(bc, br, cols, rows);
+        if (this.gap(this.rainX, this.rainZ, at.x, at.z) > this.reach() * 1.05) continue;
         this.applySoak(t.to, bc, br, cols, rows, t.amt * poolFlow(this.ranks), hp, false, 0);
       }
     }
@@ -1852,6 +1858,8 @@ export class SaveState {
     respectPatches: boolean,
     limit = Number.POSITIVE_INFINITY,
   ): { dew: number; filled: number; crits: number } {
+    this.rainX = x;
+    this.rainZ = z;
     const { cols, rows } = maskOf(this.world);
     const hp = cellHp(this.world);
     const gate = 1 - patchFraction(this.ranks);
@@ -1903,7 +1911,7 @@ export class SaveState {
     return { dew, filled, crits };
   }
 
-  /** Rain that lands on a finished cell rolls outward to the nearest thirsty cell. */
+  /** Rain that lands on a finished cell soaks the nearest thirsty neighbour (not across the island). */
   private spillFrom(
     fullIndex: number,
     originX: number,
@@ -1917,9 +1925,10 @@ export class SaveState {
   ): { dew: number; filled: number; crits: number; hill: number } | null {
     const c0 = fullIndex % cols;
     const r0 = Math.floor(fullIndex / cols);
+    const reach = this.reach();
     let best = -1;
-    let bestAway = -1;
-    for (let rad = 1; rad <= 6; rad += 1) {
+    let bestRing = Infinity;
+    for (let rad = 1; rad <= 3; rad += 1) {
       for (let dr = -rad; dr <= rad; dr += 1) {
         for (let dc = -rad; dc <= rad; dc += 1) {
           if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad) continue;
@@ -1930,9 +1939,9 @@ export class SaveState {
           const ni = nr * cols + nc;
           if ((this.progress[ni] ?? 0) >= hp) continue;
           const at = this.cellCenter(nc, nr, cols, rows);
-          const away = this.gap(originX, originZ, at.x, at.z);
-          if (away > bestAway) {
-            bestAway = away;
+          if (this.gap(originX, originZ, at.x, at.z) > reach * 1.05) continue;
+          if (rad < bestRing) {
+            bestRing = rad;
             best = ni;
           }
         }
@@ -2057,6 +2066,8 @@ export class SaveState {
       if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
       if (!this.isLand(nc, nr)) continue;
       if (respectPatches && hash01(nc, nr) < gate) continue;
+      const at = this.cellCenter(nc, nr, cols, rows);
+      if (this.gap(this.rainX, this.rainZ, at.x, at.z) > this.reach() * 1.05) continue;
       const i = nr * cols + nc;
       const was = this.progress[i] ?? 0;
       if (was >= hp) continue;
