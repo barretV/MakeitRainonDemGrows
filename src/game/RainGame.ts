@@ -432,6 +432,8 @@ export class RainGame {
   private introPullTo = 1;
   private skyLift = 0;
   private readonly skyBase = new THREE.Color();
+  /** The colour the distance fades into. Deeper than the sky, so the haze reads as depth. */
+  private readonly fogBase = new THREE.Color();
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private maskTex: THREE.DataTexture | null = null;
   private pulseTex: THREE.DataTexture | null = null;
@@ -508,8 +510,11 @@ export class RainGame {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(w, h, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    // ACES desaturates and flattens the midtones, which turns a sunset into
+    // milk. The Khronos neutral curve keeps the colour in the pixels and only
+    // rolls off what is really too bright.
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 0.95;
     this.renderer.domElement.className = 'stage-canvas';
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
@@ -1189,7 +1194,10 @@ export class RainGame {
     this.composer.renderTarget1.samples = 4;
     this.composer.renderTarget2.samples = 4;
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.22, 0.75, 0.92);
+    // Only the things that are really bright may glow: the sun disc, the
+    // praise shafts, the fireflies. A low threshold lets the whole sunset sky
+    // bleed over the island and wash it out.
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.16, 0.62, 1.0);
     this.composer.addPass(this.bloom);
     this.tilt = new ShaderPass(TiltShiftShader);
     this.composer.addPass(this.tilt);
@@ -1938,7 +1946,7 @@ export class RainGame {
     const lift = this.skyLift > 0 ? (this.skyLift / 5.2) * 0.3 : 0;
     const fog = this.scene.fog as THREE.Fog | null;
     if (fog) {
-      const c = this.skyBase.clone();
+      const c = this.fogBase.clone();
       c.r = clamp(c.r + lift, 0, 1);
       c.g = clamp(c.g + lift * 0.9, 0, 1);
       c.b = clamp(c.b + lift * 0.55, 0, 1);
@@ -2158,8 +2166,19 @@ export class RainGame {
       this.scene.background = new THREE.Color(sky.skyMid);
     }
     this.skyBase.set(skyMid);
+    // The haze the far land fades into is deeper than the sky itself, so the
+    // distance sinks away instead of glowing. The band also starts further
+    // out: at 1.5x the frame distance the whole island was inside the fog
+    // and the land lost its colour.
+    this.fogBase.set(skyMid).lerp(new THREE.Color(sky.skyTop), 0.45);
     const dist = this.frameDist(0);
-    this.scene.fog = this.globe ? new THREE.Fog('#24356e', 18, 48) : new THREE.Fog(skyMid, dist * 1.5, dist * 5.2);
+    if (this.globe) {
+      this.scene.fog = new THREE.Fog('#24356e', 18, 48);
+    } else {
+      const fog = new THREE.Fog(dist * 2.4, dist * 7.5);
+      fog.color.copy(this.fogBase);
+      this.scene.fog = fog;
+    }
     (this.skyMat.uniforms['uTop']!.value as THREE.Color).set(sky.skyTop);
     (this.skyMat.uniforms['uMid']!.value as THREE.Color).set(sky.skyMid);
     (this.skyMat.uniforms['uBot']!.value as THREE.Color).set(sky.skyBot);

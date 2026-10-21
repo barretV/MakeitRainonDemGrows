@@ -604,9 +604,13 @@ const VOXEL_FRAG = /* glsl */ `
     // Unrestored ground stays in the world's dusk. Restored ground is what the light finds.
     vec3 dusk = mix(uDusk, vec3(1.05, 0.38, 0.55), 0.72);
     col = mix(col * dusk, col * vec3(1.0, 0.98, 0.9), smoothstep(0.25, 0.88, life));
-    float exposure = mix(0.62, 1.12, life);
+    float exposure = mix(0.58, 0.98, life);
     exposure = mix(exposure, mix(0.55, 1.05, life), uGlobe);
     col *= exposure;
+    // Light should make the ground look alive, not pale. Push the colour back
+    // in where the light lands instead of only adding brightness.
+    float luma = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(vec3(luma), col, 1.0 + 0.14 * life);
     col += vec3(1.0, 0.62, 0.7) * smoothstep(0.08, 0.32, life) * (1.0 - smoothstep(0.55, 0.9, life)) * 0.18;
     col += uSunColor * smoothstep(0.72, 1.0, wrap) * 0.08 * life * (1.0 - uGlobe);
     // Thirsty ground shimmers. It keeps shimmering for patches that are nearly
