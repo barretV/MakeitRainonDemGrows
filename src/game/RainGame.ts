@@ -1413,9 +1413,6 @@ export class RainGame {
     if (!this.state) return;
     this.audio.toggleMusic();
     this.state.music = this.audio.musicOn;
-    if (this.audio.musicOn && !this.state.toast) {
-      this.state.toast = 'Placeholder loop is on. Swap in your track whenever.';
-    }
     this.pushHud(true);
   }
 
@@ -1496,7 +1493,6 @@ export class RainGame {
     }
   }
 
-  /** Looping outdoor rain ambience while you pour. */
   private async loadFieldSounds(): Promise<void> {
     const load = async (id: string): Promise<AudioBuffer | null> => {
       try {
@@ -1506,9 +1502,20 @@ export class RainGame {
         return null;
       }
     };
-    const bed = await load('audio/sounds/ambient/rain2');
+    const [outdoor, dripBed, ...drops] = await Promise.all([
+      load('audio/sounds/ambient/rain2'),
+      load('audio/environment/water_dripping'),
+      load('audio/foley-sounds/water/drip1'),
+      load('audio/foley-sounds/water/drip2'),
+      load('audio/foley-sounds/water/drip3'),
+      load('audio/foley-sounds/water/drip4'),
+      load('audio/environment/water_drop_medium'),
+    ]);
     if (this.dead) return;
-    if (bed) this.audio.setRainTexture(bed);
+    const clips = drops.filter((clip): clip is AudioBuffer => !!clip);
+    if (clips.length) this.audio.setDrops(clips);
+    if (outdoor) this.audio.setRainTexture(outdoor, true);
+    else if (dripBed) this.audio.setRainTexture(dripBed, false);
   }
 
   private async loadMusicClip(id: string): Promise<AudioBuffer | null> {

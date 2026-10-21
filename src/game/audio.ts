@@ -1,29 +1,27 @@
 /**
  * Web Audio bed. Lost in Space plays over the islands. Sketchbook plays in the workshop.
- * Rain is a looping outdoor ambience with soft patter on impacts. Growth notes walk a
- * pentatonic scale and each one is nudged a few cents, so a busy bottle stays soft
- * instead of mechanical.
+ * Rain loops outdoor ambience (with a drip fallback). Growth notes walk a pentatonic scale
+ * and each one is nudged a few cents, so a busy bottle stays soft instead of mechanical.
  */
 export type MusicBed = 'field' | 'workshop';
 
 export class AudioBus {
   muted = false;
   musicOn = false;
-  /** How loud the effects are, 0 to 1. */
-  sfxVolume = 1;
-  /** How loud the music bed is, 0 to 1. */
-  musicVolume = 1;
   private ctx: AudioContext | null = null;
+  /** SFX and rain go here so the SFX toggle does not kill the music bed. */
   private sfxBus: GainNode | null = null;
-  private musicBus: GainNode | null = null;
   private rainGain: GainNode | null = null;
   private rainSrc: AudioBufferSourceNode | null = null;
   private rainLow: BiquadFilterNode | null = null;
   private rainHigh: BiquadFilterNode | null = null;
   private humOsc: OscillatorNode | null = null;
   private humGain: GainNode | null = null;
+  private drops: AudioBuffer[] = [];
   private rainBed: AudioBuffer | null = null;
   private rainLoop: AudioBuffer | null = null;
+  /** True when the bed is the wide outdoor loop, not the old drip recording. */
+  private outdoorRain = false;
   private lastDrip = 0;
   private lastGrow = 0;
   /** Where the growth melody is standing on a two-octave pentatonic. */
@@ -42,20 +40,8 @@ export class AudioBus {
 
   setMuted(muted: boolean): void {
     this.muted = muted;
+    if (this.sfxBus) this.sfxBus.gain.value = muted ? 0 : 1;
     if (muted) this.rainStop();
-    this.syncMusic();
-  }
-
-  /** The effects volume, 0 to 1. */
-  setSfxVolume(volume: number): void {
-    this.sfxVolume = Math.max(0, Math.min(1, volume));
-    if (this.sfxBus) this.sfxBus.gain.value = this.sfxVolume;
-  }
-
-  /** The music volume, 0 to 1. */
-  setMusicVolume(volume: number): void {
-    this.musicVolume = Math.max(0, Math.min(1, volume));
-    if (this.musicBus) this.musicBus.gain.value = this.musicVolume;
   }
 
   toggleMusic(): void {
@@ -79,9 +65,14 @@ export class AudioBus {
     this.syncMusic();
   }
 
-  /** Outdoor rain loop. Looped with a short crossfade at the seam. */
-  setRainTexture(buffer: AudioBuffer): void {
+  /** Soft impact samples (ponds, etc.). Not used for the main rain shower loop. */
+  setDrops(buffers: AudioBuffer[]): void {
+    this.drops = buffers.filter((b) => b.length > 0);
+  }
+
+  setRainTexture(buffer: AudioBuffer, outdoor = true): void {
     this.rainBed = buffer;
+    this.outdoorRain = outdoor;
     this.rainLoop = null;
     if (this.rainSrc) {
       this.rainStop();
@@ -100,16 +91,17 @@ export class AudioBus {
     src.loop = true;
     const high = ctx.createBiquadFilter();
     high.type = 'highpass';
-    high.frequency.value = recorded ? 72 : 280;
-    high.Q.value = 0.55;
+    high.frequency.value = recorded ? (this.outdoorRain ? 80 : 140) : 280;
+    high.Q.value = 0.6;
     const low = ctx.createBiquadFilter();
     low.type = 'lowpass';
-    low.frequency.value = recorded ? 9800 : 1400;
-    low.Q.value = 0.45;
+    low.frequency.value = recorded ? (this.outdoorRain ? 9000 : 5200) : 1400;
+    low.Q.value = 0.5;
     const gain = ctx.createGain();
     const now = ctx.currentTime;
+    const level = recorded ? (this.outdoorRain ? 0.38 : 0.42) : 0.12;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(recorded ? 0.3 : 0.04, now + 0.85);
+    gain.gain.exponentialRampToValueAtTime(level, now + 0.65);
     src.connect(high);
     high.connect(low);
     low.connect(gain);
@@ -169,25 +161,44 @@ export class AudioBus {
   }
 
   splash(): void {
-    this.rainPatter(0.045 + Math.random() * 0.035, 900 + Math.random() * 700, (Math.random() - 0.5) * 0.4, 0.1);
+    const buf = this.longestDrop();
+    if (!buf) {
+      this.rainPatter(0.06, 1100 + Math.random() * 600, (Math.random() - 0.5) * 0.5, 0.08);
+      return;
+    }
+    const semis = -6 - Math.random() * 4;
+    this.playSample(buf, {
+      rate: 2 ** (semis / 12),
+      gain: 0.1,
+      pan: (Math.random() - 0.5) * 0.5,
+    });
   }
 
-  /** Rain hitting the ground — soft patter that sits under the outdoor loop. */
   drip(): void {
     if (this.muted) return;
     const ctx = this.context();
     if (!ctx) return;
     const now = ctx.currentTime;
-    if (now - this.lastDrip < 0.055) return;
+    if (now - this.lastDrip < 0.05) return;
     this.lastDrip = now;
-    const center = 2200 + Math.random() * 3200;
-    this.rainPatter(0.008 + Math.random() * 0.014, center, (Math.random() - 0.5) * 0.85);
+    if (this.outdoorRain || Math.random() < 0.72) {
+      const center = 1800 + Math.random() * 3800;
+      this.rainPatter(0.02 + Math.random() * 0.025, center, (Math.random() - 0.5) * 0.9);
+      return;
+    }
+    const buf = this.shortDrop();
+    if (!buf) {
+      this.rainPatter(0.022, 2400, 0);
+      return;
+    }
+    const semis = (Math.random() - Math.random()) * 5;
+    this.playSample(buf, {
+      rate: 2 ** (semis / 12),
+      gain: 0.045 * (0.7 + Math.random() * 0.5),
+      pan: (Math.random() - 0.5) * 1.2,
+    });
   }
 
-  /**
-   * A sprout. Notes step along a pentatonic, then each one is slipped by a
-   * few cents so two of the same pitch never ring exactly together.
-   */
   grow(): void {
     if (this.muted) return;
     const ctx = this.context();
@@ -198,25 +209,21 @@ export class AudioBus {
     this.pluck(this.nextNote(), 0.028 + Math.random() * 0.016);
   }
 
-  /** A patch coming back to life. Same voice as a sprout, so they share one melody. */
   restore(): void {
     this.grow();
   }
 
-  /** A crit: brighter and a little louder than a normal restore. */
   crit(): void {
     this.tone({ type: 'square', from: 1180, to: 1760, dur: 0.09, gain: 0.028 });
     this.tone({ type: 'sine', from: 1760, to: 2100, dur: 0.12, gain: 0.018, delay: 0.03 });
   }
 
-  /** A rare bloom opening up. */
   bloomAward(): void {
     this.tone({ type: 'sine', from: 784, to: 784, dur: 0.16, gain: 0.04 });
     this.tone({ type: 'sine', from: 1046, to: 1046, dur: 0.2, gain: 0.032, delay: 0.07 });
     this.tone({ type: 'triangle', from: 1568, to: 1568, dur: 0.26, gain: 0.022, delay: 0.14 });
   }
 
-  /** An achievement paying out. */
   achievement(): void {
     this.tone({ type: 'triangle', from: 523, to: 523, dur: 0.13, gain: 0.045 });
     this.tone({ type: 'triangle', from: 659, to: 659, dur: 0.15, gain: 0.04, delay: 0.09 });
@@ -224,14 +231,12 @@ export class AudioBus {
     this.tone({ type: 'sine', from: 1318, to: 1318, dur: 0.3, gain: 0.02, delay: 0.27 });
   }
 
-  /** A revival milestone: the pitch climbs with the island's progress. */
   milestone(step: number): void {
     const root = 392 * Math.pow(2, Math.min(4, step) / 12);
     this.tone({ type: 'sine', from: root, to: root, dur: 0.22, gain: 0.045 });
     this.tone({ type: 'sine', from: root * 1.5, to: root * 1.5, dur: 0.26, gain: 0.03, delay: 0.1 });
   }
 
-  /** Menu feedback. */
   ui(): void {
     this.tone({ type: 'square', from: 540, to: 380, dur: 0.05, gain: 0.018 });
   }
@@ -246,7 +251,6 @@ export class AudioBus {
     this.tone({ type: 'square', from: 880, to: 1320, dur: 0.09, gain: 0.03 });
   }
 
-  /** A plant taking root: two pentatonic notes, the second a step above the first. */
   bloom(): void {
     if (this.muted) return;
     const first = this.nextNote();
@@ -271,34 +275,22 @@ export class AudioBus {
     window.clearInterval(this.musicTimer);
     void this.ctx?.close();
     this.ctx = null;
+    this.sfxBus = null;
   }
 
   private context(): AudioContext | null {
-    if (this.muted && !this.ctx) return null;
     if (!this.ctx) {
       this.ctx = new AudioContext();
-      // Two buses: the effects and the music. Everything else hangs off one of
-      // them, so the two sliders are all that stands between the player and a
-      // comfortable volume.
       this.sfxBus = this.ctx.createGain();
-      this.sfxBus.gain.value = this.sfxVolume;
+      this.sfxBus.gain.value = this.muted ? 0 : 1;
       this.sfxBus.connect(this.ctx.destination);
-      this.musicBus = this.ctx.createGain();
-      this.musicBus.gain.value = this.musicVolume;
-      this.musicBus.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
   }
 
-  /** Where an effect should go. */
   private sfxOut(ctx: AudioContext): AudioNode {
     return this.sfxBus ?? ctx.destination;
-  }
-
-  /** Where the music should go. */
-  private musicOut(ctx: AudioContext): AudioNode {
-    return this.musicBus ?? ctx.destination;
   }
 
   private tone(opts: {
@@ -308,10 +300,10 @@ export class AudioBus {
     dur: number;
     gain: number;
     delay?: number;
-    /** Send it to the music bus instead of the effects bus. */
+    /** Placeholder “music” while tracks load — not affected by SFX mute. */
     music?: boolean;
   }): void {
-    if (this.muted) return;
+    if (this.muted && !opts.music) return;
     const ctx = this.context();
     if (!ctx) return;
     const t = ctx.currentTime + (opts.delay ?? 0);
@@ -323,12 +315,11 @@ export class AudioBus {
     gain.gain.setValueAtTime(opts.gain, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + opts.dur);
     osc.connect(gain);
-    gain.connect(opts.music ? this.musicOut(ctx) : this.sfxOut(ctx));
+    gain.connect(opts.music ? ctx.destination : this.sfxOut(ctx));
     osc.start(t);
     osc.stop(t + opts.dur + 0.02);
   }
 
-  /** Major pentatonic, two octaves from G3. Walking this keeps stacked notes consonant. */
   private nextNote(): number {
     const roll = Math.random();
     const hop = roll < 0.18 ? 0 : roll < 0.55 ? 1 : roll < 0.85 ? -1 : roll < 0.93 ? 2 : -2;
@@ -347,7 +338,6 @@ export class AudioBus {
     return 196 * 2 ** (semis / 12);
   }
 
-  /** Soft mallet: a sine, a quiet octave, and a tiny tap so it feels touched. */
   private pluck(freq: number, volume: number, delay = 0): void {
     if (this.muted) return;
     const ctx = this.context();
@@ -404,13 +394,52 @@ export class AudioBus {
     src.stop(when + 0.03);
   }
 
-  /** Join the tail of a drip recording onto its head so the loop does not click. */
+  private playSample(buffer: AudioBuffer, opts: { rate: number; gain: number; pan: number }): void {
+    if (this.muted) return;
+    const ctx = this.context();
+    if (!ctx) return;
+    const rate = Math.max(0.4, opts.rate);
+    const dur = buffer.duration / rate;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-1, Math.min(1, opts.pan));
+    const gain = ctx.createGain();
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(opts.gain, now);
+    const fadeAt = now + Math.max(0.02, dur - 0.04);
+    gain.gain.setValueAtTime(opts.gain, fadeAt);
+    gain.gain.exponentialRampToValueAtTime(0.0001, fadeAt + 0.04);
+    src.connect(pan);
+    pan.connect(gain);
+    gain.connect(this.sfxOut(ctx));
+    src.start(now);
+    src.stop(now + dur + 0.05);
+  }
+
+  private shortDrop(): AudioBuffer | null {
+    if (this.drops.length === 0) return null;
+    const longest = this.longestDrop();
+    const shorts = this.drops.filter((b) => b !== longest);
+    const pool = shorts.length > 0 ? shorts : this.drops;
+    return pool[Math.floor(Math.random() * pool.length)] ?? null;
+  }
+
+  private longestDrop(): AudioBuffer | null {
+    let best: AudioBuffer | null = null;
+    for (const drop of this.drops) {
+      if (!best || drop.duration > best.duration) best = drop;
+    }
+    return best;
+  }
+
   private prepareLoop(): AudioBuffer | null {
     if (!this.rainBed) return null;
     if (this.rainLoop) return this.rainLoop;
     const ctx = this.context();
     if (!ctx) return this.rainBed;
-    const fade = Math.min(Math.floor(this.rainBed.sampleRate * 0.14), Math.floor(this.rainBed.length / 4));
+    const fade = Math.min(Math.floor(this.rainBed.sampleRate * 0.1), Math.floor(this.rainBed.length / 4));
     const length = this.rainBed.length - fade;
     if (length < fade) return this.rainBed;
     const out = ctx.createBuffer(this.rainBed.numberOfChannels, length, this.rainBed.sampleRate);
@@ -427,7 +456,6 @@ export class AudioBus {
     return out;
   }
 
-  /** Distant wash used until the recording has loaded. */
   private wash(ctx: AudioContext): AudioBuffer {
     const seconds = 2;
     const buffer = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
@@ -440,7 +468,6 @@ export class AudioBus {
     return buffer;
   }
 
-  /** Short band-limited burst — reads as distant rain on leaves, not a faucet drip. */
   private rainPatter(volume: number, centerFreq: number, pan: number, durBase = 0.028): void {
     const ctx = this.context();
     if (!ctx || this.muted) return;
@@ -479,7 +506,7 @@ export class AudioBus {
     this.musicTimer = 0;
     this.stopCustom();
     this.placeholderOn = false;
-    if (!this.musicOn || this.muted) return;
+    if (!this.musicOn) return;
     if (this.custom) {
       this.playCustom();
       return;
@@ -494,8 +521,8 @@ export class AudioBus {
   private playChord(): void {
     const notes = [196, 247, 294, 330, 392];
     const root = notes[Math.floor(Math.random() * notes.length)] ?? 247;
-    this.tone({ type: 'sine', from: root, to: root, dur: 1.3, gain: 0.018 });
-    this.tone({ type: 'triangle', from: root * 1.5, to: root * 1.5, dur: 1.1, gain: 0.01 });
+    this.tone({ type: 'sine', from: root, to: root, dur: 1.3, gain: 0.018, music: true });
+    this.tone({ type: 'triangle', from: root * 1.5, to: root * 1.5, dur: 1.1, gain: 0.01, music: true });
   }
 
   private playCustom(): void {
@@ -507,7 +534,7 @@ export class AudioBus {
     const gain = ctx.createGain();
     gain.gain.value = 0.2;
     src.connect(gain);
-    gain.connect(this.musicOut(ctx));
+    gain.connect(ctx.destination);
     src.start();
     this.customNode = src;
     this.musicGain = gain;
