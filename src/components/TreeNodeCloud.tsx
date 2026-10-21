@@ -310,6 +310,7 @@ export function TreeNodeCloud({
   onAffordPingEnd,
   onPick,
   onBuy,
+  ignoreTap,
 }: {
   node: TreeNodeView;
   picked: boolean;
@@ -320,6 +321,8 @@ export function TreeNodeCloud({
   onAffordPingEnd?: () => void;
   onPick: () => void;
   onBuy: () => void;
+  /** True when the player was panning — ignore tap-to-select. */
+  ignoreTap?: () => boolean;
 }) {
   const state = nodeVisual(node);
   const shape = nodeShape(node.branch);
@@ -331,11 +334,18 @@ export function TreeNodeCloud({
   const showRank = node.max > 1 && !node.maxed;
 
   return (
-    <button
-      type="button"
-      onPointerDown={(e) => e.stopPropagation()}
+    <div
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onPick();
+        }
+      }}
       onClick={(e) => {
         e.stopPropagation();
+        if (ignoreTap?.()) return;
         onPick();
       }}
       className={`tree-node tree-node--${state} tree-node--${shape}${picked ? ' tree-node--picked' : ''}${node.id === 'puff' ? ' tree-node--center' : ''}`}
@@ -399,6 +409,6 @@ export function TreeNodeCloud({
         </span>
       )}
       {showRank && <span className="tree-node__rank">{node.level}/{node.max}</span>}
-    </button>
+    </div>
   );
 }

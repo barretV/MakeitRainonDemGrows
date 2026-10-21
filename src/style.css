@@ -1135,7 +1135,7 @@ canvas {
   padding: 0;
   cursor: pointer;
   background: transparent;
-  touch-action: manipulation;
+  touch-action: none;
   overflow: visible;
 }
 

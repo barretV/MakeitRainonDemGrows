@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState } from 'react';
+import { useReducer, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 import RundotGameAPI from '@series-inc/rundot-game-sdk/api';
 import type { RainGame } from '../game/RainGame';
 import { worldDef } from '../game/balance';
@@ -177,11 +177,12 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   const tweenRafRef = useRef<number | null>(null);
   const panStart = useRef<{ vx: number; vy: number; cx: number; cy: number } | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
-  const pinchRef = useRef<{ dist: number; s: number; fx: number; fy: number } | null>(null);
+  const pinchStart = useRef<{ dist: number; midX: number; midY: number; view: View } | null>(null);
   const moved = useRef(false);
+  const rectRef = useRef({ w: 360, h: 480, left: 0, top: 0 });
+  const canvasResizeRef = useRef<ResizeObserver | null>(null);
   const modelRef = useRef(model);
   modelRef.current = model;
-  const detachWorkshopInputRef = useRef<(() => void) | null>(null);
   const entryPulseRef = useRef(false);
   const revealRef = useRef<Set<NodeId>>(new Set());
   const edgeAnimRef = useRef<Set<NodeId>>(new Set());
@@ -327,17 +328,14 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     }, 120);
   };
 
-  const pointerPos = (clientX: number, clientY: number) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    return { x: clientX - rect.left, y: clientY - rect.top };
-  };
+  const localPt = (clientX: number, clientY: number) => ({
+    x: clientX - rectRef.current.left,
+    y: clientY - rectRef.current.top,
+  });
 
-  const pointerSpread = () => {
-    const pts = [...pointersRef.current.values()];
-    if (pts.length < 2) return 0;
-    return Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
-  };
+  const blocksPan = (target: EventTarget | null) =>
+    target instanceof Element &&
+    !!target.closest('.workshop-panel, .workshop-wallet, .workshop-jump, .workshop-buy, .workshop-back');
 
   const zoomAt = (px: number, py: number, nextS: number) => {
     const v = viewRef.current;
@@ -345,12 +343,94 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     const wx = (px - v.x) / v.s;
     const wy = (py - v.y) / v.s;
     viewRef.current = { x: px - wx * s, y: py - wy * s, s };
+    applyTransform();
+  };
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (blocksPan(e.target)) return;
+    const p = localPt(e.clientX, e.clientY);
+    pointersRef.current.set(e.pointerId, p);
+    moved.current = false;
+    tweenRef.current = null;
+    if (pointersRef.current.size === 1) {
+      panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
+      pinchStart.current = null;
+    } else if (pointersRef.current.size === 2) {
+      const pts = [...pointersRef.current.values()];
+      const a = pts[0];
+      const b = pts[1];
+      if (!a || !b) return;
+      pinchStart.current = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y),
+        midX: (a.x + b.x) / 2,
+        midY: (a.y + b.y) / 2,
+        view: { ...viewRef.current },
+      };
+      panStart.current = null;
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    const p = localPt(e.clientX, e.clientY);
+    pointersRef.current.set(e.pointerId, p);
+    if (pointersRef.current.size >= 2 && pinchStart.current) {
+      const pts = [...pointersRef.current.values()];
+      const a = pts[0];
+      const b = pts[1];
+      if (!a || !b) return;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      const ps = pinchStart.current;
+      const ns = clamp(ps.view.s * (dist / ps.dist), MIN_ZOOM, MAX_ZOOM);
+      const tx = (ps.midX - ps.view.x) / ps.view.s;
+      const ty = (ps.midY - ps.view.y) / ps.view.s;
+      viewRef.current = { x: midX - tx * ns, y: midY - ty * ns, s: ns };
+      applyTransform();
+      moved.current = true;
+    } else if (panStart.current) {
+      const dx = p.x - panStart.current.cx;
+      const dy = p.y - panStart.current.cy;
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+        moved.current = true;
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }
+      }
+      viewRef.current = {
+        x: panStart.current.vx + dx,
+        y: panStart.current.vy + dy,
+        s: viewRef.current.s,
+      };
+      applyTransform();
+    }
+  };
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) pinchStart.current = null;
+    if (pointersRef.current.size === 0) {
+      panStart.current = null;
+      persistView();
+    }
+  };
+
+  const onWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    tweenRef.current = null;
+    const p = localPt(e.clientX, e.clientY);
+    zoomAt(p.x, p.y, viewRef.current.s * (e.deltaY < 0 ? 1.1 : 0.91));
+    persistView();
   };
 
   const bindCanvas = (el: HTMLDivElement | null) => {
-    detachWorkshopInputRef.current?.();
-    detachWorkshopInputRef.current = null;
-
+    canvasResizeRef.current?.disconnect();
+    canvasResizeRef.current = null;
     if (!el) {
       if (tweenRafRef.current != null) cancelAnimationFrame(tweenRafRef.current);
       tweenRafRef.current = null;
@@ -360,125 +440,19 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       entryPulseRef.current = false;
       pointersRef.current.clear();
       panStart.current = null;
-      pinchRef.current = null;
+      pinchStart.current = null;
       canvasRef.current = null;
       return;
     }
-
-    const onDown = (e: PointerEvent) => {
-      if (e.button !== 0) return;
-      const target = e.target as HTMLElement;
-      if (target.closest('.tree-node, .workshop-panel, .workshop-wallet, button, a')) return;
-      try {
-        el.setPointerCapture(e.pointerId);
-      } catch {
-        /* ignore */
-      }
-      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      moved.current = false;
-      tweenRef.current = null;
-
-      if (pointersRef.current.size === 1) {
-        const p = pointerPos(e.clientX, e.clientY);
-        panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
-        pinchRef.current = null;
-        window.addEventListener('pointermove', onMove, { passive: true });
-        window.addEventListener('pointerup', onUp);
-        window.addEventListener('pointercancel', onUp);
-      } else if (pointersRef.current.size === 2) {
-        panStart.current = null;
-        const dist = pointerSpread();
-        if (dist > 8) {
-          const pts = [...pointersRef.current.values()];
-          const focal = pointerPos((pts[0]!.x + pts[1]!.x) / 2, (pts[0]!.y + pts[1]!.y) / 2);
-          pinchRef.current = { dist, s: viewRef.current.s, fx: focal.x, fy: focal.y };
-          moved.current = true;
-        }
-      }
-    };
-
-    const onMove = (e: PointerEvent) => {
-      if (!pointersRef.current.has(e.pointerId)) return;
-      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-      if (pointersRef.current.size >= 2) {
-        const dist = pointerSpread();
-        const pinch = pinchRef.current;
-        if (pinch && dist > 8) {
-          moved.current = true;
-          zoomAt(pinch.fx, pinch.fy, (pinch.s * pinch.dist) / dist);
-          applyTransform();
-        }
-        return;
-      }
-
-      if (!panStart.current) return;
-      const p = pointerPos(e.clientX, e.clientY);
-      const dx = p.x - panStart.current.cx;
-      const dy = p.y - panStart.current.cy;
-      if (Math.hypot(dx, dy) > 4) moved.current = true;
-      viewRef.current = {
-        ...viewRef.current,
-        x: panStart.current.vx + dx,
-        y: panStart.current.vy + dy,
-      };
-      applyTransform();
-    };
-
-    const endWindowPan = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-
-    const onUp = (e: PointerEvent) => {
-      const hadPan = panStart.current != null;
-      const didMove = moved.current;
-      pointersRef.current.delete(e.pointerId);
-      if (pointersRef.current.size < 2) pinchRef.current = null;
-      if (pointersRef.current.size === 0) {
-        endWindowPan();
-        if (!didMove && hadPan) {
-          const id = pickFocusId(modelRef.current.tree);
-          setPicked(id);
-          focusNode(id, true, viewRef.current.s);
-        }
-        if (didMove) persistView();
-        panStart.current = null;
-      } else if (pointersRef.current.size === 1) {
-        const remaining = [...pointersRef.current.values()][0];
-        if (remaining) {
-          const p = pointerPos(remaining.x, remaining.y);
-          panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
-        }
-        pinchRef.current = null;
-      }
-    };
-
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      tweenRef.current = null;
-      const p = pointerPos(e.clientX, e.clientY);
-      const factor = e.deltaY < 0 ? 1.1 : 0.91;
-      zoomAt(p.x, p.y, viewRef.current.s * factor);
-      applyTransform();
-      persistView();
-    };
-
     canvasRef.current = el;
-    el.addEventListener('pointerdown', onDown);
-    el.addEventListener('pointermove', onMove);
-    el.addEventListener('pointerup', onUp);
-    el.addEventListener('pointercancel', onUp);
-    el.addEventListener('wheel', onWheel, { passive: false });
-    detachWorkshopInputRef.current = () => {
-      endWindowPan();
-      el.removeEventListener('pointerdown', onDown);
-      el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerup', onUp);
-      el.removeEventListener('pointercancel', onUp);
-      el.removeEventListener('wheel', onWheel);
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      rectRef.current = { w: r.width, h: r.height, left: r.left, top: r.top };
     };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    canvasResizeRef.current = ro;
 
     const restoreSavedView = savedWorkshopView != null;
     if (restoreSavedView) {
@@ -537,6 +511,18 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       <div
         ref={bindCanvas}
         className="workshop-canvas relative min-h-0 min-w-0 flex-1 touch-none select-none"
+        style={{ touchAction: 'none', cursor: 'grab' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onWheel={onWheel}
+        onClick={() => {
+          if (moved.current) return;
+          const id = pickFocusId(modelRef.current.tree);
+          setPicked(id);
+          focusNode(id, true, viewRef.current.s);
+        }}
       >
         <DewWallet amount={model.dew} blooms={model.spendableBlooms} />
         <div className="workshop-legend pixel">
@@ -615,6 +601,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
                   focusNode(node.id, true, viewRef.current.s);
                 }}
                 onBuy={() => purchase(node.id)}
+                ignoreTap={() => moved.current}
               />
             ))}
           </div>
