@@ -346,7 +346,7 @@ export class SaveState {
   private dryCacheAt = 0;
   achievements: string[] = [];
   sfx = true;
-  music = false;
+  music = true;
   lastSave = Date.now();
   /** Latest message. Every write also lands in the toast log so the HUD can
    * show them one at a time instead of overwriting each other. */

@@ -1487,11 +1487,30 @@ export class RainGame {
     if (fresh) await this.saveNow();
     this.lastPhase = this.state.phase;
     this.audio.setMuted(!this.state.sfx);
-    if (this.state.music) this.audio.toggleMusic();
+    void this.loadMainMusic();
     this.rebuild();
     this.dropCloud(this.spawnAt());
     this.pushHud(true);
     this.frame = requestAnimationFrame(this.loop);
+  }
+
+  /** Lost in Space, packed as `lost-in-space`. Plays while the music toggle is on. */
+  private async loadMainMusic(): Promise<void> {
+    if (!this.state || this.dead) return;
+    try {
+      const pack = await loadStowKitPack('default', this.renderer);
+      const listener = new THREE.AudioListener();
+      this.camera.add(listener);
+      const clip = await pack.loadAudio('lost-in-space', listener);
+      const buffer = clip.buffer;
+      if (clip.isPlaying) clip.stop();
+      this.camera.remove(listener);
+      if (!buffer || !this.state || this.dead) return;
+      this.audio.attachMusic(buffer);
+      if (this.state.music && !this.audio.musicOn) this.audio.toggleMusic();
+    } catch (err) {
+      console.warn('Lost in Space failed to load', err);
+    }
   }
 
   private loop = (): void => {

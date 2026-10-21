@@ -1,6 +1,6 @@
 /**
- * Tiny Web Audio bed. Drop a real track in later with attachMusic().
- * Until then the music toggle plays a soft pentatonic placeholder.
+ * Web Audio bed. The music toggle plays Lost in Space once it has loaded.
+ * A soft chord loop fills in if the track is missing.
  */
 export class AudioBus {
   muted = false;
