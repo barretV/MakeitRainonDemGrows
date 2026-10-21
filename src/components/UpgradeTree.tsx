@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { useReducer, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react';
 import RundotGameAPI from '@series-inc/rundot-game-sdk/api';
 import type { RainGame } from '../game/RainGame';
 import { worldDef } from '../game/balance';
@@ -181,6 +181,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   const moved = useRef(false);
   const rectRef = useRef({ w: 360, h: 480, left: 0, top: 0 });
   const canvasResizeRef = useRef<ResizeObserver | null>(null);
+  const gestureCleanupRef = useRef<(() => void) | null>(null);
   const modelRef = useRef(model);
   modelRef.current = model;
   const entryPulseRef = useRef(false);
@@ -328,6 +329,11 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     }, 120);
   };
 
+  const measureCanvasRect = (el: HTMLDivElement) => {
+    const r = el.getBoundingClientRect();
+    rectRef.current = { w: r.width, h: r.height, left: r.left, top: r.top };
+  };
+
   const localPt = (clientX: number, clientY: number) => ({
     x: clientX - rectRef.current.left,
     y: clientY - rectRef.current.top,
@@ -346,89 +352,129 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     applyTransform();
   };
 
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (blocksPan(e.target)) return;
-    const p = localPt(e.clientX, e.clientY);
-    pointersRef.current.set(e.pointerId, p);
-    moved.current = false;
-    tweenRef.current = null;
-    if (pointersRef.current.size === 1) {
-      panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
-      pinchStart.current = null;
-    } else if (pointersRef.current.size === 2) {
-      const pts = [...pointersRef.current.values()];
-      const a = pts[0];
-      const b = pts[1];
-      if (!a || !b) return;
-      pinchStart.current = {
-        dist: Math.hypot(a.x - b.x, a.y - b.y),
-        midX: (a.x + b.x) / 2,
-        midY: (a.y + b.y) / 2,
-        view: { ...viewRef.current },
-      };
-      panStart.current = null;
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
-  };
-
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!pointersRef.current.has(e.pointerId)) return;
-    const p = localPt(e.clientX, e.clientY);
-    pointersRef.current.set(e.pointerId, p);
-    if (pointersRef.current.size >= 2 && pinchStart.current) {
-      const pts = [...pointersRef.current.values()];
-      const a = pts[0];
-      const b = pts[1];
-      if (!a || !b) return;
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      const midX = (a.x + b.x) / 2;
-      const midY = (a.y + b.y) / 2;
-      const ps = pinchStart.current;
-      const ns = clamp(ps.view.s * (dist / ps.dist), MIN_ZOOM, MAX_ZOOM);
-      const tx = (ps.midX - ps.view.x) / ps.view.s;
-      const ty = (ps.midY - ps.view.y) / ps.view.s;
-      viewRef.current = { x: midX - tx * ns, y: midY - ty * ns, s: ns };
-      applyTransform();
-      moved.current = true;
-    } else if (panStart.current) {
-      const dx = p.x - panStart.current.cx;
-      const dy = p.y - panStart.current.cy;
-      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
-        moved.current = true;
-        if (!e.currentTarget.hasPointerCapture(e.pointerId)) {
-          e.currentTarget.setPointerCapture(e.pointerId);
+  const attachCanvasGestures = (el: HTMLDivElement) => {
+    const onDown = (e: PointerEvent) => {
+      if (blocksPan(e.target)) return;
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
+      measureCanvasRect(el);
+      const p = localPt(e.clientX, e.clientY);
+      pointersRef.current.set(e.pointerId, p);
+      moved.current = false;
+      tweenRef.current = null;
+      if (pointersRef.current.size === 1) {
+        panStart.current = { vx: viewRef.current.x, vy: viewRef.current.y, cx: p.x, cy: p.y };
+        pinchStart.current = null;
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignored */
+        }
+      } else if (pointersRef.current.size === 2) {
+        const pts = [...pointersRef.current.values()];
+        const a = pts[0];
+        const b = pts[1];
+        if (!a || !b) return;
+        pinchStart.current = {
+          dist: Math.hypot(a.x - b.x, a.y - b.y),
+          midX: (a.x + b.x) / 2,
+          midY: (a.y + b.y) / 2,
+          view: { ...viewRef.current },
+        };
+        panStart.current = null;
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignored */
         }
       }
-      viewRef.current = {
-        x: panStart.current.vx + dx,
-        y: panStart.current.vy + dy,
-        s: viewRef.current.s,
-      };
-      applyTransform();
-    }
-  };
+    };
 
-  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    pointersRef.current.delete(e.pointerId);
-    if (pointersRef.current.size < 2) pinchStart.current = null;
-    if (pointersRef.current.size === 0) {
-      panStart.current = null;
-      persistView();
-    }
+    const onMove = (e: PointerEvent) => {
+      if (!pointersRef.current.has(e.pointerId)) return;
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
+      measureCanvasRect(el);
+      const p = localPt(e.clientX, e.clientY);
+      pointersRef.current.set(e.pointerId, p);
+      if (pointersRef.current.size >= 2 && pinchStart.current) {
+        const pts = [...pointersRef.current.values()];
+        const a = pts[0];
+        const b = pts[1];
+        if (!a || !b) return;
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        const ps = pinchStart.current;
+        const ns = clamp(ps.view.s * (dist / ps.dist), MIN_ZOOM, MAX_ZOOM);
+        const tx = (ps.midX - ps.view.x) / ps.view.s;
+        const ty = (ps.midY - ps.view.y) / ps.view.s;
+        viewRef.current = { x: midX - tx * ns, y: midY - ty * ns, s: ns };
+        applyTransform();
+        moved.current = true;
+      } else if (panStart.current) {
+        const dx = p.x - panStart.current.cx;
+        const dy = p.y - panStart.current.cy;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved.current = true;
+        viewRef.current = {
+          x: panStart.current.vx + dx,
+          y: panStart.current.vy + dy,
+          s: viewRef.current.s,
+        };
+        applyTransform();
+      }
+    };
+
+    const onUp = (e: PointerEvent) => {
+      if (el.hasPointerCapture(e.pointerId)) {
+        try {
+          el.releasePointerCapture(e.pointerId);
+        } catch {
+          /* ignored */
+        }
+      }
+      pointersRef.current.delete(e.pointerId);
+      if (pointersRef.current.size < 2) pinchStart.current = null;
+      if (pointersRef.current.size === 0) {
+        panStart.current = null;
+        persistView();
+      }
+    };
+
+    const passiveFalse = { passive: false } as const;
+    el.addEventListener('pointerdown', onDown, passiveFalse);
+    el.addEventListener('pointermove', onMove, passiveFalse);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointermove', onMove, passiveFalse);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    const onResize = () => measureCanvasRect(el);
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('resize', onResize);
+    };
   };
 
   const onWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
     e.preventDefault();
     tweenRef.current = null;
+    const canvas = canvasRef.current;
+    if (canvas) measureCanvasRect(canvas);
     const p = localPt(e.clientX, e.clientY);
     zoomAt(p.x, p.y, viewRef.current.s * (e.deltaY < 0 ? 1.1 : 0.91));
     persistView();
   };
 
   const bindCanvas = (el: HTMLDivElement | null) => {
+    gestureCleanupRef.current?.();
+    gestureCleanupRef.current = null;
     canvasResizeRef.current?.disconnect();
     canvasResizeRef.current = null;
     if (!el) {
@@ -445,14 +491,12 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       return;
     }
     canvasRef.current = el;
-    const measure = () => {
-      const r = el.getBoundingClientRect();
-      rectRef.current = { w: r.width, h: r.height, left: r.left, top: r.top };
-    };
+    const measure = () => measureCanvasRect(el);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     canvasResizeRef.current = ro;
+    gestureCleanupRef.current = attachCanvasGestures(el);
 
     const restoreSavedView = savedWorkshopView != null;
     if (restoreSavedView) {
@@ -512,10 +556,6 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
         ref={bindCanvas}
         className="workshop-canvas relative min-h-0 min-w-0 flex-1 touch-none select-none"
         style={{ touchAction: 'none', cursor: 'grab' }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
         onWheel={onWheel}
         onClick={() => {
           if (moved.current) return;

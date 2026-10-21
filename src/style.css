@@ -918,6 +918,7 @@ canvas {
   top: 0;
   transform-origin: 0 0;
   will-change: transform;
+  pointer-events: none;
 }
 
 .workshop-vines {
@@ -930,6 +931,7 @@ canvas {
 .workshop-nodes {
   position: relative;
   z-index: 2;
+  pointer-events: none;
 }
 
 .workshop-panel {
@@ -1136,6 +1138,7 @@ canvas {
   cursor: pointer;
   background: transparent;
   touch-action: none;
+  pointer-events: auto;
   overflow: visible;
 }
 

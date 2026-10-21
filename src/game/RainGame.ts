@@ -2837,7 +2837,7 @@ export class RainGame {
   private onDown = (event: PointerEvent): void => {
     this.audio.unlock();
     const state = this.state;
-    if (!state) return;
+    if (!state || state.screen !== 'play') return;
     this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     this.aim(event);
     this.raycaster.setFromCamera(this.pointer, this.camera);
@@ -2889,10 +2889,11 @@ export class RainGame {
   };
 
   private onMove = (event: PointerEvent): void => {
+    const state = this.state;
+    if (!state || state.screen !== 'play') return;
     if (this.pointers.has(event.pointerId)) {
       this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
-    const state = this.state;
     // The second finger is the right stick: push it sideways to turn the world.
     const turn = this.rotateStick;
     if (turn && event.pointerId === turn.id && state && (state.phase === 'play' || state.phase === 'finale')) {
