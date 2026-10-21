@@ -137,24 +137,28 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                 />
               </div>
               <div className="hud-currency-strip">
-                <HudChip
-                  display={formatDew(model.dew)}
-                  icon={<HudDewIcon />}
-                  ariaLabel={`${formatDew(model.dew)} dew`}
-                  bump={bumpDew}
-                />
-                <HudChip
-                  display={String(blooms)}
-                  icon={<HudPlantIcon />}
-                  ariaLabel={`${blooms} blooms`}
-                  bump={bumpBlooms}
-                />
-                {model.chain > 1.05 && (
-                  <div className="hud-chain pixel" aria-label={`Chain multiplier ${model.chain.toFixed(1)}`}>
-                    <span className="hud-chain__x">x</span>
-                    {model.chain.toFixed(1)}
-                  </div>
-                )}
+                <div className="hud-currency-strip__wallet">
+                  <HudChip
+                    display={formatDew(model.dew)}
+                    icon={<HudDewIcon />}
+                    ariaLabel={`${formatDew(model.dew)} dew`}
+                    bump={bumpDew}
+                  />
+                  <HudChip
+                    display={String(blooms)}
+                    icon={<HudPlantIcon />}
+                    ariaLabel={`${blooms} blooms`}
+                    bump={bumpBlooms}
+                  />
+                </div>
+                <div
+                  className={`hud-chain pixel tabular-nums${model.chain > 1.05 ? '' : ' hud-chain--hidden'}`}
+                  aria-hidden={model.chain <= 1.05}
+                  aria-label={model.chain > 1.05 ? `Chain multiplier ${model.chain.toFixed(1)}` : undefined}
+                >
+                  <span className="hud-chain__x">x</span>
+                  {model.chain.toFixed(1)}
+                </div>
               </div>
             </div>
           </div>
