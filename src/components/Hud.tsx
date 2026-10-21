@@ -8,19 +8,24 @@ import { HudDewIcon, HudPlantIcon } from './HudCurrencyIcons';
 import { HudToast } from './HudToast';
 import { UpgradeTree } from './UpgradeTree';
 
-/** True on a touch-first device: no mouse, only fingers. */
+/** Touch-first play (phones, RUN app): coarse pointer or our scaled touch shell. */
 function useTouchControls(): boolean {
   const [touch, setTouch] = useState(false);
   useEffect(() => {
-    const query = window.matchMedia('(pointer: coarse)');
+    const coarse = window.matchMedia('(pointer: coarse)');
     const fine = window.matchMedia('(any-pointer: fine)');
-    const read = () => setTouch(query.matches && !fine.matches);
+    const read = () => {
+      const touchShell = document.documentElement.classList.contains('touch-design');
+      setTouch(touchShell || (coarse.matches && !fine.matches));
+    };
     read();
-    query.addEventListener('change', read);
+    coarse.addEventListener('change', read);
     fine.addEventListener('change', read);
+    window.addEventListener('resize', read);
     return () => {
-      query.removeEventListener('change', read);
+      coarse.removeEventListener('change', read);
       fine.removeEventListener('change', read);
+      window.removeEventListener('resize', read);
     };
   }, []);
   return touch;
@@ -37,40 +42,52 @@ function Key({ children }: { children: ReactNode }) {
 function ControlHints() {
   const touch = useTouchControls();
   return (
-    <div className="hud-controls pixel" aria-label="Controls">
-      {touch ? (
-        <>
-          <span className="hud-controls__item">
-            <svg viewBox="0 0 16 16" className="hud-controls__glyph" aria-hidden>
-              <path d="M8 1c2 3 3 5 3 7a3 3 0 1 1-6 0c0-2 1-4 3-7z" fill="currentColor" />
-              <path d="M1 13c2-1 4-1 6 0M9 13c2-1 4-1 6 0" stroke="currentColor" strokeWidth="1.4" fill="none" />
-            </svg>
-            Drag to fly
-          </span>
-          <span className="hud-controls__item">
-            <svg viewBox="0 0 16 16" className="hud-controls__glyph" aria-hidden>
-              <path d="M13 8a5 5 0 1 1-2-4" stroke="currentColor" strokeWidth="1.6" fill="none" />
-              <path d="M11 1v4h-4" stroke="currentColor" strokeWidth="1.6" fill="none" />
-            </svg>
-            Two fingers to turn
-          </span>
-        </>
-      ) : (
-        <>
-          <span className="hud-controls__item">
-            <Key>W</Key>
-            <Key>A</Key>
-            <Key>S</Key>
-            <Key>D</Key>
-            Fly
-          </span>
-          <span className="hud-controls__item">
-            <Key>Q</Key>
-            <Key>E</Key>
-            Turn
-          </span>
-        </>
-      )}
+    <div className="hud-controls pixel pointer-events-auto" aria-label="How to play">
+      <span className="hud-controls__title">Controls</span>
+      <div className="hud-controls__row">
+        {touch ? (
+          <>
+            <span className="hud-controls__item">
+              <svg viewBox="0 0 16 16" className="hud-controls__glyph" aria-hidden>
+                <path d="M8 1c2 3 3 5 3 7a3 3 0 1 1-6 0c0-2 1-4 3-7z" fill="currentColor" />
+                <path d="M1 13c2-1 4-1 6 0M9 13c2-1 4-1 6 0" stroke="currentColor" strokeWidth="1.4" fill="none" />
+              </svg>
+              <span className="hud-controls__verb">Drag</span>
+              <span className="hud-controls__hint">move cloud</span>
+            </span>
+            <span className="hud-controls__item">
+              <svg viewBox="0 0 16 16" className="hud-controls__glyph" aria-hidden>
+                <path d="M13 8a5 5 0 1 1-2-4" stroke="currentColor" strokeWidth="1.6" fill="none" />
+                <path d="M11 1v4h-4" stroke="currentColor" strokeWidth="1.6" fill="none" />
+              </svg>
+              <span className="hud-controls__verb">2 fingers</span>
+              <span className="hud-controls__hint">turn view</span>
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="hud-controls__item">
+              <span className="hud-controls__keys" aria-hidden>
+                <Key>W</Key>
+                <Key>A</Key>
+                <Key>S</Key>
+                <Key>D</Key>
+              </span>
+              <span className="hud-controls__slash">/</span>
+              <span className="hud-controls__arrows" aria-hidden>↑←↓→</span>
+              <span className="hud-controls__verb">Fly</span>
+            </span>
+            <span className="hud-controls__item">
+              <span className="hud-controls__keys" aria-hidden>
+                <Key>Q</Key>
+                <Key>E</Key>
+              </span>
+              <span className="hud-controls__verb">Turn</span>
+            </span>
+          </>
+        )}
+      </div>
+      <span className="hud-controls__note">Rain falls on its own — cover dry land</span>
     </div>
   );
 }
