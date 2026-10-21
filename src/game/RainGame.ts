@@ -1490,6 +1490,7 @@ export class RainGame {
     this.lastPhase = this.state.phase;
     this.audio.setMuted(!this.state.sfx);
     void this.loadMainMusic();
+    void this.loadFieldSounds();
     this.rebuild();
     this.dropCloud(this.spawnAt());
     this.pushHud(true);
@@ -1512,6 +1513,31 @@ export class RainGame {
     } catch (err) {
       console.warn('Music failed to load', err);
     }
+  }
+
+  /** Recorded drips for the rain, played back at a slightly different pitch each time. */
+  private async loadFieldSounds(): Promise<void> {
+    const ids = [
+      'audio/environment/water_dripping',
+      'audio/foley-sounds/water/drip1',
+      'audio/foley-sounds/water/drip2',
+      'audio/foley-sounds/water/drip3',
+      'audio/foley-sounds/water/drip4',
+      'audio/environment/water_drop_medium',
+    ];
+    const load = async (id: string): Promise<AudioBuffer | null> => {
+      try {
+        return await this.loadMusicClip(id);
+      } catch (err) {
+        console.warn('Rain clip failed', id, err);
+        return null;
+      }
+    };
+    const [bed, ...drops] = await Promise.all(ids.map(load));
+    if (this.dead) return;
+    const clips = drops.filter((clip): clip is AudioBuffer => !!clip);
+    if (clips.length) this.audio.setDrops(clips);
+    if (bed) this.audio.setRainTexture(bed);
   }
 
   private async loadMusicClip(id: string): Promise<AudioBuffer | null> {
@@ -1854,6 +1880,7 @@ export class RainGame {
     this.abilityVfx.update(dt);
     for (const pulse of state.takeGrowthPulses()) {
       this.burst(pulse.x, 1.05, pulse.z, 6 + pulse.stage * 2);
+      this.audio.grow();
     }
     for (const index of state.takeGreen()) {
       this.onBloom(index, { dew: 0, bloomed: true, crit: false, pond: state.spec(index).kind === 'pond', mega: state.spec(index).kind === 'seed', filling: null });

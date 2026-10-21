@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "stringId": "audio/foley-sounds/water/drip4",
+  "tags": [
+    "water",
+    "drip",
+    "liquid",
+    "sfx",
+    "drop",
+    "foley"
+  ],
+  "pack": "default",
+  "type": "audio",
+  "aacQuality": "high",
+  "sampleRate": "44100",
+  "cache": {
+    "sourceSize": 13678,
+    "sourceLastModified": 1792567410391.3892,
+    "settingsHash": "3|aq=3|sr=44100"
+  }
+}

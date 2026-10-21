@@ -1,6 +1,7 @@
 /**
  * Web Audio bed. Lost in Space plays over the islands. Sketchbook plays in the workshop.
- * A soft chord loop fills in if a track is missing.
+ * Rain is a recorded drip bed plus close drops. Growth notes walk a pentatonic scale
+ * and each one is nudged a few cents, so a busy bottle stays soft instead of mechanical.
  */
 export type MusicBed = 'field' | 'workshop';
 
@@ -10,8 +11,17 @@ export class AudioBus {
   private ctx: AudioContext | null = null;
   private rainGain: GainNode | null = null;
   private rainSrc: AudioBufferSourceNode | null = null;
+  private rainLow: BiquadFilterNode | null = null;
+  private rainHigh: BiquadFilterNode | null = null;
   private humOsc: OscillatorNode | null = null;
   private humGain: GainNode | null = null;
+  private drops: AudioBuffer[] = [];
+  private rainBed: AudioBuffer | null = null;
+  private rainLoop: AudioBuffer | null = null;
+  private lastDrip = 0;
+  private lastGrow = 0;
+  /** Where the growth melody is standing on a two-octave pentatonic. */
+  private degree = 4;
   private musicGain: GainNode | null = null;
   private musicTimer = 0;
   private beds: Record<MusicBed, AudioBuffer | null> = { field: null, workshop: null };
@@ -51,36 +61,66 @@ export class AudioBus {
     this.syncMusic();
   }
 
+  /** Close-up drop recordings. The longest one is the occasional fat drop. */
+  setDrops(buffers: AudioBuffer[]): void {
+    this.drops = buffers.filter((b) => b.length > 0);
+  }
+
+  /** Steady drip recording under the close drops. Looped with a short crossfade. */
+  setRainTexture(buffer: AudioBuffer): void {
+    this.rainBed = buffer;
+    this.rainLoop = null;
+    if (this.rainSrc) {
+      this.rainStop();
+      this.rainStart();
+    }
+  }
+
   rainStart(): void {
     if (this.muted || this.rainSrc) return;
     const ctx = this.context();
     if (!ctx) return;
-    const seconds = 1;
-    const buffer = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+    const recorded = this.prepareLoop();
+    const buffer = recorded ?? this.wash(ctx);
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.loop = true;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 1400;
-    filter.Q.value = 0.7;
+    const high = ctx.createBiquadFilter();
+    high.type = 'highpass';
+    high.frequency.value = recorded ? 140 : 280;
+    high.Q.value = 0.7;
+    const low = ctx.createBiquadFilter();
+    low.type = 'lowpass';
+    low.frequency.value = recorded ? 5200 : 1400;
+    low.Q.value = 0.5;
     const gain = ctx.createGain();
-    gain.gain.value = 0.035;
-    src.connect(filter);
-    filter.connect(gain);
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(recorded ? 0.42 : 0.04, now + 0.6);
+    src.connect(high);
+    high.connect(low);
+    low.connect(gain);
     gain.connect(ctx.destination);
     src.start();
     this.rainSrc = src;
+    this.rainHigh = high;
+    this.rainLow = low;
     this.rainGain = gain;
   }
 
   rainStop(): void {
-    this.rainSrc?.stop();
+    try {
+      this.rainSrc?.stop();
+    } catch {
+      /* already stopped */
+    }
     this.rainSrc?.disconnect();
+    this.rainHigh?.disconnect();
+    this.rainLow?.disconnect();
     this.rainGain?.disconnect();
     this.rainSrc = null;
+    this.rainHigh = null;
+    this.rainLow = null;
     this.rainGain = null;
     this.setRainHum(false);
   }
@@ -116,30 +156,61 @@ export class AudioBus {
   }
 
   splash(): void {
-    this.noise(0.18, 700, 0.06);
+    const buf = this.longestDrop();
+    if (!buf) {
+      this.noise(0.18, 700, 0.06);
+      return;
+    }
+    const semis = -5 - Math.random() * 4;
+    this.playSample(buf, {
+      rate: 2 ** (semis / 12),
+      gain: 0.14,
+      pan: (Math.random() - 0.5) * 0.5,
+    });
   }
-
-  /** A drop hitting the ground: tiny, soft and very short. */
-  drip(): void {
-    this.noise(0.06, 1800, 0.022);
-  }
-
-  private lastRestore = 0;
 
   /**
-   * A patch coming back to life. Called for every finished cell, so it rate
-   * limits itself and drifts its pitch, so a busy bottle sounds like rain on
-   * leaves rather than a machine gun.
+   * A drop landing. Picks a different recording and a different pitch every
+   * time, clustered near the original so it still sounds like water.
    */
-  restore(): void {
+  drip(): void {
     if (this.muted) return;
     const ctx = this.context();
     if (!ctx) return;
     const now = ctx.currentTime;
-    if (now - this.lastRestore < 0.11) return;
-    this.lastRestore = now;
-    const step = 620 + Math.random() * 260;
-    this.tone({ type: 'triangle', from: step, to: step * 1.5, dur: 0.07, gain: 0.016 });
+    if (now - this.lastDrip < 0.075) return;
+    this.lastDrip = now;
+    const fat = Math.random() < 0.16 ? this.longestDrop() : null;
+    const buf = fat ?? this.shortDrop();
+    if (!buf) {
+      this.noise(0.05, 2200, 0.02);
+      return;
+    }
+    const semis = fat ? -3 - Math.random() * 5 : (Math.random() - Math.random()) * 6;
+    this.playSample(buf, {
+      rate: 2 ** (semis / 12),
+      gain: (fat ? 0.13 : 0.075) * (0.65 + Math.random() * 0.55),
+      pan: (Math.random() - 0.5) * 1.5,
+    });
+  }
+
+  /**
+   * A sprout. Notes step along a pentatonic, then each one is slipped by a
+   * few cents so two of the same pitch never ring exactly together.
+   */
+  grow(): void {
+    if (this.muted) return;
+    const ctx = this.context();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (now - this.lastGrow < 0.18) return;
+    this.lastGrow = now;
+    this.pluck(this.nextNote(), 0.028 + Math.random() * 0.016);
+  }
+
+  /** A patch coming back to life. Same voice as a sprout, so they share one melody. */
+  restore(): void {
+    this.grow();
   }
 
   /** A crit: brighter and a little louder than a normal restore. */
@@ -185,8 +256,15 @@ export class AudioBus {
     this.tone({ type: 'square', from: 880, to: 1320, dur: 0.09, gain: 0.03 });
   }
 
+  /** A plant taking root: two pentatonic notes, the second a step above the first. */
   bloom(): void {
-    this.tone({ type: 'triangle', from: 440, to: 880, dur: 0.18, gain: 0.04 });
+    if (this.muted) return;
+    const first = this.nextNote();
+    this.pluck(first, 0.046);
+    this.degree = Math.min(11, this.degree + 2);
+    const cents = (Math.random() - 0.5) * 18;
+    const second = this.noteAt(this.degree) * 2 ** (cents / 1200);
+    this.pluck(second, 0.032, 0.12);
   }
 
   victory(): void {
@@ -235,6 +313,158 @@ export class AudioBus {
     gain.connect(ctx.destination);
     osc.start(t);
     osc.stop(t + opts.dur + 0.02);
+  }
+
+  /** Major pentatonic, two octaves from G3. Walking this keeps stacked notes consonant. */
+  private nextNote(): number {
+    const roll = Math.random();
+    const hop = roll < 0.18 ? 0 : roll < 0.55 ? 1 : roll < 0.85 ? -1 : roll < 0.93 ? 2 : -2;
+    this.degree += hop;
+    if (this.degree < 0) this.degree = -this.degree;
+    if (this.degree > 11) this.degree = 22 - this.degree;
+    this.degree = Math.max(0, Math.min(11, this.degree));
+    const cents = (Math.random() - 0.5) * 22;
+    return this.noteAt(this.degree) * 2 ** (cents / 1200);
+  }
+
+  private noteAt(degree: number): number {
+    const scale = [0, 2, 4, 7, 9];
+    const oct = Math.floor(degree / 5);
+    const semis = oct * 12 + (scale[degree % 5] ?? 0);
+    return 196 * 2 ** (semis / 12);
+  }
+
+  /** Soft mallet: a sine, a quiet octave, and a tiny tap so it feels touched. */
+  private pluck(freq: number, volume: number, delay = 0): void {
+    if (this.muted) return;
+    const ctx = this.context();
+    if (!ctx) return;
+    const t = ctx.currentTime + delay;
+    const dur = 0.46;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (Math.random() - 0.5) * 0.65;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, t);
+    master.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), t + 0.014);
+    master.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    pan.connect(master);
+    master.connect(ctx.destination);
+    const partials: Array<[number, number, OscillatorType]> = [
+      [freq, 1, 'sine'],
+      [freq * 2, 0.22, 'sine'],
+      [freq * 3, 0.05, 'triangle'],
+    ];
+    for (const [f, amp, type] of partials) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(f, t);
+      gain.gain.value = amp;
+      osc.connect(gain);
+      gain.connect(pan);
+      osc.start(t);
+      osc.stop(t + dur + 0.02);
+    }
+    this.tap(t, volume * 0.4, pan);
+  }
+
+  private tap(when: number, volume: number, dest: AudioNode): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const length = Math.floor(ctx.sampleRate * 0.018);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1400;
+    filter.Q.value = 0.8;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(volume, when);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.02);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(dest);
+    src.start(when);
+    src.stop(when + 0.03);
+  }
+
+  private playSample(buffer: AudioBuffer, opts: { rate: number; gain: number; pan: number }): void {
+    if (this.muted) return;
+    const ctx = this.context();
+    if (!ctx) return;
+    const rate = Math.max(0.4, opts.rate);
+    const dur = buffer.duration / rate;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-1, Math.min(1, opts.pan));
+    const gain = ctx.createGain();
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(opts.gain, now);
+    const fadeAt = now + Math.max(0.02, dur - 0.04);
+    gain.gain.setValueAtTime(opts.gain, fadeAt);
+    gain.gain.exponentialRampToValueAtTime(0.0001, fadeAt + 0.04);
+    src.connect(pan);
+    pan.connect(gain);
+    gain.connect(ctx.destination);
+    src.start(now);
+    src.stop(now + dur + 0.05);
+  }
+
+  private shortDrop(): AudioBuffer | null {
+    if (this.drops.length === 0) return null;
+    const longest = this.longestDrop();
+    const shorts = this.drops.filter((b) => b !== longest);
+    const pool = shorts.length > 0 ? shorts : this.drops;
+    return pool[Math.floor(Math.random() * pool.length)] ?? null;
+  }
+
+  private longestDrop(): AudioBuffer | null {
+    let best: AudioBuffer | null = null;
+    for (const drop of this.drops) {
+      if (!best || drop.duration > best.duration) best = drop;
+    }
+    return best;
+  }
+
+  /** Join the tail of a drip recording onto its head so the loop does not click. */
+  private prepareLoop(): AudioBuffer | null {
+    if (!this.rainBed) return null;
+    if (this.rainLoop) return this.rainLoop;
+    const ctx = this.context();
+    if (!ctx) return this.rainBed;
+    const fade = Math.min(Math.floor(this.rainBed.sampleRate * 0.06), Math.floor(this.rainBed.length / 4));
+    const length = this.rainBed.length - fade;
+    if (length < fade) return this.rainBed;
+    const out = ctx.createBuffer(this.rainBed.numberOfChannels, length, this.rainBed.sampleRate);
+    for (let c = 0; c < this.rainBed.numberOfChannels; c += 1) {
+      const src = this.rainBed.getChannelData(c);
+      const dst = out.getChannelData(c);
+      dst.set(src.subarray(0, length));
+      for (let i = 0; i < fade; i += 1) {
+        const t = i / fade;
+        dst[i] = (src[i] ?? 0) * t + (src[length + i] ?? 0) * (1 - t);
+      }
+    }
+    this.rainLoop = out;
+    return out;
+  }
+
+  /** Distant wash used until the recording has loaded. */
+  private wash(ctx: AudioContext): AudioBuffer {
+    const seconds = 2;
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    let pink = 0;
+    for (let i = 0; i < data.length; i += 1) {
+      pink = pink * 0.96 + (Math.random() * 2 - 1) * 0.04;
+      data[i] = pink;
+    }
+    return buffer;
   }
 
   private noise(dur: number, freq: number, volume: number): void {

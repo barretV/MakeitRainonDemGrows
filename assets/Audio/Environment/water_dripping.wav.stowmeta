@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "stringId": "audio/environment/water_dripping",
+  "tags": [
+    "water",
+    "drip",
+    "liquid",
+    "nature",
+    "foley",
+    "wet",
+    "ambient",
+    "drop"
+  ],
+  "pack": "default",
+  "type": "audio",
+  "aacQuality": "high",
+  "sampleRate": "44100",
+  "cache": {
+    "sourceSize": 3022892,
+    "sourceLastModified": 1792567409734.059,
+    "settingsHash": "3|aq=3|sr=44100"
+  }
+}

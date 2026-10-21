@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "stringId": "audio/environment/water_drop_medium",
+  "tags": [
+    "water",
+    "drop",
+    "liquid",
+    "sfx",
+    "nature",
+    "drip",
+    "wet"
+  ],
+  "pack": "default",
+  "type": "audio",
+  "aacQuality": "high",
+  "sampleRate": "44100",
+  "cache": {
+    "sourceSize": 120876,
+    "sourceLastModified": 1792567410071.2427,
+    "settingsHash": "3|aq=3|sr=44100"
+  }
+}
