@@ -147,6 +147,12 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                   ariaLabel={`${blooms} blooms`}
                   bump={bumpBlooms}
                 />
+                {model.chain > 1.05 && (
+                  <div className="hud-chain pixel" aria-label={`Chain multiplier ${model.chain.toFixed(1)}`}>
+                    <span className="hud-chain__x">x</span>
+                    {model.chain.toFixed(1)}
+                  </div>
+                )}
               </div>
             </div>
             <RevivalBar pct={pct} />
@@ -170,6 +176,21 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                 {model.patchesLeft === 1 ? 'patch left' : 'patches left'}
               </span>
               {model.pocketsLeft > 1 && <span className="hud-patches__spots">{model.pocketsLeft} spots</span>}
+            </div>
+          )}
+          {model.nextGoal && (
+            <div className="hud-goal pixel" aria-label={`Next: ${model.nextGoal.name}`}>
+              <span className="hud-goal__label">Next</span>
+              <span className="hud-goal__name">{model.nextGoal.name}</span>
+              <span className="hud-goal__cost tabular-nums">
+                {model.nextGoal.blooms > 0 ? `${model.nextGoal.blooms} blooms` : formatDew(model.nextGoal.cost)}
+              </span>
+              <span className="hud-goal__bar" aria-hidden>
+                <span
+                  className="hud-goal__fill"
+                  style={{ transform: `scaleX(${model.nextGoal.progress.toFixed(3)})` }}
+                />
+              </span>
             </div>
           )}
         </>

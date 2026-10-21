@@ -99,7 +99,9 @@ def cells_per_run(state, world: int, filled_ratio: float = 0.0):
         cells = wet
         dew = cells * pay * mult * crit
         # The rim and the bleed into neighbours pay on top of the finished patch.
-        dew += wet * 0.5 * pay * mult
+        # Measured against dev builds: a spilled patch pays less than a whole one,
+        # so the bleed is a quarter of a cell rather than half.
+        dew += wet * 0.25 * pay * mult
     else:
         frac = soak_on_cell / hp
         cells = wet * frac
@@ -125,6 +127,9 @@ def cells_per_run(state, world: int, filled_ratio: float = 0.0):
         bonus = wet * filled_ratio * (0.06 * state["spring"]) * (1 + 0.5 * pool_gain(state))
         cells += bonus
         dew += bonus * pay * mult * crit
+    # The chain: each new patch this bottle pays a little more, up to x2.5.
+    # The game pays the multiplier per patch, so a bottle averages half the ramp.
+    dew *= min(2.5, 1.0 + cells / 400.0)
     remaining = mask_count(world) * (1.0 - filled_ratio)
     cells = min(remaining, cells)
     scale = playtest_factor(state, world)

@@ -279,6 +279,96 @@ canvas {
   color: rgba(182, 255, 216, 0.6);
 }
 
+.hud-chain {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  padding: 6px 9px 7px;
+  border-radius: 4px;
+  background: rgba(60, 26, 8, 0.78);
+  border: 1px solid rgba(255, 190, 100, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 12px rgba(255, 170, 60, 0.22);
+  color: #ffd08a;
+  font-size: clamp(12px, 1.4vw, 16px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  animation: hud-chain-pulse 900ms ease-in-out infinite alternate;
+}
+
+.hud-chain__x {
+  font-size: 0.72em;
+  opacity: 0.75;
+}
+
+@keyframes hud-chain-pulse {
+  from {
+    filter: brightness(1);
+  }
+  to {
+    filter: brightness(1.28);
+  }
+}
+
+.hud-goal {
+  position: absolute;
+  bottom: calc(2.4% + 80px);
+  left: 1.4%;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 1px 8px;
+  min-width: 190px;
+  padding: 7px 11px 8px;
+  border-radius: 4px;
+  background: rgba(10, 12, 26, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(4px);
+}
+
+.hud-goal__label {
+  font-size: clamp(8px, 1vw, 11px);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hud-goal__name {
+  font-size: clamp(11px, 1.3vw, 14px);
+  color: #e8f0ff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.hud-goal__cost {
+  grid-column: 2;
+  font-size: clamp(10px, 1.15vw, 13px);
+  color: #b8f5c8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.hud-goal__bar {
+  grid-column: 1 / -1;
+  position: relative;
+  display: block;
+  height: 5px;
+  margin-top: 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.hud-goal__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: linear-gradient(90deg, #7ec86a, #d8f58a);
+  box-shadow: 0 0 8px rgba(158, 232, 106, 0.45);
+  transition: transform 220ms ease-out;
+}
+
 .hud-bottom-bar {
   max-width: min(94vw, 720px);
 }

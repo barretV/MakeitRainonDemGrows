@@ -36,6 +36,7 @@ import {
   poolFlow,
   poolGain,
   prereqMet,
+  PRIORITY,
   rainRadius,
   soakPerTick,
   treeBloomsSpent,
@@ -173,6 +174,10 @@ export interface HudModel {
   spendableBlooms: number;
   /** Every message the game wants to show, oldest first. */
   toasts: { seq: number; text: string }[];
+  /** The chain multiplier on the dew this bottle is paying. */
+  chain: number;
+  /** The next upgrade to aim for, so there is always a target. */
+  nextGoal: { name: string; cost: number; blooms: number; progress: number } | null;
   /** Mask cells that still need water on this island. */
   patchesLeft: number;
   /** Separate pockets of thirsty land. */
@@ -367,6 +372,13 @@ export class SaveState {
   private runIndex = 0;
   private runOpen = false;
   runDew = 0;
+  /**
+   * The chain: every new patch this bottle pays a little more than the last.
+   * Keeping the water on fresh soil is the one decision the player makes.
+   */
+  chainMultiplier(): number {
+    return Math.min(2.5, 1 + this.runTiles / 200);
+  }
   /** Tree ranks bought since the last refill. Two per bottle. */
   runTiles = 0;
   runReached = 0;
@@ -511,6 +523,29 @@ export class SaveState {
 
   scale(): number {
     return cloudScale(this.ranks);
+  }
+
+  /**
+   * The next thing worth buying, so the player always has a target in reach.
+   * Mirrors the workshop's "recommended" order.
+   */
+  nextGoal(): { name: string; cost: number; blooms: number; progress: number } | null {
+    const wallet = walletDew(this.dew);
+    for (const id of PRIORITY) {
+      const node = upgradeNode(id);
+      const level = this.ranks[id];
+      if (level >= node.max) continue;
+      if (!prereqMet(id, this.ranks)) continue;
+      if (!worldMet(id, this.unlocked)) continue;
+      const cost = nodeCost(id, level);
+      return {
+        name: node.name,
+        cost,
+        blooms: nodeBloomCost(id, level),
+        progress: cost > 0 ? Math.min(1, wallet / cost) : 1,
+      };
+    }
+    return null;
   }
 
   /** Blooms left in the wallet after everything bought on the tree. */
@@ -1605,6 +1640,7 @@ export class SaveState {
       cleared: this.phase === 'clear',
       newBest: this.newBest,
       tree: buildTree(this.ranks, wallet, this.unlocked),
+      nextGoal: this.nextGoal(),
       worlds: [0, 1, 2, 3, 4].map((index) => ({
         index,
         name: worldDef(index).name,
@@ -1619,6 +1655,7 @@ export class SaveState {
       }),
       spendableBlooms: wallet.blooms,
       toasts: this.toastLog.map((t) => ({ ...t })),
+      chain: this.chainMultiplier(),
       patchesLeft: dry.cells,
       pocketsLeft: dry.pockets,
       dryFraction: dry.total > 0 ? dry.cells / dry.total : 0,
@@ -1789,7 +1826,7 @@ export class SaveState {
     let filled = 0;
     let hill = -1;
     if (now > was && !done) {
-      const drip = cellDew(this.world, this.ranks) * ((now - was) / hp) * 0.22;
+      const drip = cellDew(this.world, this.ranks) * ((now - was) / hp) * 0.22 * this.chainMultiplier();
       if (drip >= 0.001) dew += this.addDew(drip);
     }
     if (done) {
@@ -1797,7 +1834,7 @@ export class SaveState {
       this.ripples += 1;
       this.filled += 1;
       filled = 1;
-      dew += this.addDew(cellDew(this.world, this.ranks) * (crit ? 3 : 1));
+      dew += this.addDew(cellDew(this.world, this.ranks) * (crit ? 3 : 1) * this.chainMultiplier());
       this.stats.tiles += 1;
       this.runTiles += 1;
       hill = this.hillIndex(c, r, cols, rows);
