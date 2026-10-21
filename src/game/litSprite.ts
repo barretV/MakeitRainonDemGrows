@@ -128,6 +128,7 @@ const POND_FRAG = /* glsl */ `
   uniform vec3 uSunDir;
   uniform vec3 uSunColor;
   uniform float uRain;
+  uniform float uFill;
   varying vec2 vUv;
   varying vec3 vWorld;
   varying vec3 vT;
@@ -142,38 +143,46 @@ const POND_FRAG = /* glsl */ `
     vec2 p = uv * 2.0 - 1.0;
     float d = length(p / vec2(0.92, 0.62));
     if (d > 1.0) discard;
-    float t = uTime;
-    float sx = sin(pix.x * 0.85 + t * 2.3);
-    float sz = sin(pix.y * 0.95 - t * 1.8);
+    float calm = smoothstep(0.35, 0.98, uFill);
+    float t = uTime * mix(1.0, 0.42, calm);
+    float sx = sin(pix.x * 0.55 + t * 1.15);
+    float sz = sin(pix.y * 0.62 - t * 0.95);
     float ripple = sx * sz;
-    float rx = sin(pix.x * 1.7 + t * 5.4);
-    float rz = sin(pix.y * 1.5 - t * 4.6);
-    float hx = cos(pix.x * 0.85 + t * 2.3) * sz + uRain * 1.6 * cos(pix.x * 1.7 + t * 5.4) * rz;
-    float hy = sx * cos(pix.y * 0.95 - t * 1.8) + uRain * 1.4 * rx * cos(pix.y * 1.5 - t * 4.6);
-    vec3 nTex = normalize(vec3(hx, hy, 2.4));
+    float rx = sin(pix.x * 1.1 + t * 2.8);
+    float rz = sin(pix.y * 0.95 - t * 2.4);
+    float hx = cos(pix.x * 0.55 + t * 1.15) * sz * 0.65 + uRain * 1.2 * cos(pix.x * 1.1 + t * 2.8) * rz;
+    float hy = sx * cos(pix.y * 0.62 - t * 0.95) * 0.65 + uRain * 1.0 * rx * cos(pix.y * 0.95 - t * 2.4);
+    vec3 nTex = normalize(vec3(hx, hy, 2.8));
     vec3 N = normalize(vT * nTex.x + vB * nTex.y + vN * nTex.z);
     vec3 sun = normalize(uSunDir);
     vec3 viewDir = normalize(cameraPosition - vWorld);
-    float spec = pow(max(dot(N, normalize(sun + viewDir)), 0.0), 28.0);
+    float spec = pow(max(dot(N, normalize(sun + viewDir)), 0.0), mix(22.0, 36.0, calm));
     float band = floor((1.0 - d) * 4.0) / 3.0;
-    vec3 deep = srgb(vec3(0.10, 0.55, 0.82));
-    vec3 mid = srgb(vec3(0.24, 0.77, 1.0));
-    vec3 shallow = srgb(vec3(0.55, 0.88, 1.0));
+    vec3 deep = srgb(vec3(0.08, 0.48, 0.78));
+    vec3 mid = srgb(vec3(0.22, 0.74, 1.0));
+    vec3 shallow = srgb(vec3(0.62, 0.92, 1.0));
+    vec3 jewel = srgb(vec3(0.35, 0.88, 0.95));
     vec3 col = mix(deep, mid, clamp(band, 0.0, 1.0));
     col = mix(col, shallow, smoothstep(0.45, 0.85, band));
-    col += uSunColor * spec * (0.55 + uRain * 0.35);
-    col += srgb(vec3(0.85, 0.95, 1.0)) * pow(max(ripple, 0.0), 8.0) * 0.18;
+    col = mix(col, jewel, calm * smoothstep(0.2, 0.75, 1.0 - d));
+    col += uSunColor * spec * (0.45 + uRain * 0.28 + calm * 0.55);
+    col += srgb(vec3(0.85, 0.95, 1.0)) * pow(max(ripple, 0.0), 8.0) * mix(0.14, 0.28, calm);
+    float caust =
+      sin(uv.x * 14.0 + t * 0.55) * sin(uv.y * 11.0 - t * 0.48) * 0.5 + 0.5;
+    col += srgb(vec3(0.75, 0.98, 1.0)) * caust * calm * (1.0 - d) * 0.22;
     float rings = 0.0;
     for (int i = 0; i < 3; i++) {
-      float ph = fract(t * 0.33 + float(i) * 0.37);
+      float ph = fract(t * 0.22 + float(i) * 0.37);
       vec2 c = vec2(sin(float(i) * 2.4), cos(float(i) * 1.7)) * 0.28;
       float rd = abs(length(p - c) - ph * 0.85);
-      rings += (1.0 - smoothstep(0.0, 0.07, rd)) * (1.0 - ph);
+      rings += (1.0 - smoothstep(0.0, 0.06, rd)) * (1.0 - ph);
     }
-    col += srgb(vec3(0.82, 0.95, 1.0)) * rings * uRain * 0.7;
+    col += srgb(vec3(0.82, 0.95, 1.0)) * rings * mix(uRain * 0.55, 0.15, calm);
+    float sparkle = pow(max(sin(uv.x * 90.0 + t * 1.8) * sin(uv.y * 70.0 - t * 1.4), 0.0), 18.0);
+    col += srgb(vec3(1.0, 1.0, 0.98)) * sparkle * calm * 0.35;
     float rim = smoothstep(0.78, 1.0, d);
-    col = mix(col, srgb(vec3(0.88, 0.96, 1.0)), rim * 0.72);
-    float alpha = smoothstep(1.0, 0.9, d) * 0.94;
+    col = mix(col, srgb(vec3(0.92, 0.98, 1.0)), rim * mix(0.55, 0.88, calm));
+    float alpha = smoothstep(1.0, 0.88, d) * mix(0.88, 0.97, calm);
     gl_FragColor = vec4(col, alpha);
   }
 `;
@@ -188,8 +197,14 @@ export function makePondWater(time: { value: number }, sunDir: THREE.Vector3, su
       uSunDir: { value: sunDir },
       uSunColor: { value: sunColor },
       uRain: rain,
+      uFill: { value: 0 },
     },
     vertexShader: POND_VERT,
     fragmentShader: POND_FRAG,
   });
+}
+
+export function setPondFill(mat: THREE.Material, fill: number): void {
+  const u = (mat as THREE.ShaderMaterial).uniforms['uFill'];
+  if (u) u.value = fill;
 }
