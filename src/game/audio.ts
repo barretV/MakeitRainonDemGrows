@@ -1,6 +1,6 @@
 /**
  * Web Audio bed. Lost in Space plays over the islands. Sketchbook plays in the workshop.
- * Rain loops outdoor ambience (with a drip fallback). Growth notes walk a pentatonic scale
+ * Rain is a steady procedural shower while you pour. Growth notes walk a pentatonic scale
  * and each one is nudged a few cents, so a busy bottle stays soft instead of mechanical.
  */
 export type MusicBed = 'field' | 'workshop';
@@ -8,11 +8,19 @@ export type MusicBed = 'field' | 'workshop';
 export class AudioBus {
   muted = false;
   musicOn = false;
+  /** How loud the effects are, 0 to 1. */
+  sfxVolume = 1;
+  /** How loud the music bed is, 0 to 1. */
+  musicVolume = 1;
   private ctx: AudioContext | null = null;
   /** SFX and rain go here so the SFX toggle does not kill the music bed. */
   private sfxBus: GainNode | null = null;
+  /** The music bed and the placeholder chords go here. */
+  private musicBus: GainNode | null = null;
   private rainGain: GainNode | null = null;
   private rainSrc: AudioBufferSourceNode | null = null;
+  private rainBedSrc: AudioBufferSourceNode | null = null;
+  private rainBedGain: GainNode | null = null;
   private rainLow: BiquadFilterNode | null = null;
   private rainHigh: BiquadFilterNode | null = null;
   private humOsc: OscillatorNode | null = null;
@@ -20,9 +28,8 @@ export class AudioBus {
   private drops: AudioBuffer[] = [];
   private rainBed: AudioBuffer | null = null;
   private rainLoop: AudioBuffer | null = null;
-  /** True when the bed is the wide outdoor loop, not the old drip recording. */
-  private outdoorRain = false;
-  private lastDrip = 0;
+  private rainShower: AudioBuffer | null = null;
+  private lastRestore = 0;
   private lastGrow = 0;
   /** Where the growth melody is standing on a two-octave pentatonic. */
   private degree = 4;
@@ -40,8 +47,20 @@ export class AudioBus {
 
   setMuted(muted: boolean): void {
     this.muted = muted;
-    if (this.sfxBus) this.sfxBus.gain.value = muted ? 0 : 1;
+    if (this.sfxBus) this.sfxBus.gain.value = muted ? 0 : this.sfxVolume;
     if (muted) this.rainStop();
+  }
+
+  /** The effects volume, 0 to 1. */
+  setSfxVolume(volume: number): void {
+    this.sfxVolume = Math.max(0, Math.min(1, volume));
+    if (this.sfxBus) this.sfxBus.gain.value = this.muted ? 0 : this.sfxVolume;
+  }
+
+  /** The music volume, 0 to 1. */
+  setMusicVolume(volume: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, volume));
+    if (this.musicBus) this.musicBus.gain.value = this.musicVolume;
   }
 
   toggleMusic(): void {
@@ -70,9 +89,9 @@ export class AudioBus {
     this.drops = buffers.filter((b) => b.length > 0);
   }
 
-  setRainTexture(buffer: AudioBuffer, outdoor = true): void {
+  /** Optional recorded bed mixed quietly under the procedural shower. */
+  setRainTexture(buffer: AudioBuffer): void {
     this.rainBed = buffer;
-    this.outdoorRain = outdoor;
     this.rainLoop = null;
     if (this.rainSrc) {
       this.rainStop();
@@ -84,46 +103,64 @@ export class AudioBus {
     if (this.muted || this.rainSrc) return;
     const ctx = this.context();
     if (!ctx) return;
-    const recorded = this.prepareLoop();
-    const buffer = recorded ?? this.wash(ctx);
+    const shower = this.rainShower ?? this.buildRainShower(ctx);
     const src = ctx.createBufferSource();
-    src.buffer = buffer;
+    src.buffer = shower;
     src.loop = true;
     const high = ctx.createBiquadFilter();
     high.type = 'highpass';
-    high.frequency.value = recorded ? (this.outdoorRain ? 80 : 140) : 280;
-    high.Q.value = 0.6;
+    high.frequency.value = 140;
+    high.Q.value = 0.55;
     const low = ctx.createBiquadFilter();
     low.type = 'lowpass';
-    low.frequency.value = recorded ? (this.outdoorRain ? 9000 : 5200) : 1400;
-    low.Q.value = 0.5;
+    low.frequency.value = 7200;
+    low.Q.value = 0.45;
     const gain = ctx.createGain();
     const now = ctx.currentTime;
-    const level = recorded ? (this.outdoorRain ? 0.38 : 0.42) : 0.12;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(level, now + 0.65);
+    gain.gain.exponentialRampToValueAtTime(0.26, now + 0.45);
     src.connect(high);
     high.connect(low);
     low.connect(gain);
-    gain.connect(this.sfxOut(ctx));
+    const dest = this.sfxOut(ctx);
+    gain.connect(dest);
     src.start();
     this.rainSrc = src;
     this.rainHigh = high;
     this.rainLow = low;
     this.rainGain = gain;
+
+    const bed = this.prepareLoop();
+    if (bed) {
+      const bedSrc = ctx.createBufferSource();
+      bedSrc.buffer = bed;
+      bedSrc.loop = true;
+      const bedGain = ctx.createGain();
+      bedGain.gain.value = 0.08;
+      bedSrc.connect(bedGain);
+      bedGain.connect(dest);
+      bedSrc.start();
+      this.rainBedSrc = bedSrc;
+      this.rainBedGain = bedGain;
+    }
   }
 
   rainStop(): void {
     try {
       this.rainSrc?.stop();
+      this.rainBedSrc?.stop();
     } catch {
       /* already stopped */
     }
     this.rainSrc?.disconnect();
+    this.rainBedSrc?.disconnect();
+    this.rainBedGain?.disconnect();
     this.rainHigh?.disconnect();
     this.rainLow?.disconnect();
     this.rainGain?.disconnect();
     this.rainSrc = null;
+    this.rainBedSrc = null;
+    this.rainBedGain = null;
     this.rainHigh = null;
     this.rainLow = null;
     this.rainGain = null;
@@ -174,43 +211,45 @@ export class AudioBus {
     });
   }
 
-  drip(): void {
-    if (this.muted) return;
-    const ctx = this.context();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    if (now - this.lastDrip < 0.05) return;
-    this.lastDrip = now;
-    if (this.outdoorRain || Math.random() < 0.72) {
-      const center = 1800 + Math.random() * 3800;
-      this.rainPatter(0.02 + Math.random() * 0.025, center, (Math.random() - 0.5) * 0.9);
-      return;
-    }
-    const buf = this.shortDrop();
-    if (!buf) {
-      this.rainPatter(0.022, 2400, 0);
-      return;
-    }
-    const semis = (Math.random() - Math.random()) * 5;
-    this.playSample(buf, {
-      rate: 2 ** (semis / 12),
-      gain: 0.045 * (0.7 + Math.random() * 0.5),
-      pan: (Math.random() - 0.5) * 1.2,
-    });
-  }
-
   grow(): void {
     if (this.muted) return;
     const ctx = this.context();
     if (!ctx) return;
     const now = ctx.currentTime;
-    if (now - this.lastGrow < 0.18) return;
+    if (now - this.lastGrow < 0.16) return;
     this.lastGrow = now;
-    this.pluck(this.nextNote(), 0.028 + Math.random() * 0.016);
+    this.pluck(this.nextNote(), 0.022 + Math.random() * 0.012);
   }
 
+  /** A mask cell just finished greening — brighter than mid-growth pings. */
   restore(): void {
-    this.grow();
+    if (this.muted) return;
+    const ctx = this.context();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (now - this.lastRestore < 0.085) return;
+    this.lastRestore = now;
+    const root = this.nextNote();
+    const pan = (Math.random() - 0.5) * 0.75;
+    this.pluck(root, 0.042, 0, pan);
+    this.tone({
+      type: 'sine',
+      from: root * 1.5,
+      to: root * 2.02,
+      dur: 0.2,
+      gain: 0.034,
+      delay: 0.05,
+      pan,
+    });
+    this.tone({
+      type: 'triangle',
+      from: root * 2.4,
+      to: root * 2.85,
+      dur: 0.24,
+      gain: 0.022,
+      delay: 0.1,
+      pan,
+    });
   }
 
   crit(): void {
@@ -282,8 +321,11 @@ export class AudioBus {
     if (!this.ctx) {
       this.ctx = new AudioContext();
       this.sfxBus = this.ctx.createGain();
-      this.sfxBus.gain.value = this.muted ? 0 : 1;
+      this.sfxBus.gain.value = this.muted ? 0 : this.sfxVolume;
       this.sfxBus.connect(this.ctx.destination);
+      this.musicBus = this.ctx.createGain();
+      this.musicBus.gain.value = this.musicVolume;
+      this.musicBus.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
@@ -293,6 +335,10 @@ export class AudioBus {
     return this.sfxBus ?? ctx.destination;
   }
 
+  private musicOut(ctx: AudioContext): AudioNode {
+    return this.musicBus ?? ctx.destination;
+  }
+
   private tone(opts: {
     type: OscillatorType;
     from: number;
@@ -300,6 +346,7 @@ export class AudioBus {
     dur: number;
     gain: number;
     delay?: number;
+    pan?: number;
     /** Placeholder “music” while tracks load — not affected by SFX mute. */
     music?: boolean;
   }): void {
@@ -315,7 +362,15 @@ export class AudioBus {
     gain.gain.setValueAtTime(opts.gain, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + opts.dur);
     osc.connect(gain);
-    gain.connect(opts.music ? ctx.destination : this.sfxOut(ctx));
+    const out = opts.music ? this.musicOut(ctx) : this.sfxOut(ctx);
+    if (opts.pan !== undefined && !opts.music) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, opts.pan));
+      gain.connect(panner);
+      panner.connect(out);
+    } else {
+      gain.connect(out);
+    }
     osc.start(t);
     osc.stop(t + opts.dur + 0.02);
   }
@@ -338,14 +393,14 @@ export class AudioBus {
     return 196 * 2 ** (semis / 12);
   }
 
-  private pluck(freq: number, volume: number, delay = 0): void {
+  private pluck(freq: number, volume: number, delay = 0, panValue?: number): void {
     if (this.muted) return;
     const ctx = this.context();
     if (!ctx) return;
     const t = ctx.currentTime + delay;
     const dur = 0.46;
     const pan = ctx.createStereoPanner();
-    pan.pan.value = (Math.random() - 0.5) * 0.65;
+    pan.pan.value = panValue ?? (Math.random() - 0.5) * 0.65;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, t);
     master.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), t + 0.014);
@@ -418,14 +473,6 @@ export class AudioBus {
     src.stop(now + dur + 0.05);
   }
 
-  private shortDrop(): AudioBuffer | null {
-    if (this.drops.length === 0) return null;
-    const longest = this.longestDrop();
-    const shorts = this.drops.filter((b) => b !== longest);
-    const pool = shorts.length > 0 ? shorts : this.drops;
-    return pool[Math.floor(Math.random() * pool.length)] ?? null;
-  }
-
   private longestDrop(): AudioBuffer | null {
     let best: AudioBuffer | null = null;
     for (const drop of this.drops) {
@@ -456,15 +503,43 @@ export class AudioBus {
     return out;
   }
 
-  private wash(ctx: AudioContext): AudioBuffer {
-    const seconds = 2;
-    const buffer = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    let pink = 0;
-    for (let i = 0; i < data.length; i += 1) {
-      pink = pink * 0.96 + (Math.random() * 2 - 1) * 0.04;
-      data[i] = pink;
+  /** Seamless shower loop: pink noise + gentle hiss, no faucet drips. */
+  private buildRainShower(ctx: AudioContext): AudioBuffer {
+    const seconds = 4;
+    const sr = ctx.sampleRate;
+    const length = Math.floor(sr * seconds);
+    const buffer = ctx.createBuffer(2, length, sr);
+    const fade = Math.floor(sr * 0.08);
+    for (let ch = 0; ch < 2; ch += 1) {
+      const data = buffer.getChannelData(ch);
+      let b0 = 0;
+      let b1 = 0;
+      let b2 = 0;
+      let b3 = 0;
+      let b4 = 0;
+      let b5 = 0;
+      let b6 = 0;
+      for (let i = 0; i < length; i += 1) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.969 * b2 + white * 0.153852;
+        b3 = 0.8665 * b3 + white * 0.3104856;
+        b4 = 0.55 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.016898;
+        const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+        b6 = white * 0.115926;
+        const hiss = (Math.random() * 2 - 1) * 0.018;
+        const wobble = 0.88 + 0.12 * Math.sin((i / sr) * Math.PI * 2 * (0.35 + ch * 0.07));
+        data[i] = (pink * 0.82 + hiss) * wobble;
+      }
+      for (let i = 0; i < fade; i += 1) {
+        const t = i / fade;
+        const tail = data[length - fade + i] ?? 0;
+        data[i] = (data[i] ?? 0) * t + tail * (1 - t);
+      }
     }
+    this.rainShower = buffer;
     return buffer;
   }
 
@@ -534,7 +609,7 @@ export class AudioBus {
     const gain = ctx.createGain();
     gain.gain.value = 0.2;
     src.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.musicOut(ctx));
     src.start();
     this.customNode = src;
     this.musicGain = gain;

@@ -1416,11 +1416,29 @@ export class RainGame {
     this.pushHud(true);
   }
 
+  /** The effects volume, 0 to 1. */
+  setSfxVolume(volume: number): void {
+    if (!this.state) return;
+    this.state.sfxVolume = Math.max(0, Math.min(1, volume));
+    this.audio.setSfxVolume(this.state.sfxVolume);
+    this.pushHud(true);
+  }
+
+  /** The music volume, 0 to 1. */
+  setMusicVolume(volume: number): void {
+    if (!this.state) return;
+    this.state.musicVolume = Math.max(0, Math.min(1, volume));
+    this.audio.setMusicVolume(this.state.musicVolume);
+    this.pushHud(true);
+  }
+
   async reset(): Promise<void> {
     await clearProgress();
     this.state = SaveState.fresh();
     this.state.openStart();
     this.audio.setMuted(!this.state.sfx);
+    this.audio.setSfxVolume(this.state.sfxVolume);
+    this.audio.setMusicVolume(this.state.musicVolume);
     this.rebuild();
     this.dropCloud(this.spawnAt());
     this.pushHud(true);
@@ -1467,6 +1485,8 @@ export class RainGame {
     if (fresh) await this.saveNow();
     this.lastPhase = this.state.phase;
     this.audio.setMuted(!this.state.sfx);
+    this.audio.setSfxVolume(this.state.sfxVolume);
+    this.audio.setMusicVolume(this.state.musicVolume);
     void this.loadMainMusic();
     void this.loadFieldSounds();
     this.rebuild();
@@ -1502,9 +1522,7 @@ export class RainGame {
         return null;
       }
     };
-    const [outdoor, dripBed, ...drops] = await Promise.all([
-      load('audio/sounds/ambient/rain2'),
-      load('audio/environment/water_dripping'),
+    const drops = await Promise.all([
       load('audio/foley-sounds/water/drip1'),
       load('audio/foley-sounds/water/drip2'),
       load('audio/foley-sounds/water/drip3'),
@@ -1514,8 +1532,6 @@ export class RainGame {
     if (this.dead) return;
     const clips = drops.filter((clip): clip is AudioBuffer => !!clip);
     if (clips.length) this.audio.setDrops(clips);
-    if (outdoor) this.audio.setRainTexture(outdoor, true);
-    else if (dripBed) this.audio.setRainTexture(dripBed, false);
   }
 
   private async loadMusicClip(id: string): Promise<AudioBuffer | null> {
@@ -1852,7 +1868,6 @@ export class RainGame {
       const floor = this.globe ? 0.2 : this.groundY(drop.mesh.position.x, drop.mesh.position.z) + 0.05;
       if (drop.y < floor) {
         drop.alive = drop.mesh.visible = false;
-        this.audio.drip();
       }
     }
 
