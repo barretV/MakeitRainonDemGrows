@@ -118,7 +118,7 @@ export class AudioBus {
     const gain = ctx.createGain();
     const now = ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.26, now + 0.45);
+    gain.gain.exponentialRampToValueAtTime(0.13, now + 0.45);
     src.connect(high);
     high.connect(low);
     low.connect(gain);
@@ -136,7 +136,7 @@ export class AudioBus {
       bedSrc.buffer = bed;
       bedSrc.loop = true;
       const bedGain = ctx.createGain();
-      bedGain.gain.value = 0.08;
+      bedGain.gain.value = 0.04;
       bedSrc.connect(bedGain);
       bedGain.connect(dest);
       bedSrc.start();
@@ -505,13 +505,21 @@ export class AudioBus {
 
   /** Seamless shower loop: pink noise + gentle hiss, no faucet drips. */
   private buildRainShower(ctx: AudioContext): AudioBuffer {
-    const seconds = 4;
     const sr = ctx.sampleRate;
-    const length = Math.floor(sr * seconds);
-    const buffer = ctx.createBuffer(2, length, sr);
-    const fade = Math.floor(sr * 0.08);
+    const rawSeconds = 5;
+    const rawLen = Math.floor(sr * rawSeconds);
+    const fade = Math.floor(sr * 0.2);
+    const loopLen = rawLen - fade;
+    if (loopLen < fade * 2) {
+      const fallback = ctx.createBuffer(2, rawLen, sr);
+      this.rainShower = fallback;
+      return fallback;
+    }
+    const raw = ctx.createBuffer(2, rawLen, sr);
+    const out = ctx.createBuffer(2, loopLen, sr);
+    const wobbleCycles = 4;
     for (let ch = 0; ch < 2; ch += 1) {
-      const data = buffer.getChannelData(ch);
+      const src = raw.getChannelData(ch);
       let b0 = 0;
       let b1 = 0;
       let b2 = 0;
@@ -519,7 +527,7 @@ export class AudioBus {
       let b4 = 0;
       let b5 = 0;
       let b6 = 0;
-      for (let i = 0; i < length; i += 1) {
+      for (let i = 0; i < rawLen; i += 1) {
         const white = Math.random() * 2 - 1;
         b0 = 0.99886 * b0 + white * 0.0555179;
         b1 = 0.99332 * b1 + white * 0.0750759;
@@ -529,18 +537,20 @@ export class AudioBus {
         b5 = -0.7616 * b5 - white * 0.016898;
         const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
         b6 = white * 0.115926;
-        const hiss = (Math.random() * 2 - 1) * 0.018;
-        const wobble = 0.88 + 0.12 * Math.sin((i / sr) * Math.PI * 2 * (0.35 + ch * 0.07));
-        data[i] = (pink * 0.82 + hiss) * wobble;
+        const hiss = (Math.random() * 2 - 1) * 0.014;
+        const phase = (Math.PI * 2 * wobbleCycles * i) / loopLen;
+        const wobble = 0.9 + 0.1 * Math.sin(phase + ch * 0.35);
+        src[i] = (pink * 0.82 + hiss) * wobble;
       }
+      const dst = out.getChannelData(ch);
+      dst.set(src.subarray(0, loopLen));
       for (let i = 0; i < fade; i += 1) {
         const t = i / fade;
-        const tail = data[length - fade + i] ?? 0;
-        data[i] = (data[i] ?? 0) * t + tail * (1 - t);
+        dst[i] = (src[i] ?? 0) * t + (src[loopLen + i] ?? 0) * (1 - t);
       }
     }
-    this.rainShower = buffer;
-    return buffer;
+    this.rainShower = out;
+    return out;
   }
 
   private rainPatter(volume: number, centerFreq: number, pan: number, durBase = 0.028): void {
