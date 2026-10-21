@@ -389,6 +389,7 @@ export class RainGame {
   private hudAcc = 0;
   private lastPhase: RunPhase = 'play';
   private finaleT = 0;
+  private finaleCoverCache = { t: -1, x: 0, z: 0, r: 0 };
   private finaleHudAcc = 0;
   private saveAcc = 0;
   private soakAcc = 0;
@@ -1979,6 +1980,23 @@ export class RainGame {
     this.syncCritters(0, 0, true);
   }
 
+  /** True once the finale wave has reached this world point. */
+  private finaleCovers(x: number, z: number): boolean {
+    const state = this.state;
+    if (!state || state.phase !== 'finale') return false;
+    if (this.finaleCoverCache.t !== this.finaleT) {
+      const focal = state.islandFocal();
+      this.finaleCoverCache = {
+        t: this.finaleT,
+        x: focal.x,
+        z: focal.z,
+        r: state.islandCoverRadius() * smoothstep(state.finaleProgress) + 1.4,
+      };
+    }
+    const cover = this.finaleCoverCache;
+    return Math.hypot(x - cover.x, z - cover.z) <= cover.r;
+  }
+
   private updateWorldFinale(dt: number, t: number): void {
     const state = this.state;
     if (!state || state.phase !== 'finale') return;
@@ -2507,9 +2525,12 @@ export class RainGame {
       const spec = state.spec(i);
       const wet = state.hillWet(i);
       const restored = state.isRestored(i);
+      const spectacle = state.phase === 'finale' && this.finaleCovers(view.x, view.z) && state.spectacleTile(i);
+      const grown = restored || spectacle;
       const gust = this.gustAt(view.x, view.z, t);
       if (spec.kind === 'pond') {
-        const fill = state.pondFill(i);
+        if (grown && view.pondFill < 1) view.pondFill = 1;
+        const fill = grown ? 1 : state.pondFill(i);
         view.pondFill = fill;
         const stage = fill >= 0.985 ? 2 : fill >= 0.45 ? 1 : 0;
         if (stage > view.pondStage) {
@@ -2533,7 +2554,7 @@ export class RainGame {
         const lily0 = view.pondLily[0];
         const lily1 = view.pondLily[1];
         if (view.pond) {
-          (view.pond.material as THREE.MeshBasicMaterial).map = restored ? this.art.pondFull : this.art.pondEmpty;
+          (view.pond.material as THREE.MeshBasicMaterial).map = grown ? this.art.pondFull : this.art.pondEmpty;
         }
         if (lily0) {
           lily0.visible = fill > 0.5;
@@ -2580,8 +2601,9 @@ export class RainGame {
           const y2 = this.groundY(view.x, view.z + 0.28);
           slopeOk = Math.max(Math.abs(y1 - y0), Math.abs(y2 - y0)) < 0.32;
         }
-        view.prop.visible = !this.globe && slopeOk && !view.offIsland && (restored || wet > 0.14);
-        const step = restored ? 2 : this.propStep(spec.decor, wet);
+        if (grown) view.offIsland = false;
+        view.prop.visible = !this.globe && (grown || (slopeOk && !view.offIsland && wet > 0.14));
+        const step = grown ? 2 : this.propStep(spec.decor, wet);
         if (step > view.stage) {
           view.stage = step;
           view.growStart = t;
@@ -2598,10 +2620,10 @@ export class RainGame {
           const map = this.propTexture(spec.decor, view.stage, state.world, i);
           const mat = view.prop.material as THREE.ShaderMaterial;
           if (mat.uniforms['uMap']!.value !== map) setLitMap(mat, map);
-          const life = restored ? 1 : clamp((wet - 0.12) / 0.72, 0, 1);
+          const life = grown ? 1 : clamp((wet - 0.12) / 0.72, 0, 1);
           litColor(mat).copy(this.propDusk).lerp(this.propSun, life);
           const base = Number(view.prop.userData['s']) || 1;
-          const pop = restored ? 1 : clamp(0.34 + wet * 0.8, 0.34, 0.98);
+          const pop = grown ? 1 : clamp(0.34 + wet * 0.8, 0.34, 0.98);
           if (view.growStart > 0) {
             view.growT = Math.min(1, (t - view.growStart) / 0.85);
             const gy = easeOutBack(view.growT);
@@ -2613,7 +2635,7 @@ export class RainGame {
       }
       if (view.prop) {
         // Lean from the feet: the base stays planted, the crown does the moving.
-        const sway = restored ? Math.sin(t * 1.6 + i) * 0.045 : Math.sin(t * 1.2 + i) * 0.02;
+        const sway = grown ? Math.sin(t * 1.6 + i) * 0.045 : Math.sin(t * 1.2 + i) * 0.02;
         view.prop.rotation.z = sway + gust * 0.11;
         view.prop.position.set(
           view.x + view.nx * 0.08 + gust * 0.05,

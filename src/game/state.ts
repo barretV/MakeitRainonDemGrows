@@ -5,6 +5,8 @@ import {
   type AchievementDef,
   type TileSpec,
   gridOf,
+  islandRadius,
+  islandShore,
   landMask,
   milestoneIsland,
   tileSpec,
@@ -806,8 +808,8 @@ export class SaveState {
         count += 1;
         sum += Math.min(hp, pack.progress[i] ?? 0);
       }
-      const real = count > 0 ? sum / (count * hp) : 0;
-      if ((this.best[world] ?? 0) > real) this.best[world] = real;
+      const real = Math.min(1, count > 0 ? sum / (count * hp) : 0);
+      this.best[world] = Math.min(real, this.best[world] ?? 0);
     }
   }
 
@@ -828,7 +830,7 @@ export class SaveState {
     }
     this.progressSum = sum;
     this.filled = full;
-    const real = count > 0 ? sum / (count * hp) : 0;
+    const real = Math.min(1, count > 0 ? sum / (count * hp) : 0);
     if ((this.best[this.world] ?? 0) > real) this.best[this.world] = real;
   }
 
@@ -1459,11 +1461,11 @@ export class SaveState {
   }
 
   ratio(world = this.world): number {
-    if (world !== this.world) return this.best[world] ?? 0;
+    if (world !== this.world) return Math.min(1, this.best[world] ?? 0);
     const count = this.landCells(this.world);
     if (count === 0) return 0;
     const hp = cellHp(this.world);
-    return this.progressSum / (count * hp);
+    return Math.min(1, this.progressSum / (count * hp));
   }
 
   /** Match the balance sim (~98% cells full) and HUD rounding to 100%. */
@@ -1623,6 +1625,21 @@ export class SaveState {
     pockets.sort((a, b) => b.cells - a.cells || b.dry - a.dry);
     // The total is the land of the island, not the whole grid.
     return { cells, pockets, total: this.landCells(this.world) };
+  }
+
+  /** True for land the cloud can score, plus the dead rim the cinematic finishes. */
+  spectacleTile(index: number): boolean {
+    const { cols, rows } = gridOf(this.world);
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const w = cols * TILE;
+    const h = rows * TILE;
+    const radius = islandRadius(this.world, w, h);
+    const centerX = -TILE / 2 + w * 0.5;
+    const centerZ = -TILE / 2 + h * 0.5;
+    const x = (col + 0.5) * TILE - TILE / 2;
+    const z = (row + 0.5) * TILE - TILE / 2;
+    return islandShore(this.world, x - centerX, z - centerZ, radius) <= 0.16;
   }
 
   /** Average mask soak for one board tile (0–1). Drives staged props before the hill is "green". */
@@ -2120,8 +2137,10 @@ export class SaveState {
     }
     // Ponds and the mega flora feed the achievements that were unreachable.
     const kind = tileSpec(this.world, index, this.tiles[this.world]?.length ?? 0).kind;
-    if (kind === 'pond') this.stats.ponds += 1;
-    if (kind === 'seed') this.stats.blooms += 1;
+    if (this.phase !== 'finale') {
+      if (kind === 'pond') this.stats.ponds += 1;
+      if (kind === 'seed') this.stats.blooms += 1;
+    }
     this.justGreen.push(index);
     this.spawnHillWave(index);
   }
@@ -2162,15 +2181,16 @@ export class SaveState {
    * only when the bottle is empty.
    */
   private trackProgress(): void {
-    const ratio = Math.max(this.ratio(), this.runReached);
+    const ratio = Math.min(1, Math.max(this.ratio(), this.runReached));
     if (ratio > (this.best[this.world] ?? 0)) this.best[this.world] = ratio;
   }
 
   private noteBest(): void {
-    const ratio = Math.max(this.ratio(), this.runReached);
+    const ratio = Math.min(1, Math.max(this.ratio(), this.runReached));
     const before = this.best[this.world] ?? 0;
     this.newBest = ratio > before + 0.0005;
     if (ratio > before) this.best[this.world] = ratio;
+    if ((this.best[this.world] ?? 0) > 1) this.best[this.world] = 1;
   }
 
   private achievementTrack(id: string): { current: number; goal: number } {
@@ -2246,7 +2266,10 @@ export class SaveState {
     let changed = 0;
     for (let r = bounds.minR; r <= bounds.maxR; r += 1) {
       for (let c = bounds.minC; c <= bounds.maxC; c += 1) {
-        if (!this.isLand(c, r)) continue;
+        if (!this.isLand(c, r)) {
+          if (this.paintFinaleFringe(c, r, cols, rows, originX, originZ, radius)) changed += 1;
+          continue;
+        }
         const at = this.cellCenter(c, r, cols, rows);
         const d = this.gap(originX, originZ, at.x, at.z);
         if (d > radius) continue;
@@ -2282,6 +2305,51 @@ export class SaveState {
     return changed;
   }
 
+  /**
+   * Rim columns the cloud can never water (shore just outside the counted
+   * land). Paint the mask only — they must not push the island past 100%.
+   */
+  private paintFinaleFringe(
+    c: number,
+    r: number,
+    cols: number,
+    rows: number,
+    originX: number,
+    originZ: number,
+    radius: number,
+  ): boolean {
+    const shore = this.cellShore(c, r, cols, rows);
+    if (shore < 0 || shore > 0.16) return false;
+    const at = this.cellCenter(c, r, cols, rows);
+    const d = this.gap(originX, originZ, at.x, at.z);
+    if (d > radius) return false;
+    const edge = 1 - d / Math.max(0.001, radius);
+    const wet = Math.min(1, 0.2 + 0.8 * edge * edge);
+    return this.writeMaskWet(r * cols + c, wet);
+  }
+
+  private cellShore(c: number, r: number, cols: number, rows: number): number {
+    const { cols: gcols, rows: grows } = gridOf(this.world);
+    const w = gcols * TILE;
+    const h = grows * TILE;
+    const radius = islandRadius(this.world, w, h);
+    const centerX = -TILE / 2 + w * 0.5;
+    const centerZ = -TILE / 2 + h * 0.5;
+    const x = ((c + 0.5) / cols) * w - TILE / 2;
+    const z = ((r + 0.5) / rows) * h - TILE / 2;
+    return islandShore(this.world, x - centerX, z - centerZ, radius);
+  }
+
+  /** Mask green for the cinematic. Does not touch the scored land total. */
+  private writeMaskWet(index: number, wet: number): boolean {
+    const pixel = index * 4;
+    const next = wet >= 0.995 ? 255 : Math.min(254, Math.floor(Math.max(0, wet) * 254));
+    if ((this.pixels[pixel] ?? 0) >= next) return false;
+    this.pixels[pixel] = next;
+    if (next >= 255) this.pixels[pixel + 1] = 255;
+    return true;
+  }
+
   /** Snap any stragglers to full green before the results screen. */
   sealFinaleLandscape(): void {
     if (this.phase !== 'finale') return;
@@ -2290,7 +2358,10 @@ export class SaveState {
     let changed = 0;
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
-        if (!this.isLand(c, r)) continue;
+        if (!this.isLand(c, r)) {
+          if (this.writeMaskWet(r * cols + c, this.cellShore(c, r, cols, rows) <= 0.16 ? 1 : 0)) changed += 1;
+          continue;
+        }
         const i = r * cols + c;
         const was = this.progress[i] ?? 0;
         if (was >= hp) continue;

@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react';
+import { useCallback, useReducer, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react';
 import RundotGameAPI from '@series-inc/rundot-game-sdk/api';
 import type { RainGame } from '../game/RainGame';
 import { worldDef } from '../game/balance';
@@ -182,6 +182,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
   const rectRef = useRef({ w: 360, h: 480, left: 0, top: 0 });
   const canvasResizeRef = useRef<ResizeObserver | null>(null);
   const gestureCleanupRef = useRef<(() => void) | null>(null);
+  const gesturesRef = useRef<(el: HTMLDivElement) => () => void>(() => () => undefined);
   const modelRef = useRef(model);
   modelRef.current = model;
   const entryPulseRef = useRef(false);
@@ -340,8 +341,8 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       return { x: clientX - rectRef.current.left, y: clientY - rectRef.current.top };
     }
     const r = el.getBoundingClientRect();
-    const sx = r.width / Math.max(1, el.clientWidth);
-    const sy = r.height / Math.max(1, el.clientHeight);
+    const sx = el.clientWidth >= 32 ? r.width / el.clientWidth : 1;
+    const sy = el.clientHeight >= 32 ? r.height / el.clientHeight : 1;
     return { x: (clientX - r.left) / sx, y: (clientY - r.top) / sy };
   };
 
@@ -367,8 +368,8 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
 
     const toLocal = (clientX: number, clientY: number) => {
       const r = el.getBoundingClientRect();
-      const sx = r.width / Math.max(1, el.clientWidth);
-      const sy = r.height / Math.max(1, el.clientHeight);
+      const sx = el.clientWidth >= 32 ? r.width / el.clientWidth : 1;
+      const sy = el.clientHeight >= 32 ? r.height / el.clientHeight : 1;
       rectRef.current = { w: r.width, h: r.height, left: r.left, top: r.top };
       return { x: (clientX - r.left) / sx, y: (clientY - r.top) / sy };
     };
@@ -487,7 +488,12 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     };
 
     const onMouseMove = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse' || !pointersRef.current.has(e.pointerId) || !panStart.current) return;
+      if (e.pointerType !== 'mouse') return;
+      if (e.buttons === 0) {
+        if (pointersRef.current.has(e.pointerId)) onMouseUp(e);
+        return;
+      }
+      if (!pointersRef.current.has(e.pointerId) || !panStart.current) return;
       const p = toLocal(e.clientX, e.clientY);
       pointersRef.current.set(e.pointerId, p);
       const dx = p.x - panStart.current.cx;
@@ -542,7 +548,9 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     persistView();
   };
 
-  const bindCanvas = (el: HTMLDivElement | null) => {
+  gesturesRef.current = attachCanvasGestures;
+
+  const bindCanvas = useCallback((el: HTMLDivElement | null) => {
     gestureCleanupRef.current?.();
     gestureCleanupRef.current = null;
     canvasResizeRef.current?.disconnect();
@@ -566,7 +574,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     canvasResizeRef.current = ro;
-    gestureCleanupRef.current = attachCanvasGestures(el);
+    gestureCleanupRef.current = gesturesRef.current(el);
 
     const restoreSavedView = savedWorkshopView != null;
     if (restoreSavedView) {
@@ -574,7 +582,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
       applyTransform();
     }
     scheduleWorkshopEntry(restoreSavedView);
-  };
+  }, []);
 
   const clearAffordPingId = (id: NodeId) => {
     setAffordPingIds((prev) => {

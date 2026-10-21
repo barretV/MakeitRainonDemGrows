@@ -95,7 +95,8 @@ function HudChip({
 }
 
 function formatPct(ratio: number): string {
-  const pct = ratio * 100;
+  const pct = Math.min(100, Math.max(0, ratio * 100));
+  if (pct >= 100) return '100%';
   if (pct <= 0) return '0%';
   if (pct < 1) return `${pct.toFixed(2)}%`;
   if (pct < 10) return `${pct.toFixed(1)}%`;
@@ -500,7 +501,7 @@ function Worlds({ model, game, start = false }: { model: HudModel; game: RainGam
                 {world.name}
                 {world.current ? ' · here' : ''}
               </span>
-              <span>{world.locked ? 'Locked' : `${Math.round(world.best * 100)}% best`}</span>
+              <span>{world.locked ? 'Locked' : `${Math.min(100, Math.round(world.best * 100))}% best`}</span>
             </button>
           ))}
         </div>
