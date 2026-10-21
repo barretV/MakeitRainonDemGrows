@@ -176,10 +176,11 @@ def cloud_scale(state):
 
 
 def bottle_seconds(state):
-    """10s at rank 0. Each Flask or Reservoir rank is +1s. Linger/Glacier add a short sip."""
+    """10s at rank 0. Opening the bottle adds 2s, each Flask or Reservoir rank adds 1.25s."""
+    opened = 2 if state["bottle"] >= 1 else 0
     stretch = (state["flask"] + state["reservoir"]) * 1.25
     sip = state["linger"] * 0.35 + state["glacier"] * 0.25
-    return 10 + stretch + sip
+    return 10 + opened + stretch + sip
 
 
 def drain_per_sec(state):
