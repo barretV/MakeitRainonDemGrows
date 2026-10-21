@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+:root {
+  --game-w: 1280px;
+  --game-h: 720px;
+  --game-vh-px: 7.2px;
+  --viewport-scale: min(calc(100vw / 1280), calc(100vh / 720));
+  --safe-top: 0px;
+}
+
 html,
 body,
 #root {
@@ -10,8 +18,120 @@ body,
   background: #241528;
 }
 
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   font-family: "Pixelify Sans", ui-rounded, sans-serif;
+}
+
+#root {
+  position: fixed;
+  inset: 0;
+}
+
+#app-frame {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #241528;
+  touch-action: none;
+}
+
+#app-frame-inner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1280px;
+  height: 720px;
+  overflow: hidden;
+  background: #f3d5e4;
+  box-shadow: 0 0 0 8px #1a1020;
+  transform: translate(-50%, -50%) scale(var(--viewport-scale, 1));
+  transform-origin: center center;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app-frame-inner button,
+#app-frame-inner input[type="range"],
+#app-frame-inner .menu-row,
+#app-frame-inner .menu-btn,
+#app-frame-inner .workshop-buy,
+#app-frame-inner .workshop-back {
+  touch-action: manipulation;
+}
+
+.rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  place-items: center;
+  padding: 1.5rem;
+  background: radial-gradient(ellipse at center, #3d2848 0%, #120818 72%);
+  text-align: center;
+  pointer-events: auto;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-hint {
+    display: grid;
+  }
+}
+
+.rotate-hint__card {
+  max-width: 18rem;
+  padding: 1.25rem 1rem;
+  border: 3px solid #1a1020;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #f3d5e4 0%, #e8b8d0 100%);
+  box-shadow: 0 6px 0 #1a1020;
+}
+
+.rotate-hint__icon {
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto 0.75rem;
+  border: 3px solid #1a1020;
+  border-radius: 0.5rem;
+  background: #b8f06a;
+  animation: rotate-hint-wiggle 2.2s ease-in-out infinite;
+}
+
+.rotate-hint__title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #2a1730;
+}
+
+.rotate-hint__sub {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: #4a3050;
+}
+
+@keyframes rotate-hint-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  35%,
+  55% {
+    transform: rotate(-88deg);
+  }
 }
 
 button,
@@ -814,12 +934,16 @@ canvas {
 
 .workshop-panel {
   display: flex;
-  width: 252px;
+  width: min(252px, 34vw);
+  max-height: calc(100% - 20px);
   flex-shrink: 0;
   flex-direction: column;
   gap: 10px;
   margin: 10px 10px 10px 0;
   padding: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   border: 2px solid rgba(255, 255, 255, 0.12);
   border-left: 4px solid var(--panel-branch, #ffe56a);
   border-radius: 6px;
@@ -1347,11 +1471,19 @@ canvas {
   display: grid;
   place-items: center;
   padding: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: radial-gradient(ellipse at 50% 42%, rgba(42, 28, 64, 0.55), rgba(5, 8, 18, 0.88));
 }
 
 .menu-card {
   box-sizing: border-box;
+  width: min(100%, 480px);
+  max-height: min(100%, 680px);
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 16px 18px 14px;
   color: #fff8ec;
   background:
@@ -1437,7 +1569,8 @@ canvas {
   display: flex;
   flex-direction: column;
   width: min(760px, 100%);
-  max-height: min(96dvh, 100%);
+  max-width: 100%;
+  max-height: min(100%, 680px);
   overflow: hidden;
   padding: 12px 14px 10px;
   gap: 6px;
