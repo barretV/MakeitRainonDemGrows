@@ -145,6 +145,8 @@ export interface HudModel {
   runDew: number;
   /** Mask cells completed this bottle. */
   runTiles: number;
+  /** Rare blooms earned this bottle. */
+  runBlooms: number;
   /** Peak revival % this run (survives until Rain again). */
   runReached: number;
   best: number;
@@ -156,6 +158,8 @@ export interface HudModel {
   stats: Stats;
   achievements: Array<AchievementDef & { done: boolean; current: number; goal: number }>;
   spendableBlooms: number;
+  /** Every message the game wants to show, oldest first. */
+  toasts: { seq: number; text: string }[];
   nextAbility: string;
   abilityCdNorm: number;
   revivalGlow: number;
@@ -306,11 +310,21 @@ export class SaveState {
   tank = 1;
   tiles: TileState[][] = [];
   stats: Stats = emptyStats();
+  /** Achievements paid out this session, waiting for a fanfare. */
+  pendingAchievements: string[] = [];
+  /** Blooms paid out this session, waiting for a fanfare. */
+  pendingBlooms = 0;
+  /** Revival milestone hit this session (percent), waiting for a fanfare. */
+  pendingMilestone = 0;
   achievements: string[] = [];
   sfx = true;
   music = false;
   lastSave = Date.now();
-  toast = '';
+  /** Latest message. Every write also lands in the toast log so the HUD can
+   * show them one at a time instead of overwriting each other. */
+  private toastValue = '';
+  toastLog: { seq: number; text: string }[] = [];
+  private toastSeq = 0;
   boostUntil = 0;
   lightningCd = 8;
   tornadoCd = 14;
@@ -502,6 +516,7 @@ export class SaveState {
     this.bloomAwarded.set(world, earned);
     this.blooms += earned - had;
     this.runBlooms += earned - had;
+    this.pendingBlooms += earned - had;
     this.toast = earned - had > 1 ? 'Blooms open!' : 'A bloom opens!';
   }
 
@@ -588,6 +603,22 @@ export class SaveState {
     this.finishIfDone();
   }
 
+  /**
+   * The latest message. Writing it also files the message in the toast log, so
+   * a burst of rewards is never swallowed by the next one.
+   */
+  get toast(): string {
+    return this.toastValue;
+  }
+
+  set toast(value: string) {
+    this.toastValue = value;
+    if (!value) return;
+    this.toastSeq += 1;
+    this.toastLog.push({ seq: this.toastSeq, text: value });
+    if (this.toastLog.length > 12) this.toastLog.shift();
+  }
+
   /** Attach this world's saved mask + tiles, or create empty land. */
   beginWorld(world: number, forceFresh: boolean): void {
     this.world = world;
@@ -595,6 +626,8 @@ export class SaveState {
     this.runOpen = true;
     this.runBuys = [];
     this.runBlooms = 0;
+    // Milestones are per island: every land deserves its own celebrations.
+    this.revivalMilestones.clear();
     if (forceFresh) {
       this.lands.delete(world);
     }
@@ -1495,6 +1528,7 @@ export class SaveState {
             : this.screen,
       runDew: this.runDew,
       runTiles: this.runTiles,
+      runBlooms: this.runBlooms,
       runReached: this.runReached,
       best: this.best[this.world] ?? 0,
       cleared: this.phase === 'clear',
@@ -1513,6 +1547,7 @@ export class SaveState {
         return { ...a, done: this.achievements.includes(a.id), current: track.current, goal: track.goal };
       }),
       spendableBlooms: wallet.blooms,
+      toasts: this.toastLog.map((t) => ({ ...t })),
       nextAbility: this.abilityTelegraph().id,
       abilityCdNorm: this.abilityTelegraph().cdNorm,
       revivalGlow: this.phase === 'finale' ? Math.max(this.revivalGlow, 0.85 + this.finaleProgress * 0.4) : this.revivalGlow,
@@ -1526,6 +1561,7 @@ export class SaveState {
       if (pct >= m && !this.revivalMilestones.has(m)) {
         this.revivalMilestones.add(m);
         this.revivalGlow = 1.35;
+        this.pendingMilestone = m;
         this.toast = m >= 100 ? 'The land is whole again!' : `World revival ${m}%!`;
       }
     }
@@ -1817,6 +1853,10 @@ export class SaveState {
       tile.pond = 1;
       tile.cracked = true;
     }
+    // Ponds and the mega flora feed the achievements that were unreachable.
+    const kind = tileSpec(this.world, index, this.tiles[this.world]?.length ?? 0).kind;
+    if (kind === 'pond') this.stats.ponds += 1;
+    if (kind === 'seed') this.stats.blooms += 1;
     this.justGreen.push(index);
     this.spawnHillWave(index);
   }
@@ -1930,6 +1970,7 @@ export class SaveState {
       if (!next) break;
       this.achievements.push(next.id);
       if (next.reward > 0) this.addDew(next.reward);
+      this.pendingAchievements.push(next.id);
       this.toast = `Achievement · ${next.name}`;
     }
   }

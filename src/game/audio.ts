@@ -105,6 +105,62 @@ export class AudioBus {
     this.noise(0.18, 700, 0.06);
   }
 
+  /** A drop hitting the ground: tiny, soft and very short. */
+  drip(): void {
+    this.noise(0.06, 1800, 0.022);
+  }
+
+  private lastRestore = 0;
+
+  /**
+   * A patch coming back to life. Called for every finished cell, so it rate
+   * limits itself and drifts its pitch, so a busy bottle sounds like rain on
+   * leaves rather than a machine gun.
+   */
+  restore(): void {
+    if (this.muted) return;
+    const ctx = this.context();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (now - this.lastRestore < 0.11) return;
+    this.lastRestore = now;
+    const step = 620 + Math.random() * 260;
+    this.tone({ type: 'triangle', from: step, to: step * 1.5, dur: 0.07, gain: 0.016 });
+  }
+
+  /** A crit: brighter and a little louder than a normal restore. */
+  crit(): void {
+    this.tone({ type: 'square', from: 1180, to: 1760, dur: 0.09, gain: 0.028 });
+    this.tone({ type: 'sine', from: 1760, to: 2100, dur: 0.12, gain: 0.018, delay: 0.03 });
+  }
+
+  /** A rare bloom opening up. */
+  bloomAward(): void {
+    this.tone({ type: 'sine', from: 784, to: 784, dur: 0.16, gain: 0.04 });
+    this.tone({ type: 'sine', from: 1046, to: 1046, dur: 0.2, gain: 0.032, delay: 0.07 });
+    this.tone({ type: 'triangle', from: 1568, to: 1568, dur: 0.26, gain: 0.022, delay: 0.14 });
+  }
+
+  /** An achievement paying out. */
+  achievement(): void {
+    this.tone({ type: 'triangle', from: 523, to: 523, dur: 0.13, gain: 0.045 });
+    this.tone({ type: 'triangle', from: 659, to: 659, dur: 0.15, gain: 0.04, delay: 0.09 });
+    this.tone({ type: 'triangle', from: 880, to: 880, dur: 0.2, gain: 0.035, delay: 0.18 });
+    this.tone({ type: 'sine', from: 1318, to: 1318, dur: 0.3, gain: 0.02, delay: 0.27 });
+  }
+
+  /** A revival milestone: the pitch climbs with the island's progress. */
+  milestone(step: number): void {
+    const root = 392 * Math.pow(2, Math.min(4, step) / 12);
+    this.tone({ type: 'sine', from: root, to: root, dur: 0.22, gain: 0.045 });
+    this.tone({ type: 'sine', from: root * 1.5, to: root * 1.5, dur: 0.26, gain: 0.03, delay: 0.1 });
+  }
+
+  /** Menu feedback. */
+  ui(): void {
+    this.tone({ type: 'square', from: 540, to: 380, dur: 0.05, gain: 0.018 });
+  }
+
   chime(): void {
     this.tone({ type: 'sine', from: 523, to: 523, dur: 0.12, gain: 0.05 });
     this.tone({ type: 'sine', from: 659, to: 659, dur: 0.14, gain: 0.045, delay: 0.08 });

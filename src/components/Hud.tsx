@@ -4,6 +4,7 @@ import { worldDef } from '../game/balance';
 import { formatDew, walletDew, type HudModel } from '../game/state';
 import { Bottle } from './Bottle';
 import { HudDewIcon, HudPlantIcon } from './HudCurrencyIcons';
+import { HudToast } from './HudToast';
 import { RevivalBar } from './RevivalBar';
 import { UpgradeTree } from './UpgradeTree';
 
@@ -116,6 +117,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
 
   return (
     <div className="pointer-events-none absolute inset-0">
+      <HudToast toasts={model.toasts} />
       {playing && (
         <>
           <div className="hud-play-stack absolute top-[2%] left-[1.1%] z-10 select-none">
@@ -325,8 +327,8 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
         <div className="menu-card__title">{model.cleared ? 'A living world' : 'Bottle empty'}</div>
         <p className="menu-card__sub">{model.worldName}</p>
         <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
-        {model.runDew > 0 && model.runTiles > 0 && (
-          <p className="results-earned">Rain earned {formatDew(model.runDew)} dew · {model.runTiles} blooms</p>
+        {model.runDew > 0 && (
+          <p className="results-earned">Rain earned {formatDew(model.runDew)} dew · {model.runBlooms > 0 ? `${model.runBlooms} bloom${model.runBlooms > 1 ? 's' : ''} · ` : ''}{model.runTiles} patches</p>
         )}
         <div className="results-stats">
           <Stat label="This bottle" value="" count={model.runDew} suffix=" dew" />
@@ -346,6 +348,7 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
               onClick={() => {
                 focusRef.current = i;
                 setFocus(i);
+                game.audio.ui();
                 action.run();
               }}
             >
@@ -423,7 +426,10 @@ function Worlds({ model, game, start = false }: { model: HudModel; game: RainGam
             <button
               key={world.index}
               disabled={world.locked}
-              onClick={() => game.goto(world.index)}
+              onClick={() => {
+                game.audio.ui();
+                game.goto(world.index);
+              }}
               className="menu-row"
             >
               <span>
@@ -439,12 +445,20 @@ function Worlds({ model, game, start = false }: { model: HudModel; game: RainGam
             <button
               type="button"
               className="menu-btn pixel w-full"
-              onClick={() => game.goto(current?.index ?? model.worldIndex)}
+              onClick={() => {
+                game.audio.ui();
+                game.goto(current?.index ?? model.worldIndex);
+              }}
             >
               Rain on {current?.name ?? model.worldName}
             </button>
           ) : (
-            <Mini onClick={() => game.showResults()}>Back</Mini>
+            <Mini onClick={() => {
+              game.audio.ui();
+              game.showResults();
+            }}>
+              Back
+            </Mini>
           )}
         </div>
       </div>

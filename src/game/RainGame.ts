@@ -1504,7 +1504,13 @@ export class RainGame {
       state.flowWaterStep();
       splashDew += hit.dew;
       splashCrits += hit.crits;
-      if (hit.filled > 0) this.grin = 0.75;
+      if (hit.filled > 0) {
+        this.grin = 0.75;
+        // Every patch that comes back makes a small sound, so a busy bottle has a
+        // texture instead of silence.
+        this.audio.restore();
+      }
+      if (hit.crits > 0) this.audio.crit();
       const cast = state.tryCastAbility({
         cloudX: this.cloudX,
         cloudZ: this.cloudZ,
@@ -1710,12 +1716,16 @@ export class RainGame {
       drop.vz *= 1 - dt * 2.2;
       drop.mesh.position.y = drop.y;
       const floor = this.globe ? 0.2 : this.groundY(drop.mesh.position.x, drop.mesh.position.z) + 0.05;
-      if (drop.y < floor) drop.alive = drop.mesh.visible = false;
+      if (drop.y < floor) {
+        drop.alive = drop.mesh.visible = false;
+        this.audio.drip();
+      }
     }
 
     state.fadeRipples(dt);
     state.decayPulse(dt);
     state.tickRestorationWaves(dt);
+    this.drainFanfare();
     if (state.maskDirty || !this.maskTex || (this.wantsRain() && state.phase === 'play' && state.tank > 0.01)) this.syncMask();
     if (state.pulseDirty || !this.pulseTex) this.syncPulse();
     this.abilityVfx.update(dt);
@@ -2416,6 +2426,18 @@ export class RainGame {
       this.audio.splash();
       this.leapKoi(index);
     } else if (result.bloomed) this.audio.bloom();
+    // Bloom Sparkle: little glints rising off the new growth.
+    if (this.state && this.state.ranks.sparkle >= 1) {
+      for (let i = 0; i < 5; i += 1) {
+        const mote = this.takeMote(this.art.spark);
+        if (!mote) break;
+        mote.mesh.position.set(at.x + (Math.random() - 0.5) * 0.9, 1.2, at.z + (Math.random() - 0.5) * 0.9);
+        mote.life = 1.1;
+        mote.vy = 1.9;
+        mote.vx = (Math.random() - 0.5) * 0.5;
+        mote.vz = (Math.random() - 0.5) * 0.5;
+      }
+    }
     if (result.mega) this.shake = 0.55;
     this.syncCritters(0, 0, true);
   }
@@ -3002,6 +3024,39 @@ export class RainGame {
       : this.groundY(this.cloudX, this.cloudZ);
     this.rainRing.position.set(this.cloudX, top + 0.08, this.cloudZ);
     this.rainRing.quaternion.setFromAxisAngle(RING_AXIS, -Math.PI / 2);
+  }
+
+  /**
+   * Rewards the state queued up: achievements, rare blooms and revival
+   * milestones. Each one gets a sound and a little light in the world.
+   */
+  private drainFanfare(): void {
+    const state = this.state;
+    if (!state) return;
+    if (state.pendingMilestone > 0) {
+      const pct = state.pendingMilestone;
+      state.pendingMilestone = 0;
+      this.audio.milestone(pct >= 100 ? 4 : Math.round((pct / 100) * 4));
+      this.skyLift = Math.max(this.skyLift, pct >= 100 ? 5.2 : 2.2);
+      this.grin = Math.max(this.grin, 0.6);
+    }
+    if (state.pendingBlooms > 0) {
+      const count = state.pendingBlooms;
+      state.pendingBlooms = 0;
+      this.audio.bloomAward();
+      this.cloudPop = Math.max(this.cloudPop, 1.2);
+      for (let i = 0; i < count; i += 1) {
+        this.burst(this.cloud.position.x, this.cloud.position.y - 0.2, this.cloud.position.z, 6);
+      }
+    }
+    if (state.pendingAchievements.length > 0) {
+      const ids = state.pendingAchievements.splice(0, state.pendingAchievements.length);
+      this.audio.achievement();
+      for (let i = 0; i < ids.length; i += 1) {
+        this.burst(this.cloud.position.x, this.cloud.position.y + 0.2, this.cloud.position.z, 10);
+      }
+      this.grin = Math.max(this.grin, 0.8);
+    }
   }
 
   private makeMask(data: Uint8Array, cols: number, rows: number): THREE.DataTexture {
