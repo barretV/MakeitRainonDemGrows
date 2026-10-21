@@ -1368,7 +1368,7 @@ export class RainGame {
   }
 
   private fireAbility(cast: AbilityId, state: SaveState): void {
-    this.abilityVfx.play(cast, this.cloudX, this.hoverY, this.cloudZ, state.reach());
+    this.abilityVfx.play(cast, this.cloudX, this.groundY(this.cloudX, this.cloudZ), this.cloudZ, state.reach());
     if (cast === 'lightning') {
       this.audio.zap();
       this.shake = 0.4;
@@ -3837,7 +3837,15 @@ export class RainGame {
     mesh.position.set(this.cloudX, 1.05, this.cloudZ);
     this.scene.add(mesh);
     this.tornado = { mesh, x: this.cloudX, z: this.cloudZ, life: lifeStorm ? 4.2 : 3.4, acc: 0 };
-    if (lifeStorm) this.abilityVfx.play('lifestorm', this.cloudX, 1.2, this.cloudZ, this.state?.reach() ?? 1);
+    if (lifeStorm) {
+      this.abilityVfx.play(
+        'lifestorm',
+        this.cloudX,
+        this.groundY(this.cloudX, this.cloudZ),
+        this.cloudZ,
+        this.state?.reach() ?? 1,
+      );
+    }
   }
 
   private flashBolt(center: number): void {

@@ -1529,22 +1529,30 @@ export class SaveState {
     return [];
   }
 
-  trySpin(): boolean {
-    if (!abilityOn(this.ranks, 'sprinkler') || this.spinCd > 0) return false;
-    this.spinCd = SPIN_CD;
+  /**
+   * The manual casts share one clock with the automatic ones, so a button press
+   * and the auto-fire can never disagree about what is ready.
+   */
+  private manualReady(id: 'sprinkler' | 'lightning' | 'tornado', cd: number): boolean {
+    if (!abilityOn(this.ranks, id)) return false;
+    if ((this.abilityCds[id] ?? 0) > 0) return false;
+    this.abilityCds[id] = cd;
+    if (id === 'sprinkler') this.spinCd = SPIN_CD;
+    if (id === 'lightning') this.lightningCd = LIGHTNING_CD;
+    if (id === 'tornado') this.tornadoCd = TORNADO_CD;
     return true;
+  }
+
+  trySpin(): boolean {
+    return this.manualReady('sprinkler', SPIN_CD);
   }
 
   startTornado(): boolean {
-    if (!abilityOn(this.ranks, 'tornado') || this.tornadoCd > 0) return false;
-    this.tornadoCd = TORNADO_CD;
-    return true;
+    return this.manualReady('tornado', TORNADO_CD);
   }
 
   armLightning(): boolean {
-    if (!abilityOn(this.ranks, 'lightning') || this.lightningCd > 0) return false;
-    this.lightningCd = LIGHTNING_CD;
-    return true;
+    return this.manualReady('lightning', LIGHTNING_CD);
   }
 
   pet(): number {
