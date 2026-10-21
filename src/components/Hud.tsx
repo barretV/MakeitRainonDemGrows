@@ -259,6 +259,18 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             <Mini onClick={() => game.toggleSfx()}>{model.sfx ? 'SFX on' : 'SFX off'}</Mini>
             <Mini onClick={() => game.toggleMusic()}>{model.music ? 'Music on' : 'Music off'}</Mini>
           </div>
+          <div className="mt-3 flex flex-col gap-2">
+            <VolumeSlider
+              label="Effects"
+              value={model.sfxVolume}
+              onChange={(value) => game.setSfxVolume(value)}
+            />
+            <VolumeSlider
+              label="Music"
+              value={model.musicVolume}
+              onChange={(value) => game.setMusicVolume(value)}
+            />
+          </div>
           <p className="menu-card__sub mt-3">Full wipe needs Reset below (browser cache alone keeps saved dew).</p>
           <button
             type="button"
@@ -694,6 +706,36 @@ function Mini({ children, onClick }: { children: string; onClick: () => void }) 
     <button onClick={onClick} className="menu-btn pixel">
       {children}
     </button>
+  );
+}
+
+/** A volume slider. The number is the percentage, because that is what people read. */
+function VolumeSlider({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const pct = Math.round(value * 100);
+  return (
+    <label className="vol-row">
+      <span className="vol-row__label pixel">{label}</span>
+      <input
+        className="vol-row__slider"
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={pct}
+        aria-label={`${label} volume`}
+        style={{ ['--fill' as string]: `${pct}%` }}
+        onChange={(event) => onChange(Number(event.target.value) / 100)}
+      />
+      <span className="vol-row__value pixel tabular-nums">{pct}%</span>
+    </label>
   );
 }
 

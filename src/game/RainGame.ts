@@ -1422,6 +1422,7 @@ export class RainGame {
     this.state.sfxVolume = Math.max(0, Math.min(1, volume));
     this.audio.setSfxVolume(this.state.sfxVolume);
     this.pushHud(true);
+    void this.saveNow();
   }
 
   /** The music volume, 0 to 1. */
@@ -1430,6 +1431,7 @@ export class RainGame {
     this.state.musicVolume = Math.max(0, Math.min(1, volume));
     this.audio.setMusicVolume(this.state.musicVolume);
     this.pushHud(true);
+    void this.saveNow();
   }
 
   async reset(): Promise<void> {

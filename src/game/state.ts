@@ -450,6 +450,10 @@ export class SaveState {
       const s = new SaveState();
       s.sfx = data.sfx !== false;
       s.music = data.music === true;
+      const sfxVolume = (data as { sfxVolume?: unknown }).sfxVolume;
+      const musicVolume = (data as { musicVolume?: unknown }).musicVolume;
+      s.sfxVolume = typeof sfxVolume === 'number' ? Math.max(0, Math.min(1, sfxVolume)) : 1;
+      s.musicVolume = typeof musicVolume === 'number' ? Math.max(0, Math.min(1, musicVolume)) : 1;
       if (data.v === 1) {
         s.dew = 0;
         s.ranks = emptyRanks();
@@ -507,6 +511,8 @@ export class SaveState {
       lands: this.exportLands(),
       sfx: this.sfx,
       music: this.music,
+      sfxVolume: this.sfxVolume,
+      musicVolume: this.musicVolume,
       lastSave: Date.now(),
     };
     this.lastSave = data.lastSave;
