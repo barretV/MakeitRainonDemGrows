@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { RainGame } from '../game/RainGame';
 import { worldDef } from '../game/balance';
 import { formatDew, walletDew, type HudModel } from '../game/state';
+import { TWEAK_KNOBS } from '../tweak';
 import { Bottle } from './Bottle';
 import { HudDewIcon, HudPlantIcon } from './HudCurrencyIcons';
 import { HudToast } from './HudToast';
-import { RevivalBar } from './RevivalBar';
 import { UpgradeTree } from './UpgradeTree';
 
 /** True on a touch-first device: no mouse, only fingers. */
@@ -104,7 +104,6 @@ function formatPct(ratio: number): string {
 
 export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
   const [gear, setGear] = useState(false);
-  const pct = model.restored * 100;
   const playing = model.screen === 'play';
   const blooms = model.spendableBlooms;
   const dewNow = walletDew(model.dew);
@@ -120,7 +119,10 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
       <HudToast toasts={model.toasts} />
       {playing && (
         <>
-          <div className="hud-play-stack absolute top-[2%] left-[1.1%] z-10 select-none">
+          <div
+            className="hud-play-stack absolute top-[2%] left-[1.1%] z-10 select-none"
+            style={{ transform: `translate(${TWEAK_KNOBS.hudOffsetX}px, ${TWEAK_KNOBS.hudOffsetY}px)` }}
+          >
             <div className="hud-play-top">
               <div
                 className={`hud-play-jug${bumpLiters ? ' hud-play-jug--bump' : ''}`}
@@ -155,7 +157,6 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                 )}
               </div>
             </div>
-            <RevivalBar pct={pct} />
           </div>
           <div className="hud-bottom-bar absolute bottom-[2.4%] left-[1.4%] flex items-end gap-2 select-none">
             <div

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { formatLiters } from '../game/state';
+import { TWEAK_KNOBS } from '../tweak';
 
 interface BottleProps {
   tank: number;
@@ -62,7 +63,14 @@ export function Bottle({ tank, slosh, raining, sleepy, liters }: BottleProps) {
 
 function Gauge({ pct }: { pct: number }) {
   return (
-    <div className="relative ml-[2%]" style={{ width: '34%', aspectRatio: '34 / 76' }}>
+    <div
+      className="relative ml-[2%]"
+      style={{
+        width: '34%',
+        aspectRatio: '34 / 76',
+        transform: `translate(${TWEAK_KNOBS.gaugeOffsetX}px, ${TWEAK_KNOBS.gaugeOffsetY}px)`,
+      }}
+    >
       <svg viewBox="0 0 34 76" className="absolute inset-0 h-full w-full overflow-visible">
         <defs>
           <linearGradient id="gauge-fill" x1="0" y1="0" x2="0" y2="1">
