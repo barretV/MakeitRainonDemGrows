@@ -224,7 +224,7 @@ export class Terrain {
         uDirtA: { value: linear(pal.dirtA) },
         uDirtB: { value: linear(pal.dirtB) },
         uFog: { value: fog.color.clone() },
-        uFogRange: { value: new THREE.Vector2(Math.max(55, fog.far * 0.9), Math.max(160, fog.far * 2.8)) },
+        uFogRange: { value: new THREE.Vector2(fog.near, fog.far) },
         uGlobe: { value: this.spherical ? 1 : 0 },
         uSunDir: { value: sunDir },
         uSunColor: { value: sunColor },
@@ -357,7 +357,7 @@ export class Terrain {
         uBoard: { value: new THREE.Vector4(this.originX, this.originZ, this.width, this.depth) },
         uTime: time,
         uFog: { value: fog.color.clone() },
-        uFogRange: { value: new THREE.Vector2(Math.max(55, fog.far * 0.9), Math.max(160, fog.far * 2.8)) },
+        uFogRange: { value: new THREE.Vector2(fog.near, fog.far) },
         uNormal: { value: normalOf(atlas) },
         uSunDir: { value: sunDir },
         uSunColor: { value: sunColor },
@@ -505,6 +505,11 @@ const VOXEL_FRAG = /* glsl */ `
       vec3 turf = mix(root, midG, grass);
       turf = mix(turf, tip, fleck * grass);
       turf *= 0.9 + 0.16 * n2;
+      // Broad drifts of colour so a meadow is not one flat sheet of green.
+      float broad = sin(vWorld.x * 0.085 + vWorld.z * 0.062) * 0.5 + 0.5;
+      float broad2 = sin(vWorld.x * 0.021 - vWorld.z * 0.033 + 1.7) * 0.5 + 0.5;
+      float drift = broad * 0.6 + broad2 * 0.4;
+      turf = mix(turf * vec3(0.86, 0.95, 0.9), turf * vec3(1.12, 1.06, 0.82), drift);
       float petalDot = smoothstep(0.3, 0.1, length(bf * 1.5)) * step(0.965, h21(bc + 13.0));
       vec3 petal = h21(bc + 2.0) > 0.5 ? vec3(1.0, 0.45, 0.62) : vec3(1.0, 0.92, 0.55);
       turf = mix(turf, petal, petalDot * bloom * 0.9);
@@ -572,6 +577,10 @@ const VOXEL_FRAG = /* glsl */ `
       col *= 1.0 - shadow * 0.5 * (0.3 + life);
       col = mix(col, col * vec3(0.7, 0.58, 0.66), uRain * 0.22 * (1.0 - life * 0.7));
     }
+    // Aerial haze: the far end of the island fades into the sky, which is what
+    // makes the land feel big.
+    float fogDepth = length(vWorld - cameraPosition);
+    col = mix(col, uFog, smoothstep(uFogRange.x, uFogRange.y, fogDepth) * (1.0 - uGlobe * 0.85));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -654,6 +663,8 @@ const FLORA_FRAG = /* glsl */ `
     vec3 col = albedo * lit * mix(0.7, 1.15, wrap);
     float rim = pow(wrap, 2.2) * clamp(1.0 - nTex.z, 0.0, 1.0);
     col += albedo * uSunColor * rim * 0.4 * vLife;
+    float fogDepth = vDepth;
+    col = mix(col, uFog, smoothstep(uFogRange.x, uFogRange.y, fogDepth));
     gl_FragColor = vec4(col, 1.0);
   }
 `;

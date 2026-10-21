@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { GLOBE_WORLD, TILE, gridOf, worldDef, type Decor } from './balance';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
@@ -363,6 +364,7 @@ export class RainGame {
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera;
   private readonly composer: EffectComposer;
+  private readonly bloom: UnrealBloomPass;
   private readonly tilt: ShaderPass;
   private readonly clock = new THREE.Clock();
   private readonly raycaster = new THREE.Raycaster();
@@ -443,6 +445,11 @@ export class RainGame {
   private curtain: THREE.Mesh;
   private rainRing: THREE.Mesh;
   private auras: { ring: THREE.Mesh; wisp: THREE.Mesh }[] = [];
+  private propShadows: THREE.InstancedMesh | null = null;
+  private readonly shadowMatrix = new THREE.Matrix4();
+  private readonly shadowPos = new THREE.Vector3();
+  private readonly shadowQuat = new THREE.Quaternion();
+  private readonly shadowScale = new THREE.Vector3();
   private aimArrow: THREE.Mesh;
   private auraTick = 0;
   private auraTargets: DryTarget[] = [];
@@ -500,7 +507,8 @@ export class RainGame {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(w, h, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.NoToneMapping;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
     this.renderer.domElement.className = 'stage-canvas';
     this.renderer.domElement.style.width = '100%';
     this.renderer.domElement.style.height = '100%';
@@ -523,10 +531,10 @@ export class RainGame {
     this.scene.add(heroAmbient, heroHemi, this.heroSun, heroFill);
     this.abilityVfx = new AbilityVfx(this.track);
 
-    this.mountain = this.litBillboard(this.art.mountain, 15, 9.2, 0.12);
+    this.mountain = this.litBillboard(this.art.mountain, 15, 9.2, 0.12, true);
     this.scene.add(this.mountain);
     for (let i = 0; i < 2; i += 1) {
-      const peak = this.litBillboard(this.art.mountain, 11, 7.5, 0.12);
+      const peak = this.litBillboard(this.art.mountain, 11, 7.5, 0.12, true);
       peak.scale.setScalar(0.72 + i * 0.12);
       this.peaks.push(peak);
       this.scene.add(peak);
@@ -632,7 +640,7 @@ export class RainGame {
       this.scene.add(this.sunHalo);
     }
 
-    this.hillsFar = this.litBillboard(this.art.hills[0]!, 44, 3.3, 0.06);
+    this.hillsFar = this.litBillboard(this.art.hills[0]!, 44, 3.3, 0.06, true);
     {
       const farMat = this.hillsFar.material as THREE.ShaderMaterial;
       farMat.toneMapped = false;
@@ -666,14 +674,15 @@ export class RainGame {
     }
 
     for (let i = 0; i < 5; i += 1) {
-      const mesh = this.billboard(this.art.softCloud, 3, 1.4, 0.02);
-      const cloudMat = mesh.material as THREE.MeshBasicMaterial;
-      cloudMat.fog = false;
+      // Lit sprites, so the cloud banks catch the sun instead of reading as
+      // cut-out cardboard.
+      const mesh = this.litBillboard(this.art.softCloud, 3, 1.4, 0.02, true);
+      const cloudMat = mesh.material as THREE.ShaderMaterial;
       cloudMat.transparent = true;
       cloudMat.depthWrite = false;
       cloudMat.toneMapped = false;
-      cloudMat.color.set('#6a3850');
-      cloudMat.opacity = 0.42 - (i % 3) * 0.06;
+      litColor(cloudMat).set('#6a3850');
+      litOpacity(cloudMat).value = 0.42 - (i % 3) * 0.06;
       mesh.renderOrder = -4;
       this.scene.add(mesh);
       this.softClouds.push({
@@ -926,7 +935,7 @@ export class RainGame {
     this.sunDisc.renderOrder = -8;
     this.scene.add(this.sunDisc);
 
-    this.hillsBackdrop = this.litBillboard(this.art.hills[0]!, 44, 3.3, 0.06);
+    this.hillsBackdrop = this.litBillboard(this.art.hills[0]!, 44, 3.3, 0.06, true);
     this.hillsBackdrop.userData['bb'] = 1;
     this.scene.add(this.hillsBackdrop);
 
@@ -952,7 +961,7 @@ export class RainGame {
 
     for (let i = 0; i < 10; i += 1) {
       const tex = this.art.parallaxIslands[i % this.art.parallaxIslands.length]!;
-      const mesh = this.litBillboard(tex, 7.2, 5.2, 0.06);
+      const mesh = this.litBillboard(tex, 7.2, 5.2, 0.06, true);
       const mat = mesh.material as THREE.ShaderMaterial;
       mat.depthWrite = false;
       mat.toneMapped = false;
@@ -1174,7 +1183,13 @@ export class RainGame {
 
     this.seedPools();
     this.composer = new EffectComposer(this.renderer);
+    // The composer renders offscreen, so the renderer's own antialias is lost.
+    // Multisampling the target brings the edges back.
+    this.composer.renderTarget1.samples = 4;
+    this.composer.renderTarget2.samples = 4;
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.22, 0.75, 0.92);
+    this.composer.addPass(this.bloom);
     this.tilt = new ShaderPass(TiltShiftShader);
     this.composer.addPass(this.tilt);
     this.composer.addPass(new OutputPass());
@@ -2137,7 +2152,7 @@ export class RainGame {
     }
     this.skyBase.set(skyMid);
     const dist = this.frameDist(0);
-    this.scene.fog = this.globe ? new THREE.Fog('#24356e', 18, 48) : new THREE.Fog(skyMid, dist * 2.2, dist * 8);
+    this.scene.fog = this.globe ? new THREE.Fog('#24356e', 18, 48) : new THREE.Fog(skyMid, dist * 1.5, dist * 5.2);
     (this.skyMat.uniforms['uTop']!.value as THREE.Color).set(sky.skyTop);
     (this.skyMat.uniforms['uMid']!.value as THREE.Color).set(sky.skyMid);
     (this.skyMat.uniforms['uBot']!.value as THREE.Color).set(sky.skyBot);
@@ -2234,6 +2249,7 @@ export class RainGame {
       this.track.add(flora);
     }
     const tiles = state.current();
+    this.buildPropShadows(tiles.length);
     for (let i = 0; i < tiles.length; i += 1) {
       const spec = state.spec(i);
       const at = this.tilePos(i);
@@ -2435,8 +2451,7 @@ export class RainGame {
       this.track.add(view.prop);
     }
     if (restored && spec.kind === 'seed' && view.prop) view.prop.userData['s'] = 1.25;
-    this.views.push(view);
-  }
+    this.views.push(view);  }
 
   private dressTile(index: number): void {
     const state = this.state;
@@ -2510,6 +2525,8 @@ export class RainGame {
     const state = this.state;
     if (!state) return;
     this.syncBoxes(false);
+    const shadows = this.propShadows;
+    let shadowIndex = 0;
     for (let i = 0; i < this.views.length; i += 1) {
       const view = this.views[i];
       const tile = state.current()[i];
@@ -2628,10 +2645,22 @@ export class RainGame {
           view.y + view.ny * 0.08,
           view.z + view.nz * 0.08,
         );
+        if (view.prop.visible && shadows && shadowIndex < shadows.instanceMatrix.count) {
+          const width = (Number(view.prop.userData['gw']) || 1) * view.prop.scale.x;
+          this.shadowPos.set(view.x, view.y + 0.03, view.z);
+          this.shadowScale.set(width * 0.78, 1, width * 0.78);
+          this.shadowMatrix.compose(this.shadowPos, this.shadowQuat.identity(), this.shadowScale);
+          shadows.setMatrixAt(shadowIndex, this.shadowMatrix);
+          shadowIndex += 1;
+        }
       }
       if (view.pond && view.pondFill > 0 && view.pondFill < 1) {
         view.pond.rotation.z = Math.sin(t * 1.1 + i) * 0.02;
       }
+    }
+    if (shadows) {
+      shadows.count = shadowIndex;
+      shadows.instanceMatrix.needsUpdate = true;
     }
     this.syncHero();
     const hero = this.heroGroup;
@@ -3172,6 +3201,35 @@ export class RainGame {
   }
 
   /**
+   * A soft contact shadow under every prop. One instanced mesh for the whole
+   * island, so the objects stop looking like they float.
+   */
+  private buildPropShadows(capacity: number): void {
+    if (this.propShadows) {
+      this.track.remove(this.propShadows);
+      this.propShadows.dispose();
+      this.propShadows = null;
+    }
+    if (this.globe || capacity <= 0) return;
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      map: this.glowTexture('shadow'),
+      blending: THREE.MultiplyBlending,
+      transparent: true,
+      depthWrite: false,
+      opacity: 1,
+      fog: false,
+    });
+    const mesh = new THREE.InstancedMesh(geo, mat, capacity);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 1;
+    mesh.count = 0;
+    this.propShadows = mesh;
+    this.track.add(mesh);
+  }
+
+  /**
    * Rewards the state queued up: achievements, rare blooms and revival
    * milestones. Each one gets a sound and a little light in the world.
    */
@@ -3287,9 +3345,12 @@ export class RainGame {
 
   private dressSky(t: number): void {
     const state = this.state;
-    const { backX, backZ, rightX, rightZ } = this.skyAxes();
-    const sun = this.skyMat.uniforms['uSunDir']!.value as THREE.Vector3;
-    sun.set(-backX * 0.15 + rightX * 0.82, 0.16, -backZ * 0.15 + rightZ * 0.82).normalize();
+    const { backX, backZ } = this.skyAxes();
+    // The sun belongs to the island, not to the camera: turning the view must
+    // not swing the light around.
+    const sun = this.sunDir;
+    const worldSun = worldDef(this.state?.world ?? 0).sun;
+    sun.set(worldSun[0], worldSun[1], worldSun[2]).normalize();
     this.rainUniform.value = this.rainMix;
     this.sunColor.copy(this.sunClear).lerp(this.sunOvercast, this.rainMix);
     this.sunColor.multiplyScalar(1 - this.rainMix * 0.28);
@@ -3319,7 +3380,8 @@ export class RainGame {
       this.hillsFar.position.copy(this.skyPoint(0.06, 0.54 + Math.sin(t * 0.17 + 1.4) * 0.008, 60));
       this.sizeTo(this.hillsFar, 94, 8);
 
-      const sunDist = 108;
+      // The disc keeps a home in the sky while the light stays with the island.
+      const sunDist = 118;
       const sun = this.skyPoint(0.3, 0.86, sunDist);
       this.sunDisc.position.copy(sun);
       this.sunHalo.position.copy(sun);
@@ -3392,8 +3454,8 @@ export class RainGame {
       const p = this.skyPoint(driftX, 0.62 + cloud.lift * 0.7 + Math.sin(t * 0.22 + cloud.phase) * 0.012, 86 + cloud.depth * 8);
       cloud.mesh.position.copy(p);
       this.sizeTo(cloud.mesh, 10 + cloud.depth * 1.8, 3.4 + cloud.depth * 0.5);
-      const cMat = cloud.mesh.material as THREE.MeshBasicMaterial;
-      cMat.opacity = (0.44 - (i % 3) * 0.08) * (1 - this.rainMix * 0.35);
+      const cMat = cloud.mesh.material as THREE.ShaderMaterial;
+      litOpacity(cMat).value = (0.44 - (i % 3) * 0.08) * (1 - this.rainMix * 0.35);
       cloud.mesh.visible = true;
     });
     this.puffs.forEach((mesh, i) => {
@@ -3797,10 +3859,14 @@ export class RainGame {
     return step === 1 ? art.flowers : art.twig;
   }
 
-  private glowTexture(kind: 'shaft' | 'soft' | 'mist' | 'halo' | 'aura' | 'wisp'): THREE.CanvasTexture {
+  private glowTexture(
+    kind: 'shaft' | 'soft' | 'mist' | 'halo' | 'aura' | 'wisp' | 'shadow',
+  ): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
-    canvas.width = kind === 'mist' ? 256 : kind === 'halo' ? 128 : kind === 'aura' ? 96 : 64;
-    canvas.height = kind === 'mist' ? 64 : kind === 'halo' ? 128 : kind === 'aura' ? 96 : 256;
+    canvas.width =
+      kind === 'mist' ? 256 : kind === 'halo' ? 128 : kind === 'aura' ? 96 : 64;
+    canvas.height =
+      kind === 'mist' ? 64 : kind === 'halo' ? 128 : kind === 'aura' ? 96 : kind === 'shadow' ? 64 : 256;
     const ctx = canvas.getContext('2d');
     if (ctx) {
       if (kind === 'halo') {
@@ -3838,6 +3904,16 @@ export class RainGame {
         ctx.fillStyle = sideMask;
         ctx.fillRect(0, 0, 64, 256);
         ctx.globalCompositeOperation = 'source-over';
+      } else if (kind === 'shadow') {
+        // A soft contact shadow: multiply blending, so the ground darkens under
+        // an object instead of a black blob being painted on top of it.
+        const sg = ctx.createRadialGradient(32, 32, 2, 32, 32, 32);
+        sg.addColorStop(0, 'rgb(74, 66, 84)');
+        sg.addColorStop(0.45, 'rgb(120, 112, 132)');
+        sg.addColorStop(0.78, 'rgb(226, 222, 232)');
+        sg.addColorStop(1, 'rgb(255,255,255)');
+        ctx.fillStyle = sg;
+        ctx.fillRect(0, 0, 64, 64);
       } else if (kind === 'mist') {
         for (let y = 0; y < 64; y += 1) {
           const vy = 1 - Math.abs(y / 63 - 0.5) * 2;
@@ -3882,8 +3958,22 @@ export class RainGame {
     return tex;
   }
 
-  private litBillboard(map: THREE.Texture, w: number, h: number, alphaTest: number): THREE.Mesh {
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), makeLitSprite(map, this.sunDir, this.sunColor, alphaTest));
+  private litBillboard(
+    map: THREE.Texture,
+    w: number,
+    h: number,
+    alphaTest: number,
+    noFog = false,
+  ): THREE.Mesh {
+    const fog = this.scene.fog as THREE.Fog;
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      makeLitSprite(map, this.sunDir, this.sunColor, alphaTest, {
+        color: fog.color,
+        near: noFog ? 1e5 : fog.near,
+        far: noFog ? 2e5 : fog.far,
+      }),
+    );
     mesh.userData['ph'] = h;
     mesh.userData['gw'] = w;
     mesh.userData['s'] = 1;
@@ -3954,6 +4044,7 @@ export class RainGame {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
     this.composer.setSize(w, h);
+    this.bloom.setSize(w, h);
     const texel = this.tilt.uniforms['uTexel']?.value as THREE.Vector2 | undefined;
     if (texel) texel.set(1 / (w * this.renderer.getPixelRatio()), 1 / (h * this.renderer.getPixelRatio()));
   }

@@ -6,6 +6,7 @@ const LIT_VERT = /* glsl */ `
   varying vec3 vT;
   varying vec3 vB;
   varying vec3 vN;
+  varying float vDepth;
   void main() {
     vUv = uv;
     vec4 wp = modelMatrix * vec4(position, 1.0);
@@ -19,7 +20,9 @@ const LIT_VERT = /* glsl */ `
     vT = t;
     vB = b;
     vN = n;
-    gl_Position = projectionMatrix * viewMatrix * wp;
+    vec4 mv = viewMatrix * wp;
+    vDepth = -mv.z;
+    gl_Position = projectionMatrix * mv;
   }
 `;
 
@@ -29,12 +32,15 @@ const LIT_FRAG = /* glsl */ `
   uniform vec3 uSunDir;
   uniform vec3 uSunColor;
   uniform vec3 uColor;
+  uniform vec3 uFog;
+  uniform vec2 uFogRange;
   uniform float uOpacity;
   uniform float uAlpha;
   varying vec2 vUv;
   varying vec3 vT;
   varying vec3 vB;
   varying vec3 vN;
+  varying float vDepth;
 
   void main() {
     vec4 tex = texture2D(uMap, vUv);
@@ -47,6 +53,7 @@ const LIT_FRAG = /* glsl */ `
     vec3 col = albedo * uColor * shade;
     float rim = pow(wrap, 2.4) * clamp(1.0 - nTex.z, 0.0, 1.0);
     col += albedo * uSunColor * rim * 0.22;
+    col = mix(col, uFog, smoothstep(uFogRange.x, uFogRange.y, vDepth));
     gl_FragColor = vec4(col, tex.a * uOpacity);
   }
 `;
@@ -57,6 +64,7 @@ export function makeLitSprite(
   sunDir: THREE.Vector3,
   sunColor: THREE.Color,
   alphaTest: number,
+  fog?: { color: THREE.Color; near: number; far: number },
 ): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
@@ -68,6 +76,8 @@ export function makeLitSprite(
       uSunDir: { value: sunDir },
       uSunColor: { value: sunColor },
       uColor: { value: new THREE.Color('#ffffff') },
+      uFog: { value: fog?.color ?? new THREE.Color('#000000') },
+      uFogRange: { value: new THREE.Vector2(fog?.near ?? 1000, fog?.far ?? 2000) },
       uOpacity: { value: 1 },
       uAlpha: { value: alphaTest },
     },

@@ -12,6 +12,11 @@ export interface WorldDef {
   skyBot: string;
   hill: string;
   farHill: string;
+  /**
+   * Where the sun sits, in world space. Fixed per island so the light stays put
+   * when the player turns the camera.
+   */
+  sun: readonly [number, number, number];
 }
 
 export const GLOBE_WORLD = 4;
@@ -29,6 +34,7 @@ export const WORLDS: readonly WorldDef[] = [
     skyBot: '#e8a0bc',
     hill: '#3a2030',
     farHill: '#2a1824',
+    sun: [0.86, 0.24, -0.16],
   },
   {
     name: 'Frostbite Forest',
@@ -42,6 +48,7 @@ export const WORLDS: readonly WorldDef[] = [
     skyBot: '#c87898',
     hill: '#7ea0d0',
     farHill: '#c47ab8',
+    sun: [0.74, 0.38, -0.2],
   },
   {
     name: 'Parched Desert',
@@ -55,6 +62,7 @@ export const WORLDS: readonly WorldDef[] = [
     skyBot: '#e0a060',
     hill: '#e2c08a',
     farHill: '#f0d7a8',
+    sun: [0.9, 0.5, -0.12],
   },
   {
     name: 'Toxic Sludge Dump',
@@ -68,6 +76,7 @@ export const WORLDS: readonly WorldDef[] = [
     skyBot: '#b0c070',
     hill: '#6d7a52',
     farHill: '#8e7aaa',
+    sun: [0.66, 0.34, -0.24],
   },
   {
     name: 'The Whole World',
@@ -81,6 +90,7 @@ export const WORLDS: readonly WorldDef[] = [
     skyBot: '#8ec8f0',
     hill: '#6a8a5a',
     farHill: '#d7e6fb',
+    sun: [0.8, 0.42, -0.18],
   },
 ];
 
