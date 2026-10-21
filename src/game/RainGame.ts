@@ -1496,16 +1496,8 @@ export class RainGame {
     }
   }
 
-  /** Recorded drips for the rain, played back at a slightly different pitch each time. */
+  /** Looping outdoor rain ambience while you pour. */
   private async loadFieldSounds(): Promise<void> {
-    const ids = [
-      'audio/environment/water_dripping',
-      'audio/foley-sounds/water/drip1',
-      'audio/foley-sounds/water/drip2',
-      'audio/foley-sounds/water/drip3',
-      'audio/foley-sounds/water/drip4',
-      'audio/environment/water_drop_medium',
-    ];
     const load = async (id: string): Promise<AudioBuffer | null> => {
       try {
         return await this.loadMusicClip(id);
@@ -1514,10 +1506,8 @@ export class RainGame {
         return null;
       }
     };
-    const [bed, ...drops] = await Promise.all(ids.map(load));
+    const bed = await load('audio/sounds/ambient/rain2');
     if (this.dead) return;
-    const clips = drops.filter((clip): clip is AudioBuffer => !!clip);
-    if (clips.length) this.audio.setDrops(clips);
     if (bed) this.audio.setRainTexture(bed);
   }
 

@@ -1,21 +1,27 @@
 /**
  * Web Audio bed. Lost in Space plays over the islands. Sketchbook plays in the workshop.
- * Rain is a recorded drip bed plus close drops. Growth notes walk a pentatonic scale
- * and each one is nudged a few cents, so a busy bottle stays soft instead of mechanical.
+ * Rain is a looping outdoor ambience with soft patter on impacts. Growth notes walk a
+ * pentatonic scale and each one is nudged a few cents, so a busy bottle stays soft
+ * instead of mechanical.
  */
 export type MusicBed = 'field' | 'workshop';
 
 export class AudioBus {
   muted = false;
   musicOn = false;
+  /** How loud the effects are, 0 to 1. */
+  sfxVolume = 1;
+  /** How loud the music bed is, 0 to 1. */
+  musicVolume = 1;
   private ctx: AudioContext | null = null;
+  private sfxBus: GainNode | null = null;
+  private musicBus: GainNode | null = null;
   private rainGain: GainNode | null = null;
   private rainSrc: AudioBufferSourceNode | null = null;
   private rainLow: BiquadFilterNode | null = null;
   private rainHigh: BiquadFilterNode | null = null;
   private humOsc: OscillatorNode | null = null;
   private humGain: GainNode | null = null;
-  private drops: AudioBuffer[] = [];
   private rainBed: AudioBuffer | null = null;
   private rainLoop: AudioBuffer | null = null;
   private lastDrip = 0;
@@ -40,6 +46,18 @@ export class AudioBus {
     this.syncMusic();
   }
 
+  /** The effects volume, 0 to 1. */
+  setSfxVolume(volume: number): void {
+    this.sfxVolume = Math.max(0, Math.min(1, volume));
+    if (this.sfxBus) this.sfxBus.gain.value = this.sfxVolume;
+  }
+
+  /** The music volume, 0 to 1. */
+  setMusicVolume(volume: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, volume));
+    if (this.musicBus) this.musicBus.gain.value = this.musicVolume;
+  }
+
   toggleMusic(): void {
     this.musicOn = !this.musicOn;
     this.syncMusic();
@@ -61,12 +79,7 @@ export class AudioBus {
     this.syncMusic();
   }
 
-  /** Close-up drop recordings. The longest one is the occasional fat drop. */
-  setDrops(buffers: AudioBuffer[]): void {
-    this.drops = buffers.filter((b) => b.length > 0);
-  }
-
-  /** Steady drip recording under the close drops. Looped with a short crossfade. */
+  /** Outdoor rain loop. Looped with a short crossfade at the seam. */
   setRainTexture(buffer: AudioBuffer): void {
     this.rainBed = buffer;
     this.rainLoop = null;
@@ -87,20 +100,20 @@ export class AudioBus {
     src.loop = true;
     const high = ctx.createBiquadFilter();
     high.type = 'highpass';
-    high.frequency.value = recorded ? 140 : 280;
-    high.Q.value = 0.7;
+    high.frequency.value = recorded ? 72 : 280;
+    high.Q.value = 0.55;
     const low = ctx.createBiquadFilter();
     low.type = 'lowpass';
-    low.frequency.value = recorded ? 5200 : 1400;
-    low.Q.value = 0.5;
+    low.frequency.value = recorded ? 9800 : 1400;
+    low.Q.value = 0.45;
     const gain = ctx.createGain();
     const now = ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(recorded ? 0.42 : 0.04, now + 0.6);
+    gain.gain.exponentialRampToValueAtTime(recorded ? 0.3 : 0.04, now + 0.85);
     src.connect(high);
     high.connect(low);
     low.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.sfxOut(ctx));
     src.start();
     this.rainSrc = src;
     this.rainHigh = high;
@@ -145,7 +158,7 @@ export class AudioBus {
     const gain = ctx.createGain();
     gain.gain.value = 0.012;
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.sfxOut(ctx));
     osc.start();
     this.humOsc = osc;
     this.humGain = gain;
@@ -156,42 +169,19 @@ export class AudioBus {
   }
 
   splash(): void {
-    const buf = this.longestDrop();
-    if (!buf) {
-      this.noise(0.18, 700, 0.06);
-      return;
-    }
-    const semis = -5 - Math.random() * 4;
-    this.playSample(buf, {
-      rate: 2 ** (semis / 12),
-      gain: 0.14,
-      pan: (Math.random() - 0.5) * 0.5,
-    });
+    this.rainPatter(0.045 + Math.random() * 0.035, 900 + Math.random() * 700, (Math.random() - 0.5) * 0.4, 0.1);
   }
 
-  /**
-   * A drop landing. Picks a different recording and a different pitch every
-   * time, clustered near the original so it still sounds like water.
-   */
+  /** Rain hitting the ground — soft patter that sits under the outdoor loop. */
   drip(): void {
     if (this.muted) return;
     const ctx = this.context();
     if (!ctx) return;
     const now = ctx.currentTime;
-    if (now - this.lastDrip < 0.075) return;
+    if (now - this.lastDrip < 0.055) return;
     this.lastDrip = now;
-    const fat = Math.random() < 0.16 ? this.longestDrop() : null;
-    const buf = fat ?? this.shortDrop();
-    if (!buf) {
-      this.noise(0.05, 2200, 0.02);
-      return;
-    }
-    const semis = fat ? -3 - Math.random() * 5 : (Math.random() - Math.random()) * 6;
-    this.playSample(buf, {
-      rate: 2 ** (semis / 12),
-      gain: (fat ? 0.13 : 0.075) * (0.65 + Math.random() * 0.55),
-      pan: (Math.random() - 0.5) * 1.5,
-    });
+    const center = 2200 + Math.random() * 3200;
+    this.rainPatter(0.008 + Math.random() * 0.014, center, (Math.random() - 0.5) * 0.85);
   }
 
   /**
@@ -285,9 +275,30 @@ export class AudioBus {
 
   private context(): AudioContext | null {
     if (this.muted && !this.ctx) return null;
-    if (!this.ctx) this.ctx = new AudioContext();
+    if (!this.ctx) {
+      this.ctx = new AudioContext();
+      // Two buses: the effects and the music. Everything else hangs off one of
+      // them, so the two sliders are all that stands between the player and a
+      // comfortable volume.
+      this.sfxBus = this.ctx.createGain();
+      this.sfxBus.gain.value = this.sfxVolume;
+      this.sfxBus.connect(this.ctx.destination);
+      this.musicBus = this.ctx.createGain();
+      this.musicBus.gain.value = this.musicVolume;
+      this.musicBus.connect(this.ctx.destination);
+    }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
+  }
+
+  /** Where an effect should go. */
+  private sfxOut(ctx: AudioContext): AudioNode {
+    return this.sfxBus ?? ctx.destination;
+  }
+
+  /** Where the music should go. */
+  private musicOut(ctx: AudioContext): AudioNode {
+    return this.musicBus ?? ctx.destination;
   }
 
   private tone(opts: {
@@ -297,6 +308,8 @@ export class AudioBus {
     dur: number;
     gain: number;
     delay?: number;
+    /** Send it to the music bus instead of the effects bus. */
+    music?: boolean;
   }): void {
     if (this.muted) return;
     const ctx = this.context();
@@ -310,7 +323,7 @@ export class AudioBus {
     gain.gain.setValueAtTime(opts.gain, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + opts.dur);
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(opts.music ? this.musicOut(ctx) : this.sfxOut(ctx));
     osc.start(t);
     osc.stop(t + opts.dur + 0.02);
   }
@@ -348,7 +361,7 @@ export class AudioBus {
     master.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), t + 0.014);
     master.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     pan.connect(master);
-    master.connect(ctx.destination);
+    master.connect(this.sfxOut(ctx));
     const partials: Array<[number, number, OscillatorType]> = [
       [freq, 1, 'sine'],
       [freq * 2, 0.22, 'sine'],
@@ -391,53 +404,13 @@ export class AudioBus {
     src.stop(when + 0.03);
   }
 
-  private playSample(buffer: AudioBuffer, opts: { rate: number; gain: number; pan: number }): void {
-    if (this.muted) return;
-    const ctx = this.context();
-    if (!ctx) return;
-    const rate = Math.max(0.4, opts.rate);
-    const dur = buffer.duration / rate;
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    src.playbackRate.value = rate;
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = Math.max(-1, Math.min(1, opts.pan));
-    const gain = ctx.createGain();
-    const now = ctx.currentTime;
-    gain.gain.setValueAtTime(opts.gain, now);
-    const fadeAt = now + Math.max(0.02, dur - 0.04);
-    gain.gain.setValueAtTime(opts.gain, fadeAt);
-    gain.gain.exponentialRampToValueAtTime(0.0001, fadeAt + 0.04);
-    src.connect(pan);
-    pan.connect(gain);
-    gain.connect(ctx.destination);
-    src.start(now);
-    src.stop(now + dur + 0.05);
-  }
-
-  private shortDrop(): AudioBuffer | null {
-    if (this.drops.length === 0) return null;
-    const longest = this.longestDrop();
-    const shorts = this.drops.filter((b) => b !== longest);
-    const pool = shorts.length > 0 ? shorts : this.drops;
-    return pool[Math.floor(Math.random() * pool.length)] ?? null;
-  }
-
-  private longestDrop(): AudioBuffer | null {
-    let best: AudioBuffer | null = null;
-    for (const drop of this.drops) {
-      if (!best || drop.duration > best.duration) best = drop;
-    }
-    return best;
-  }
-
   /** Join the tail of a drip recording onto its head so the loop does not click. */
   private prepareLoop(): AudioBuffer | null {
     if (!this.rainBed) return null;
     if (this.rainLoop) return this.rainLoop;
     const ctx = this.context();
     if (!ctx) return this.rainBed;
-    const fade = Math.min(Math.floor(this.rainBed.sampleRate * 0.06), Math.floor(this.rainBed.length / 4));
+    const fade = Math.min(Math.floor(this.rainBed.sampleRate * 0.14), Math.floor(this.rainBed.length / 4));
     const length = this.rainBed.length - fade;
     if (length < fade) return this.rainBed;
     const out = ctx.createBuffer(this.rainBed.numberOfChannels, length, this.rainBed.sampleRate);
@@ -467,26 +440,38 @@ export class AudioBus {
     return buffer;
   }
 
-  private noise(dur: number, freq: number, volume: number): void {
-    if (this.muted) return;
+  /** Short band-limited burst — reads as distant rain on leaves, not a faucet drip. */
+  private rainPatter(volume: number, centerFreq: number, pan: number, durBase = 0.028): void {
     const ctx = this.context();
-    if (!ctx) return;
+    if (!ctx || this.muted) return;
+    const dur = durBase + Math.random() * 0.04;
     const length = Math.floor(ctx.sampleRate * dur);
     const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
     const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+    let pink = 0;
+    for (let i = 0; i < data.length; i += 1) {
+      pink = pink * 0.92 + (Math.random() * 2 - 1) * 0.08;
+      const env = 1 - i / data.length;
+      data[i] = pink * env * env;
+    }
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = freq;
+    filter.type = 'bandpass';
+    filter.frequency.value = centerFreq;
+    filter.Q.value = 0.65;
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(volume, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
     src.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-    src.start();
+    filter.connect(panner);
+    panner.connect(gain);
+    gain.connect(this.sfxOut(ctx));
+    src.start(now);
+    src.stop(now + dur + 0.02);
   }
 
   private syncMusic(): void {
@@ -522,7 +507,7 @@ export class AudioBus {
     const gain = ctx.createGain();
     gain.gain.value = 0.2;
     src.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(this.musicOut(ctx));
     src.start();
     this.customNode = src;
     this.musicGain = gain;

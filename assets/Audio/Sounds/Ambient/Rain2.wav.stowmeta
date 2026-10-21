@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "stringId": "audio/sounds/ambient/rain2",
+  "tags": [],
+  "pack": "default",
+  "type": "audio",
+  "aacQuality": "medium",
+  "sampleRate": "auto",
+  "cache": {
+    "sourceSize": 1058604,
+    "sourceLastModified": 1792599637809.611,
+    "settingsHash": "3|aq=2|sr=0"
+  }
+}
