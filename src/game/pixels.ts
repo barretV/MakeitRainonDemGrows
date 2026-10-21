@@ -1180,6 +1180,24 @@ function pondWater(shimmer: boolean): THREE.CanvasTexture {
   }, 48, 32);
 }
 
+/** Reed stalk for one bank of a pond — keeps the open side clear for water. */
+function cattail(): THREE.CanvasTexture {
+  return bake((p) => {
+    for (let y = 9; y < 22; y += 1) {
+      p.set(11, y, '#5c4a3a');
+      p.set(12, y, '#6b5848');
+      p.set(13, y, '#5c4a3a');
+    }
+    p.ellipse(12, 6.5, 3.2, 5.8, '#3f342c');
+    p.ellipse(12, 5.5, 2.4, 4.4, '#524538');
+    p.set(10, 7, '#2f2a24');
+    p.set(14, 7, '#2f2a24');
+    p.ellipse(9, 17, 2.2, 1.4, '#6fa84a');
+    p.ellipse(15, 19, 2, 1.2, '#7dce4a');
+    p.set(12, 21, '#5cb83a');
+  }, 24, 26);
+}
+
 /** Lily pad with an optional water-lily bloom. */
 function lilyPad(flower: boolean): THREE.CanvasTexture {
   return bake((p) => {
@@ -1444,6 +1462,7 @@ export interface ArtSet {
   pondWaterB: THREE.CanvasTexture;
   lilyPad: THREE.CanvasTexture;
   lilyPadFlower: THREE.CanvasTexture;
+  cattail: THREE.CanvasTexture;
   bushSprout: THREE.CanvasTexture;
   sapling: THREE.CanvasTexture;
   windStreak: THREE.CanvasTexture;
@@ -1596,6 +1615,7 @@ export function getArt(): ArtSet {
     pondWaterB: pondWater(true),
     lilyPad: lilyPad(false),
     lilyPadFlower: lilyPad(true),
+    cattail: cattail(),
     bushSprout: bushSprout(),
     sapling: sapling(),
     windStreak: windStreak(),

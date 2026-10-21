@@ -258,6 +258,10 @@ interface TileView {
   pondFrog: THREE.Mesh | null;
   pondDuck: THREE.Mesh | null;
   pondGlow: THREE.Mesh | null;
+  pondCore: THREE.Group | null;
+  pondCattails: THREE.Mesh[];
+  /** Smooth scale of the whole pond body (1 → 1.3 when full). */
+  pondSize: number;
   /** 0 = duck pond, 1 = frog pond */
   pondCritter: number;
   pondFill: number;
@@ -2254,6 +2258,9 @@ export class RainGame {
           pondFrog: null,
           pondDuck: null,
           pondGlow: null,
+          pondCore: null,
+          pondCattails: [],
+          pondSize: restored ? 1.3 : 1,
           pondCritter: i % 2,
           pondFill: restored ? 1 : 0,
           pondStage: restored ? 2 : 0,
@@ -2315,6 +2322,9 @@ export class RainGame {
         pondFrog: null,
         pondDuck: null,
         pondGlow: null,
+        pondCore: null,
+        pondCattails: [],
+        pondSize: restored ? 1.3 : 1,
         pondCritter: i % 2,
         pondFill: restored ? 1 : 0,
         pondStage: restored ? 2 : 0,
@@ -2359,9 +2369,11 @@ export class RainGame {
       group.userData['bb'] = 1;
       group.visible = !this.globe;
       group.position.set(view.x + view.nx * 0.3, view.y + view.ny * 0.3, view.z + view.nz * 0.3);
+      const core = new THREE.Group();
+      group.add(core);
       view.pondCritter = index % 2;
       const glow = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.1, 1.75),
+        new THREE.PlaneGeometry(3.35, 1.9),
         new THREE.MeshBasicMaterial({
           map: this.glowTexture('halo'),
           color: '#6ec8ff',
@@ -2376,39 +2388,56 @@ export class RainGame {
       );
       glow.position.z = 0.04;
       glow.renderOrder = 1;
-      group.add(glow);
-      const basin = this.sprite(restored ? art.pondFull : art.pondEmpty, 2.55, 1.38, 0.22, 0);
+      core.add(glow);
+      const basin = this.sprite(restored ? art.pondFull : art.pondEmpty, 2.85, 1.52, 0.2, 0);
       basin.renderOrder = 2;
-      group.add(basin);
+      core.add(basin);
       // billboards are flipped by faceAll, so layers stack toward -Z
-      const water = new THREE.Mesh(new THREE.PlaneGeometry(2.15, 1.12), makePondWater(this.timeU, this.sunDir, this.sunColor, this.rainUniform));
+      const water = new THREE.Mesh(new THREE.PlaneGeometry(2.38, 1.24), makePondWater(this.timeU, this.sunDir, this.sunColor, this.rainUniform));
       water.position.z = -0.07;
       water.renderOrder = 3;
       water.visible = false;
       if (restored) setPondFill(water.material as THREE.Material, 1);
-      group.add(water);
+      core.add(water);
       const lily0 = this.sprite(art.lilyPad, 0.76, 0.57, 0.06, -0.1);
-      lily0.position.set(-0.58, -0.08, -0.05);
+      lily0.position.set(-0.35, -0.08, -0.05);
       lily0.renderOrder = 4;
       lily0.visible = false;
-      group.add(lily0);
+      core.add(lily0);
       const lily1 = this.sprite(art.lilyPadFlower, 0.6, 0.45, 0.06, -0.1);
-      lily1.position.set(0.58, 0.1, -0.05);
+      lily1.position.set(0.72, 0.08, -0.05);
       lily1.renderOrder = 4;
       lily1.visible = false;
-      group.add(lily1);
+      core.add(lily1);
       const frog = this.sprite(art.frog, 0.56, 0.48, 0.08, -0.12);
       frog.renderOrder = 5;
       frog.visible = false;
-      group.add(frog);
+      core.add(frog);
       const duck = this.sprite(art.duck, 0.72, 0.62, 0.08, -0.12);
       duck.renderOrder = 5;
       duck.visible = false;
-      group.add(duck);
+      core.add(duck);
       const koi = this.sprite(art.koi, 0.62, 0.36, 0.08, -0.09);
       koi.renderOrder = 4;
       koi.visible = false;
-      group.add(koi);
+      core.add(koi);
+      const cattailSpots = [
+        { x: -1.62, y: -0.12, z: -0.02, s: 1.05 },
+        { x: -1.48, y: 0.28, z: -0.03, s: 0.92 },
+        { x: -1.28, y: -0.42, z: -0.02, s: 0.88 },
+      ];
+      const cattails: THREE.Mesh[] = [];
+      for (let c = 0; c < cattailSpots.length; c += 1) {
+        const spot = cattailSpots[c]!;
+        const reed = this.sprite(art.cattail, 0.58, 1.08, 0.1, -0.14);
+        reed.position.set(spot.x, spot.y, spot.z);
+        reed.userData['reedS'] = spot.s;
+        reed.renderOrder = 6;
+        reed.visible = false;
+        core.add(reed);
+        cattails.push(reed);
+      }
+      core.scale.setScalar(restored ? 1.3 : 1);
       this.track.add(group);
       view.pond = basin;
       view.pondWater = water;
@@ -2416,6 +2445,9 @@ export class RainGame {
       view.pondFrog = frog;
       view.pondDuck = duck;
       view.pondGlow = glow;
+      view.pondCore = core;
+      view.pondCattails = cattails;
+      view.pondSize = restored ? 1.3 : 1;
       view.koi = koi;
       view.pondFill = restored ? 1 : 0;
       view.pondStage = restored ? 2 : 0;
@@ -2428,6 +2460,7 @@ export class RainGame {
         else duck.visible = true;
         koi.visible = view.pondCritter === 1;
         glow.material.opacity = 0.42;
+        for (const reed of cattails) reed.visible = true;
       }
     }
     const flat = !this.globe;
@@ -2522,6 +2555,9 @@ export class RainGame {
         if (view.koi) view.koi.visible = true;
       } else if (view.pondDuck) view.pondDuck.visible = true;
       if (view.pondGlow) (view.pondGlow.material as THREE.MeshBasicMaterial).opacity = 0.42;
+      view.pondSize = 1.3;
+      if (view.pondCore) view.pondCore.scale.setScalar(1.3);
+      for (const reed of view.pondCattails) reed.visible = true;
       view.pondFill = 1;
       view.pondStage = 2;
     }
@@ -2595,10 +2631,14 @@ export class RainGame {
           }
         }
         const full = fill >= 0.985;
+        const expandT = easeOutBack(clamp((fill - 0.68) / 0.32, 0, 1));
+        const targetSize = 1 + expandT * 0.3;
+        view.pondSize += (targetSize - view.pondSize) * (full ? 0.14 : 0.09);
+        if (view.pondCore) view.pondCore.scale.setScalar(view.pondSize);
         if (view.pondWater) {
           view.pondWater.visible = fill > 0.02;
-          const pulse = full ? 1 + Math.sin(t * 1.05 + i) * 0.04 : 1;
-          const grow = clamp(0.14 + fill * 0.98, 0.14, 1) * pulse;
+          const pulse = full ? 1 + Math.sin(t * 1.05 + i) * 0.03 : 1;
+          const grow = clamp(0.16 + fill * 0.96, 0.16, 1) * pulse;
           view.pondWater.scale.set(grow, grow, 1);
           view.pondWater.position.y = Math.sin(t * (full ? 0.75 : 1.25) + i) * (full ? 0.008 : 0.012);
           setPondFill(view.pondWater.material as THREE.Material, fill);
@@ -2665,6 +2705,17 @@ export class RainGame {
             koi.position.set(Math.cos(swim) * 0.42, Math.sin(swim * 1.6) * 0.12, -0.09);
             koi.rotation.z = Math.cos(swim) * 0.35;
           }
+        }
+        for (let ci = 0; ci < view.pondCattails.length; ci += 1) {
+          const reed = view.pondCattails[ci];
+          if (!reed) continue;
+          const show = fill > 0.8;
+          reed.visible = show;
+          if (!show) continue;
+          const base = Number(reed.userData['reedS']) || 1;
+          const pop = easeOutBack(clamp((fill - 0.8) / 0.18, 0, 1));
+          reed.scale.setScalar(base * pop);
+          reed.rotation.z = Math.sin(t * 0.8 + i + ci * 1.4) * 0.065;
         }
         if (view.bar && !restored) {
           view.bar.scale.x = Math.max(0.05, fill);
