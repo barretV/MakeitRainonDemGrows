@@ -2324,7 +2324,7 @@ export class RainGame {
       flat && spec.decor === 'twig' && spec.kind !== 'seed'
         ? null
         : spec.kind === 'seed'
-          ? this.litBillboard(restored ? art.money : art.seed, 1.15, 1.7, 0.2)
+          ? this.anchorAtBase(this.litBillboard(restored ? art.money : art.seed, 1.15, 1.7, 0.2))
           : this.propMesh(spec.decor, world, index);
     if (view.prop) {
       const map =
@@ -2347,7 +2347,9 @@ export class RainGame {
       view.prop.userData['s'] = base;
       view.prop.scale.setScalar(resting);
       const ph = (Number(view.prop.userData['ph']) || 1) * view.prop.scale.y;
-      view.prop.position.set(view.x + view.nx * (ph / 2), view.y + view.ny * (ph / 2), view.z + view.nz * (ph / 2));
+      // The sprite pivots at its feet, so it stands on the ground and the wind
+      // bends it from the base up.
+      view.prop.position.set(view.x + view.nx * 0.08, view.y + view.ny * 0.08, view.z + view.nz * 0.08);
       // Tall billboards are pushed out along the surface normal, so an edge tile
       // can hang the sprite over the void: test the displaced spot, not the tile.
       if (flat && this.terrain && spec.kind !== 'seed') {
@@ -2532,13 +2534,13 @@ export class RainGame {
         }
       }
       if (view.prop) {
-        const sway = restored ? Math.sin(t * 1.6 + i) * 0.05 : Math.sin(t * 1.2 + i) * 0.02;
-        view.prop.rotation.z = sway + gust * 0.14;
-        const ph = (Number(view.prop.userData['ph']) || 1) * view.prop.scale.y;
+        // Lean from the feet: the base stays planted, the crown does the moving.
+        const sway = restored ? Math.sin(t * 1.6 + i) * 0.045 : Math.sin(t * 1.2 + i) * 0.02;
+        view.prop.rotation.z = sway + gust * 0.11;
         view.prop.position.set(
-          view.x + view.nx * (ph / 2) + gust * 0.06,
-          view.y + view.ny * (ph / 2),
-          view.z + view.nz * (ph / 2),
+          view.x + view.nx * 0.08 + gust * 0.05,
+          view.y + view.ny * 0.08,
+          view.z + view.nz * 0.08,
         );
       }
       if (view.pond && view.pondFill > 0 && view.pondFill < 1) {
@@ -2546,6 +2548,12 @@ export class RainGame {
       }
     }
     this.syncHero();
+    const hero = this.heroGroup;
+    if (hero?.visible) {
+      // The 3D tree leans from its feet as well, in time with the wind.
+      const gust = this.gustAt(hero.position.x, hero.position.z, t);
+      hero.rotation.z = Math.sin(t * 0.85) * 0.022 + gust * 0.05;
+    }
   }
 
   /** 0–1 gust intensity sweeping across the board; shared by shaders, props and wind trails. */
@@ -3580,12 +3588,22 @@ export class RainGame {
     void index;
     const upright = (mesh: THREE.Mesh) => {
       mesh.userData['upright'] = 1;
-      return mesh;
+      return this.anchorAtBase(mesh);
     };
     if (decor === 'tree') return upright(this.litBillboard(this.art.sapling, 2.6, 3.6, 0.12));
     if (decor === 'bush') return upright(this.litBillboard(this.art.bushDead, 0.72, 0.55, 0.2));
     if (decor === 'rock') return upright(this.litBillboard(this.art.rock, 0.62, 0.42, 0.2));
     return upright(this.litBillboard(this.art.twig, 0.55, 0.4, 0.18));
+  }
+
+  /**
+   * Move a sprite's pivot from its middle down to its feet, so a wind sway
+   * leans the tree from the ground up instead of swinging the trunk.
+   */
+  private anchorAtBase(mesh: THREE.Mesh): THREE.Mesh {
+    const h = Number(mesh.userData['ph']) || 1;
+    mesh.geometry.translate(0, h / 2, 0);
+    return mesh;
   }
 
   private propTexture(decor: Decor, step: number, world: number, index: number): THREE.Texture {
