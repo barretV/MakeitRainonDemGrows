@@ -118,7 +118,7 @@ export class AudioBus {
     const gain = ctx.createGain();
     const now = ctx.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.13, now + 0.45);
+    gain.gain.exponentialRampToValueAtTime(0.104, now + 0.45);
     src.connect(high);
     high.connect(low);
     low.connect(gain);
@@ -136,7 +136,7 @@ export class AudioBus {
       bedSrc.buffer = bed;
       bedSrc.loop = true;
       const bedGain = ctx.createGain();
-      bedGain.gain.value = 0.04;
+      bedGain.gain.value = 0.032;
       bedSrc.connect(bedGain);
       bedGain.connect(dest);
       bedSrc.start();
