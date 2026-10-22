@@ -243,7 +243,7 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
       )}
 
       {model.phase === 'finale' && (
-        <div className="finale-veil pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center select-none">
+        <div className="finale-veil pointer-events-none absolute inset-0 z-20 flex flex-col items-center select-none">
           <div className="finale-banner pixel">
             <span className="finale-banner__spark" aria-hidden>✦</span>
             <span className="finale-banner__pct tabular-nums">100%</span>

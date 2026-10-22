@@ -647,7 +647,9 @@ canvas {
 }
 
 .finale-veil {
-  background: radial-gradient(ellipse 80% 55% at 50% 42%, rgba(0, 0, 0, 0.35), transparent 70%);
+  justify-content: flex-start;
+  padding-top: clamp(52px, 11vh, 108px);
+  background: radial-gradient(ellipse 70% 40% at 50% 16%, rgba(0, 0, 0, 0.32), transparent 72%);
   contain: content;
 }
 
