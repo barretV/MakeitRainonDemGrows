@@ -1,7 +1,7 @@
 {
   "name": "make-it-rain-on-them-grows",
   "version": "1.0.0",
-  "description": "Make it Rain on Them Grows \u2014 a kawaii HD-2D restoration incremental",
+  "description": "Make It Rain On Dem Grows \u2014 a kawaii HD-2D restoration incremental",
   "type": "module",
   "scripts": {
     "dev": "vite",
