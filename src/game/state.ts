@@ -203,6 +203,8 @@ export interface HudModel {
   devZoom?: number;
   /** Dev-only cloud scale, so a zoom note can be paired with a size. */
   devSize?: number;
+  /** Dev-only zoom the curve wants at this size. */
+  devHomeZoom?: number;
 }
 
 interface PersistedLand {

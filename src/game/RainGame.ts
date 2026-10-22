@@ -20,7 +20,7 @@ import { getArt, type ArtSet, type CloudMood } from './pixels';
 import { litColor, litOpacity, makeLitSprite, makePondWater, setLitMap, setPondFill } from './litSprite';
 import { AbilityVfx } from './abilityVfx';
 import { Weather } from './weather';
-import { BASE_SCALE, maskOf, upgradeNode, type NodeId, type Ranks } from './tree';
+import { BASE_SCALE, homeZoomForScale, maskOf, upgradeNode, type NodeId, type Ranks } from './tree';
 import { AudioBus } from './audio';
 import {
   clearPlaythroughLog,
@@ -48,7 +48,7 @@ const STEER = 0.042;
 const TURN_TOUCH = 0.007;
 /** 1 = default framing. Below 1 zooms in for a closer look; above 1 pulls back. */
 const CAM_ZOOM_MIN = 0.58;
-const CAM_ZOOM_MAX = 1.85;
+const CAM_ZOOM_MAX = 2.1;
 /**
  * Katamari framing: the rig keeps a close patch of land in frame and follows the
  * cloud over it. Islands stay big in the world, so they run past the frame
@@ -80,7 +80,12 @@ const AURA_NORMAL = new THREE.Vector3(0, 0, 1);
  */
 function growPullForScale(scale: number): number {
   const t = Math.max(BASE_SCALE, scale) / BASE_SCALE;
-  return 1 + Math.min(0.22, Math.max(0, t - 1) * 0.1);
+  // Zoom now tracks size; keep a light pull so the rig does not fight player zoom.
+  return 1 + Math.min(0.12, Math.max(0, t - 1) * 0.055);
+}
+
+function clampCamZoom(zoom: number): number {
+  return clamp(zoom, CAM_ZOOM_MIN, CAM_ZOOM_MAX);
 }
 
 const TiltShiftShader = {
@@ -396,6 +401,8 @@ export class RainGame {
   private introScaleFrom = 1;
   private introPullFrom = 1;
   private introPullTo = 1;
+  private introZoomFrom = 1;
+  private introZoomTo = 1;
   private skyLift = 0;
   private readonly skyBase = new THREE.Color();
   /** The colour the distance fades into. Deeper than the sky, so the haze reads as depth. */
@@ -1294,6 +1301,8 @@ export class RainGame {
     if (newReach > oldReach * 1.02) {
       this.introPullTo *= 1 + Math.min(0.12, (newReach - oldReach) / Math.max(oldReach, 0.5) * 0.08);
     }
+    this.introZoomFrom = this.camZoomHome;
+    this.introZoomTo = clampCamZoom(homeZoomForScale(newScale));
     this.camGrowPull = this.introPullFrom;
     this.cloudPop = major ? 0.62 : 0.88;
     this.shake = major ? 0.18 : 0.08;
@@ -1442,8 +1451,9 @@ export class RainGame {
     this.audio.setMuted(!this.state.sfx);
     this.audio.setSfxVolume(this.state.sfxVolume);
     this.audio.setMusicVolume(this.state.musicVolume);
-    this.camZoom = 1;
-    this.camZoomHome = 1;
+    const zoom = clampCamZoom(homeZoomForScale(BASE_SCALE));
+    this.camZoom = zoom;
+    this.camZoomHome = zoom;
     this.camYaw = 0;
     this.rebuild();
     this.dropCloud(this.spawnAt());
@@ -1776,12 +1786,19 @@ export class RainGame {
       const raw = Math.min(1, this.introT / this.introDuration);
       const scaleU = easeOutBack(raw);
       grown *= this.introScaleFrom + (1 - this.introScaleFrom) * scaleU;
-      this.camGrowPull = this.introPullFrom + (this.introPullTo - this.introPullFrom) * easeOutCubic(raw);
+      const introEase = easeOutCubic(raw);
+      this.camGrowPull = this.introPullFrom + (this.introPullTo - this.introPullFrom) * introEase;
+      const introZoom = this.introZoomFrom + (this.introZoomTo - this.introZoomFrom) * introEase;
+      this.camZoom = introZoom;
+      this.camZoomHome = introZoom;
       this.cloudPop += (1.12 - this.cloudPop) * Math.min(1, dt * (raw < 0.85 ? 2.2 : 6));
       if (raw >= 1) {
         this.introActive = false;
         this.camGrowPull = this.introPullTo;
+        this.camZoom = this.introZoomTo;
+        this.camZoomHome = this.introZoomTo;
         this.cloudPop = 1.08;
+        this.markView();
       }
     } else {
       this.cloudPop += (1 - this.cloudPop) * Math.min(1, dt * 7);
@@ -3158,7 +3175,7 @@ export class RainGame {
   }
 
   private setCamZoom(next: number, remember = true): void {
-    this.camZoom = clamp(next, CAM_ZOOM_MIN, CAM_ZOOM_MAX);
+    this.camZoom = clampCamZoom(next);
     if (remember) {
       this.camZoomHome = this.camZoom;
       this.markView();
@@ -4067,13 +4084,14 @@ export class RainGame {
     const state = this.state;
     const saved = state && state.world >= 0 && state.world < state.views.length ? state.views[state.world] : null;
     if (!saved) {
-      this.camZoom = 1;
-      this.camZoomHome = 1;
+      const zoom = clampCamZoom(homeZoomForScale(state?.scale() ?? BASE_SCALE));
+      this.camZoom = zoom;
+      this.camZoomHome = zoom;
       this.camYaw = 0;
       this.dropCloud(fallback);
       return;
     }
-    this.camZoom = clamp(saved.zoom, CAM_ZOOM_MIN, CAM_ZOOM_MAX);
+    this.camZoom = clampCamZoom(saved.zoom);
     this.camZoomHome = this.camZoom;
     this.camYaw = saved.yaw;
     this.dropCloud({ x: saved.x, z: saved.z });
@@ -4498,6 +4516,7 @@ export class RainGame {
       if (import.meta.env.DEV) {
         model.devZoom = this.camZoom;
         model.devSize = state.scale();
+        model.devHomeZoom = clampCamZoom(homeZoomForScale(state.scale()));
       }
       this.onHud(model);
     }

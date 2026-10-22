@@ -965,6 +965,23 @@ export function cloudScale(ranks: Ranks): number {
   return BASE_SCALE + ranks.puff * PUFF_STEP;
 }
 
+/**
+ * Default camera zoom (1 = shipped framing) for a cloud scale, so bigger clouds
+ * sit at a similar screen size. Tuned from playtests: ~0.80 at size 0.73 and
+ * ~1.99 at size 1.39.
+ */
+export function homeZoomForScale(scale: number): number {
+  const scaleLow = 0.735;
+  const zoomLow = 0.8;
+  const scaleHigh = 1.39;
+  const zoomHigh = 1.99;
+  const s = Math.max(BASE_SCALE, scale);
+  const span = scaleHigh - scaleLow;
+  if (span <= 0) return zoomLow;
+  const t = (s - scaleLow) / span;
+  return zoomLow + t * (zoomHigh - zoomLow);
+}
+
 /** A fresh bottle is 10s. Opening it adds a couple of seconds, and Flask and Reservoir each add 1.25s, so a finished first island sits near 20s. */
 export function bottleSeconds(ranks: Ranks): number {
   const open = ranks.bottle >= 1 ? 2 : 0;

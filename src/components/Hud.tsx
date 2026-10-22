@@ -277,6 +277,9 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             <div className="hud-dev-zoom pixel tabular-nums" aria-hidden>
               <span>zoom {model.devZoom.toFixed(2)}</span>
               <span>size {model.devSize?.toFixed(2) ?? '—'}</span>
+              {model.devHomeZoom != null && (
+                <span>home {model.devHomeZoom.toFixed(2)}</span>
+              )}
             </div>
           )}
         </div>
