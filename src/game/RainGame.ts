@@ -4488,15 +4488,18 @@ export class RainGame {
     const playing = state.screen === 'play';
     this.renderer.domElement.style.pointerEvents = playing ? 'auto' : 'none';
     if (force || this.hudAcc >= 0) {
-      this.onHud(
-        state.snapshot({
-          raining: this.wantsRain() && !sleepy,
-          sleepy,
-          slosh: this.slosh,
-          music: this.audio.musicOn,
-          pond,
-        }),
-      );
+      const model = state.snapshot({
+        raining: this.wantsRain() && !sleepy,
+        sleepy,
+        slosh: this.slosh,
+        music: this.audio.musicOn,
+        pond,
+      });
+      if (import.meta.env.DEV) {
+        model.devZoom = this.camZoom;
+        model.devSize = state.scale();
+      }
+      this.onHud(model);
     }
   }
 

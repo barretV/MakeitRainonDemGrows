@@ -199,6 +199,10 @@ export interface HudModel {
   revivalGlow: number;
   /** 0–1 during the 100% restoration spectacle (play screen). */
   finaleProgress: number;
+  /** Dev-only camera zoom (1 is the default framing). */
+  devZoom?: number;
+  /** Dev-only cloud scale, so a zoom note can be paired with a size. */
+  devSize?: number;
 }
 
 interface PersistedLand {

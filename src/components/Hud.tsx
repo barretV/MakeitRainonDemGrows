@@ -273,6 +273,12 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
           >
             <GearIcon />
           </button>
+          {import.meta.env.DEV && model.devZoom != null && (
+            <div className="hud-dev-zoom pixel tabular-nums" aria-hidden>
+              <span>zoom {model.devZoom.toFixed(2)}</span>
+              <span>size {model.devSize?.toFixed(2) ?? '—'}</span>
+            </div>
+          )}
         </div>
       )}
 
