@@ -21,6 +21,17 @@ export interface WorldDef {
 
 export const GLOBE_WORLD = 4;
 
+/** Sea sphere tucked just inside the voxel shell. */
+export const GLOBE_SEA_RADIUS = 8.2;
+/** Voxel shell before column relief. Bigger than the old ~6.4 planet so the finale reads as the largest world. */
+export const GLOBE_SURFACE_RADIUS = 8.35;
+/** Rain ring, auras, and the camera look-at sit just outside the shell. */
+export const GLOBE_SHELL_RADIUS = 8.9;
+/** How far the cloud floats off the shell, before a little extra for growth. */
+export const GLOBE_CLOUD_LIFT = 2.45;
+/** Shrinks the cloud sprite on the globe so the planet, not the avatar, fills the view. */
+export const GLOBE_CLOUD_SCALE = 0.85;
+
 export const WORLDS: readonly WorldDef[] = [
   {
     name: 'Dead Forest',

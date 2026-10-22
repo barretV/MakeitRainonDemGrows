@@ -5,6 +5,11 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import {
+  GLOBE_CLOUD_LIFT,
+  GLOBE_CLOUD_SCALE,
+  GLOBE_SEA_RADIUS,
+  GLOBE_SHELL_RADIUS,
+  GLOBE_SURFACE_RADIUS,
   GLOBE_WORLD,
   TILE,
   WORLD_FLAIR_SPOTS,
@@ -15,6 +20,14 @@ import {
   worldDef,
   type Decor,
 } from './balance';
+import { buildLandmarkGroup, type LandmarkKit } from './landmarkView';
+import {
+  LANDMARK_WORLD_SCALE,
+  isRevivalPct,
+  landmarkLocalWet,
+  landmarksForWorld,
+  type LandmarkDef,
+} from './landmarks';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
 import { litColor, litOpacity, makeLitSprite, makePondWater, setLitMap, setPondFill } from './litSprite';
@@ -268,6 +281,24 @@ interface Drop {
   alive: boolean;
 }
 
+interface LandmarkRuntime {
+  def: LandmarkDef;
+  root: THREE.Group;
+  base: number;
+  unlocked: boolean;
+  age: number;
+  wet: number;
+  ruin: THREE.Color;
+  live: THREE.Color;
+  tint: THREE.Color;
+  ax: number;
+  ay: number;
+  az: number;
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
 interface Critter {
   mesh: THREE.Mesh;
   tile: number;
@@ -459,6 +490,10 @@ export class RainGame {
   private helpers: THREE.Mesh[] = [];
   private boxes: THREE.Mesh[] = [];
   private worldFlairMeshes: THREE.Mesh[] = [];
+  private landmarkViews: LandmarkRuntime[] = [];
+  /** Set when a revival toast just played, so a landmark unlock does not replace it. */
+  private milestoneBeat = 0;
+  private readonly landmarkUp = new THREE.Vector3(0, 1, 0);
   private butterflies: THREE.Mesh[] = [];
   private babies: Array<{ mesh: THREE.Mesh; x: number; z: number }> = [];
   private rings: Array<{ mesh: THREE.Mesh; life: number }> = [];
@@ -517,14 +552,14 @@ export class RainGame {
       tornado: this.art.tornado,
       place: (mesh, x, z, lift) => {
         if (this.globe) {
-          const p = this.lonLatPoint(x, z, 6.9 + lift * 0.08);
+          const p = this.lonLatPoint(x, z, GLOBE_SHELL_RADIUS + lift * 0.08);
           mesh.position.set(p.x, p.y, p.z);
           return;
         }
         mesh.position.set(x, this.groundY(x, z) + lift, z);
       },
       cloudLift: () => {
-        if (this.globe) return 2.4;
+        if (this.globe) return GLOBE_CLOUD_LIFT;
         return Math.max(1.8, this.cloud.position.y - this.groundY(this.cloudX, this.cloudZ));
       },
       shake: (amount) => {
@@ -1809,14 +1844,19 @@ export class RainGame {
     const cheek =
       (raining ? 1 + Math.sin(t * 9) * 0.05 : 1 + Math.sin(t * 2.1) * 0.025) * blush;
     const pop = this.cloudPop;
+    const globeFit = this.globe ? GLOBE_CLOUD_SCALE : 1;
     this.cloud.scale.set(
-      (grown * cheek * pop) / Math.sqrt(stretch),
-      grown * cheek * stretch * pop,
-      grown * cheek * pop,
+      (grown * cheek * pop * globeFit) / Math.sqrt(stretch),
+      grown * cheek * stretch * pop * globeFit,
+      grown * cheek * pop * globeFit,
     );
     const bob = Math.sin(t * 2.5) * 0.08;
     if (this.globe) {
-      const hover = this.lonLatPoint(this.cloudX, this.cloudZ, 6.85 + 1.2 * grown);
+      const hover = this.lonLatPoint(
+        this.cloudX,
+        this.cloudZ,
+        GLOBE_SURFACE_RADIUS + GLOBE_CLOUD_LIFT + grown * 0.14,
+      );
       this.cloud.position.set(hover.x, hover.y + bob, hover.z);
     } else {
       const gy = this.groundY(this.cloudX, this.cloudZ);
@@ -1930,6 +1970,7 @@ export class RainGame {
     if (inFinale) this.updateWorldFinale(dt, t);
 
     this.applySkyLift(dt);
+    this.syncLandmarks(dt, t);
     this.faceAll();
     this.syncProps(t);
     this.syncCritters(dt, t);
@@ -2093,6 +2134,7 @@ export class RainGame {
     this.animals = [];
     this.boxes = [];
     this.worldFlairMeshes = [];
+    this.landmarkViews = [];
     for (const fall of this.waterfalls) {
       this.track.remove(fall.fall);
       this.track.remove(fall.mist);
@@ -2122,7 +2164,7 @@ export class RainGame {
     this.fogBase.set(skyMid).lerp(new THREE.Color(sky.skyTop), 0.45);
     const dist = this.frameDist(0);
     if (this.globe) {
-      this.scene.fog = new THREE.Fog('#24356e', 18, 48);
+      this.scene.fog = new THREE.Fog('#24356e', 28, 78);
     } else {
       const fog = new THREE.Fog(dist * 2.4, dist * 7.5);
       fog.color.copy(this.fogBase);
@@ -2178,7 +2220,7 @@ export class RainGame {
     const spanZ = (rows - 1) * TILE;
     if (this.globe) {
       const sea = new THREE.Mesh(
-        new THREE.SphereGeometry(6.35, 36, 24),
+        new THREE.SphereGeometry(GLOBE_SEA_RADIUS, 40, 28),
         new THREE.MeshBasicMaterial({ color: '#7ec8f0' }),
       );
       this.track.add(sea);
@@ -2344,7 +2386,178 @@ export class RainGame {
     this.syncBoxes(true);
     this.syncCritters(0, 0, true);
     this.syncWorldFlair();
+    this.mountLandmarks();
     this.restoreWaterfalls();
+  }
+
+  private landmarkKit(): LandmarkKit {
+    return {
+      art: this.art,
+      glow: (kind) => this.glowTexture(kind),
+      sprite: (map, w, h, x, y, z, noFog = false) => {
+        const mesh = this.litBillboard(map, w, h, 0.12, noFog);
+        mesh.position.set(x, y, z);
+        mesh.userData['tint'] = 1;
+        mesh.userData['baseColor'] = new THREE.Color('#ffffff');
+        mesh.userData['tintColor'] = new THREE.Color('#ffffff');
+        return mesh;
+      },
+    };
+  }
+
+  /** Plants each world's showpieces. Ruins are already there; awakening is just a scale and color change. */
+  private mountLandmarks(): void {
+    const state = this.state;
+    if (!state) return;
+    const world = state.world;
+    const pct = Math.floor(state.ratio() * 100);
+    const { cols, rows } = maskOf(world);
+    const worldScale = LANDMARK_WORLD_SCALE[world] ?? 1;
+    const kit = this.landmarkKit();
+    for (const def of landmarksForWorld(world)) {
+      const root = buildLandmarkGroup(def, kit);
+      root.frustumCulled = false;
+      const spot = this.plantLandmark(root, def.u, def.v);
+      this.track.add(root);
+      const unlocked = pct >= def.unlockPct;
+      const view: LandmarkRuntime = {
+        def,
+        root,
+        base: worldScale * def.scale,
+        unlocked,
+        age: unlocked ? 4 : 0,
+        wet: landmarkLocalWet(state.pixels, cols, rows, def.u, def.v),
+        ruin: new THREE.Color(def.ruin),
+        live: new THREE.Color(def.live),
+        tint: new THREE.Color(def.ruin),
+        ax: spot.x,
+        ay: spot.y,
+        az: spot.z,
+        nx: spot.nx,
+        ny: spot.ny,
+        nz: spot.nz,
+      };
+      root.scale.setScalar(view.base * (unlocked ? 1 : 0.76));
+      const shown = unlocked ? 1 : view.wet * 0.32;
+      view.tint.copy(view.ruin).lerp(view.live, shown);
+      this.poseLandmark(view, 0, 0, shown);
+      this.landmarkViews.push(view);
+    }
+  }
+
+  private plantLandmark(
+    root: THREE.Group,
+    u: number,
+    v: number,
+  ): { x: number; y: number; z: number; nx: number; ny: number; nz: number } {
+    if (this.globe) {
+      const lon = u * Math.PI * 2;
+      const lat = (v - 0.5) * Math.PI * 0.82;
+      const p = this.lonLatPoint(lon, lat, GLOBE_SURFACE_RADIUS + 0.5);
+      const len = Math.hypot(p.x, p.y, p.z) || 1;
+      const nx = p.x / len;
+      const ny = p.y / len;
+      const nz = p.z / len;
+      root.position.set(p.x, p.y, p.z);
+      this.landmarkUp.set(nx, ny, nz);
+      root.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.landmarkUp);
+      return { x: p.x, y: p.y, z: p.z, nx, ny, nz };
+    }
+    const at = flairWorldPoint(this.state?.world ?? 0, u, v);
+    const y = this.groundY(at.x, at.z);
+    root.position.set(at.x, y, at.z);
+    root.rotation.y = u * 5.2;
+    return { x: at.x, y, z: at.z, nx: 0, ny: 1, nz: 0 };
+  }
+
+  private syncLandmarks(dt: number, t: number): void {
+    const state = this.state;
+    if (!state || this.landmarkViews.length === 0) {
+      this.milestoneBeat = 0;
+      return;
+    }
+    const pct = Math.floor(state.ratio() * 100);
+    const { cols, rows } = maskOf(state.world);
+    const fresh: LandmarkRuntime[] = [];
+    const boost = this.globe ? 1 : 1 + (this.detailBoost() - 1) * 0.35;
+    for (const view of this.landmarkViews) {
+      view.wet = landmarkLocalWet(state.pixels, cols, rows, view.def.u, view.def.v);
+      if (pct >= view.def.unlockPct && !view.unlocked) {
+        view.unlocked = true;
+        view.age = 0;
+        fresh.push(view);
+      }
+      if (view.unlocked) view.age += dt;
+      const shown = view.unlocked ? Math.min(1, view.age / 0.62) : view.wet * 0.32;
+      const pop = view.unlocked ? Math.max(0.76, easeOutBack(Math.min(1, view.age / 0.72))) : 0.76 + shown;
+      view.root.scale.setScalar(Math.max(0.12, view.base * pop * boost));
+      view.tint.copy(view.ruin).lerp(view.live, shown);
+      const bob = Math.sin(t * 1.1 + view.def.unlockPct) * 0.03;
+      view.root.position.set(view.ax + view.nx * bob, view.ay + view.ny * bob, view.az + view.nz * bob);
+      this.poseLandmark(view, dt, t, shown);
+    }
+    if (fresh.length > 0) {
+      const extras = fresh.filter((view) => !isRevivalPct(view.def.unlockPct));
+      if (extras.length > 0 && this.milestoneBeat === 0) {
+        const top = extras[extras.length - 1]!;
+        this.audio.milestone(2);
+        state.toast = `${top.def.title} awakens`;
+      }
+      for (const view of fresh) {
+        this.burst(view.root.position.x, view.root.position.y + 0.8, view.root.position.z, view.def.unlockPct >= 100 ? 22 : 14);
+        this.skyLift = Math.max(this.skyLift, view.def.unlockPct >= 100 ? 3.4 : 1.5);
+        this.grin = Math.max(this.grin, 0.5);
+        this.shake = Math.max(this.shake, view.def.unlockPct >= 100 ? 0.07 : 0.03);
+      }
+    }
+    this.milestoneBeat = 0;
+  }
+
+  private poseLandmark(view: LandmarkRuntime, dt: number, t: number, shown: number): void {
+    const speed = view.unlocked ? 1.5 : 0.2;
+    view.root.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.userData['spin']) mesh.rotation.z += dt * speed;
+      if (mesh.userData['beam']) {
+        mesh.rotation.y = t * (view.unlocked ? 0.8 : 0.08);
+        (mesh.material as THREE.MeshBasicMaterial).opacity = shown * 0.65;
+      }
+      if (mesh.userData['light']) {
+        (mesh.material as THREE.MeshBasicMaterial).opacity = 0.1 + shown * 0.85;
+      }
+      if (mesh.userData['smoke']) {
+        mesh.position.y = Number(mesh.userData['baseY']) + Math.sin(t * 1.4) * 0.08;
+        mesh.visible = shown > 0.25;
+      }
+      if (mesh.userData['smoke'] || mesh.userData['crown']) {
+        const mat = mesh.material as THREE.Material;
+        if ((mat as THREE.ShaderMaterial).uniforms?.['uOpacity']) litOpacity(mat).value = shown * 0.8;
+      }
+      if (mesh.userData['moth'] != null) {
+        const i = Number(mesh.userData['moth']);
+        const ang = t * 1.6 + i * 1.57;
+        const rad = 0.2 + shown * 0.9;
+        mesh.position.set(Math.cos(ang) * rad, 1.55 + Math.sin(t * 2.2 + i) * 0.32, Math.sin(ang) * 0.5);
+        mesh.visible = shown > 0.05;
+      }
+      if (mesh.userData['bear'] != null) {
+        const i = Number(mesh.userData['bear']);
+        const wander = view.unlocked ? Math.sin(t * 0.55 + i * 1.7) * 0.16 : 0;
+        mesh.position.set(
+          Number(mesh.userData['baseX']) + wander,
+          Number(mesh.userData['baseY']) + Math.abs(Math.sin(t * 3 + i)) * (view.unlocked ? 0.05 : 0),
+          Number(mesh.userData['baseZ']),
+        );
+      }
+      if (!mesh.isMesh || mesh.userData['tint'] !== 1) return;
+      const base = mesh.userData['baseColor'] as THREE.Color | undefined;
+      const out = mesh.userData['tintColor'] as THREE.Color | undefined;
+      if (!base || !out) return;
+      out.copy(base).multiply(view.tint);
+      const mat = mesh.material as THREE.ShaderMaterial | THREE.MeshBasicMaterial;
+      if ((mat as THREE.ShaderMaterial).uniforms?.['uColor']) litColor(mat).copy(out);
+      else if (mat instanceof THREE.MeshBasicMaterial) mat.color.copy(out);
+    });
   }
 
   /** Fun set dressing per island — snowmen, lanterns, cactus signs, toxic barrels. */
@@ -3220,7 +3433,7 @@ export class RainGame {
     const jy = (Math.random() - 0.5) * this.shake;
     const dist = this.frameDist(dt) * this.camZoom;
     if (this.globe) {
-      const a = this.lonLatPoint(this.camX, this.camZ, 6.85);
+      const a = this.lonLatPoint(this.camX, this.camZ, GLOBE_SHELL_RADIUS);
       const n = Math.hypot(a.x, a.y, a.z) || 1;
       const pull = n + dist;
       this.camera.position.set((a.x / n) * pull + jx, (a.y / n) * pull + 1.1 + jy, (a.z / n) * pull);
@@ -3296,7 +3509,7 @@ export class RainGame {
     this.rainRing.visible = raining;
     this.rainRing.scale.set(half * 2, half * 2, 1);
     if (this.globe) {
-      const at = this.lonLatPoint(this.cloudX, this.cloudZ, 6.9);
+      const at = this.lonLatPoint(this.cloudX, this.cloudZ, GLOBE_SHELL_RADIUS);
       this.rainRing.position.set(at.x, at.y, at.z);
       this.rainRing.quaternion.setFromUnitVectors(
         RING_FACE,
@@ -3388,7 +3601,7 @@ export class RainGame {
   /** Where a patch of thirsty ground sits in the world, flat or on the globe. */
   private auraSpot(x: number, z: number): { x: number; y: number; z: number; normal: THREE.Vector3 } {
     if (this.globe) {
-      const point = this.lonLatPoint(x, z, 6.9);
+      const point = this.lonLatPoint(x, z, GLOBE_SHELL_RADIUS);
       return { ...point, normal: new THREE.Vector3(point.x, point.y, point.z).normalize() };
     }
     return {
@@ -3625,6 +3838,7 @@ export class RainGame {
     if (state.pendingMilestone > 0) {
       const pct = state.pendingMilestone;
       state.pendingMilestone = 0;
+      this.milestoneBeat = pct;
       this.audio.milestone(pct >= 100 ? 4 : Math.round((pct / 100) * 4));
       this.skyLift = Math.max(this.skyLift, pct >= 100 ? 5.2 : 2.2);
       this.grin = Math.max(this.grin, 0.6);
@@ -3732,7 +3946,7 @@ export class RainGame {
 
   private frameDist(dt = 0): number {
     const pull = this.cameraGrowPull(dt);
-    if (this.globe) return (9 + 6 / pull) * Math.pow(pull, 0.35);
+    if (this.globe) return (10.5 + 6.9 / pull) * Math.pow(pull, 0.35);
     // Local rig: the fog band follows the close framing, not the whole island.
     return clamp(CAM_FRAME_SPAN * 0.34 * pull, 6.2, 78);
   }
@@ -3971,7 +4185,7 @@ export class RainGame {
     if (state?.world === GLOBE_WORLD) {
       const lon = (col / cols) * Math.PI * 2;
       const lat = (row / Math.max(1, rows - 1) - 0.5) * Math.PI * 0.82;
-      return this.lonLatPoint(lon, lat, 6.7 + h * 0.12);
+      return this.lonLatPoint(lon, lat, GLOBE_SURFACE_RADIUS + 0.22 + h * 0.1);
     }
     const x = col * TILE;
     const z = row * TILE;
@@ -3987,7 +4201,7 @@ export class RainGame {
   }
 
   private anchor(): { x: number; y: number; z: number } {
-    if (this.globe) return this.lonLatPoint(this.cloudX, this.cloudZ, 6.85);
+    if (this.globe) return this.lonLatPoint(this.cloudX, this.cloudZ, GLOBE_SHELL_RADIUS);
     return { x: this.cloudX, y: this.groundY(this.cloudX, this.cloudZ), z: this.cloudZ };
   }
 

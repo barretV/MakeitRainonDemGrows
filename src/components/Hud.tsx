@@ -200,6 +200,9 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
               <span className="hud-reclaimed-chip__sep" aria-hidden>·</span>
               <span className="hud-reclaimed-chip__pct tabular-nums">{formatPct(model.restored)}</span>
               <span className="hud-reclaimed-chip__label">Reclaimed</span>
+              {model.phase === 'play' && model.nextLandmark && (
+                <span className="hud-reclaimed-chip__next">Next · {model.nextLandmark}</span>
+              )}
             </div>
             <ControlHints />
           </div>

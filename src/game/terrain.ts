@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLOBE_WORLD, TILE, gridOf, islandRadius, islandShore, tileSpec, worldDef } from './balance';
+import { GLOBE_SURFACE_RADIUS, GLOBE_WORLD, TILE, gridOf, islandRadius, islandShore, tileSpec, worldDef } from './balance';
 import { normalOf } from './normals';
 
 /** Two mask cells per voxel column on every flat world (mask cells are 0.32 world units). */
@@ -314,8 +314,8 @@ export class Terrain {
           const { lon, lat } = this.lonLatFromColumn(c, r);
           normal.copy(this.spherePoint(lon, lat, 1)).normalize();
           // gentle relief: from space the planet should read smooth, not voxel-stepped
-          const surfaceR = 6.38 + top * 0.035;
-          const coreR = 6.38 + bottom * 0.035;
+          const surfaceR = GLOBE_SURFACE_RADIUS + top * 0.04;
+          const coreR = GLOBE_SURFACE_RADIUS + bottom * 0.04;
           const midR = (surfaceR + coreR) / 2;
           pos.copy(this.spherePoint(lon, lat, midR));
           quat.setFromUnitVectors(up, normal);

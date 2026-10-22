@@ -1,3 +1,4 @@
+import { landmarkTitlesAt, nextLandmarkTitle } from './landmarks';
 import {
   ACHIEVEMENTS,
   GLOBE_WORLD,
@@ -58,6 +59,7 @@ import {
   type TreeNodeView,
 } from './tree';
 
+/** Percents that play the revival fanfare. Landmark steps outside this list still awaken in the world. */
 const REVIVAL_MILESTONES = [10, 25, 50, 75, 100] as const;
 
 /**
@@ -190,6 +192,8 @@ export interface HudModel {
   chain: number;
   /** The next upgrade to aim for, so there is always a target. */
   nextGoal: { name: string; cost: number; blooms: number; progress: number } | null;
+  /** Landmark still waiting on this island, if the land is not finished. */
+  nextLandmark: string | null;
   /** Mask cells that still need water on this island. */
   patchesLeft: number;
   /** Separate pockets of thirsty land. */
@@ -1915,6 +1919,7 @@ export class SaveState {
       newBest: this.newBest,
       tree: buildTree(this.ranks, wallet, this.unlocked),
       nextGoal: this.nextGoal(),
+      nextLandmark: nextLandmarkTitle(this.world, this.ratio()),
       worlds: [0, 1, 2, 3, 4].map((index) => ({
         index,
         name: worldDef(index).name,
@@ -1945,7 +1950,10 @@ export class SaveState {
         this.revivalMilestones.add(m);
         this.revivalGlow = 1.35;
         this.pendingMilestone = m;
-        this.toast = m >= 100 ? 'The land is whole again!' : `World revival ${m}%!`;
+        const names = landmarkTitlesAt(this.world, m);
+        const verb = names.length > 1 ? 'awaken' : 'awakens';
+        const named = names.length ? ` — ${names.join(' & ')} ${verb}` : '';
+        this.toast = m >= 100 ? `The land is whole again!${named}` : `World revival ${m}%!${named}`;
       }
     }
   }

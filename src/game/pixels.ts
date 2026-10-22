@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { worldDef } from './balance';
+import { landmarkTextures, type LandmarkSprite } from './landmarkArt';
 import { bakeSpriteNormal, rememberNormal } from './normals';
 
 class Pix {
@@ -1917,6 +1918,8 @@ export interface ArtSet {
   floraByWorld: THREE.CanvasTexture[];
   /** Set dressing per island (null = none). */
   worldFlair: Array<THREE.CanvasTexture | null>;
+  /** Painted pieces used by the landmark set pieces. */
+  landmarks: Record<LandmarkSprite, THREE.CanvasTexture>;
 }
 
 let cached: ArtSet | null = null;
@@ -2078,6 +2081,7 @@ export function getArt(): ArtSet {
     flora: floraAtlas(FLORA_PALETTES[0]!),
     floraByWorld: [0, 1, 2, 3].map((world) => (world === 0 ? floraAtlas(FLORA_PALETTES[0]!) : biomeFlora(world))),
     worldFlair: [flairForestLantern(), flairSnowman(), flairDesertCactus(), flairToxicBarrel(), null],
+    landmarks: landmarkTextures(),
   };
   return cached;
 }

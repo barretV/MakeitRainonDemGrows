@@ -774,6 +774,15 @@ canvas {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
+.hud-reclaimed-chip__next {
+  flex-basis: 100%;
+  font-size: clamp(10px, 1.15vw, 13px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(232, 214, 160, 0.92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
 .hud-reclaimed-chip__label {
   font-size: clamp(10px, 1.2vw, 14px);
   letter-spacing: 0.08em;
