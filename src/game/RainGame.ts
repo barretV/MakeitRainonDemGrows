@@ -46,7 +46,7 @@ import {
   type PlaythroughLogFile,
 } from './playthroughLog';
 import { syncLeaderboardScores } from './leaderboard';
-import { clearProgress, readProgress, writeProgress } from './save';
+import { clearProgress, readProgress, replaceProgress, writeProgress } from './save';
 import { SaveState, formatDew, walletDew, type DryTarget, type HudModel, type RunPhase, type SoakResult } from './state';
 import { loadStowKitPack } from '../loadStowKitPack';
 
@@ -1549,9 +1549,11 @@ export class RainGame {
   }
 
   async reset(): Promise<void> {
-    await clearProgress();
-    this.state = SaveState.fresh();
-    this.state.openStart();
+    this.skipSave = true;
+    const fresh = SaveState.fresh();
+    fresh.openStart();
+    const saved = await replaceProgress(fresh.toJSON());
+    this.state = fresh;
     this.audio.setMuted(!this.state.sfx);
     this.audio.setSfxVolume(this.state.sfxVolume);
     this.audio.setMusicVolume(this.state.musicVolume);
@@ -1561,6 +1563,12 @@ export class RainGame {
     this.camYaw = 0;
     this.rebuild();
     this.dropCloud(this.spawnAt());
+    this.skipSave = false;
+    if (!saved) {
+      this.state.toast = 'Could not clear cloud save — try again online.';
+    } else {
+      this.state.toast = 'Progress wiped. A fresh island awaits.';
+    }
     this.pushHud(true);
   }
 

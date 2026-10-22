@@ -2215,6 +2215,22 @@ canvas {
   box-shadow: inset 0 0 0 2px #1a1c2c, 0 4px 0 #0a0e1c;
 }
 
+.menu-reset-confirm__warn {
+  margin: 0 0 8px;
+  color: #ffc9b0;
+}
+
+.menu-reset-confirm__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.menu-reset-confirm__yes:active,
+.menu-reset-confirm__no:active {
+  transform: scale(0.98);
+}
+
 .menu-gear:active {
   transform: scale(0.95);
 }

@@ -169,6 +169,7 @@ function formatPct(ratio: number): string {
 
 export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
   const [gear, setGear] = useState(false);
+  const [resetArmed, setResetArmed] = useState(false);
   const [leaderboard, setLeaderboard] = useState(false);
   const [controlsCollapsed, setControlsCollapsed] = useState(false);
   const bottleCountedRef = useRef(false);
@@ -368,7 +369,10 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
               type="button"
               className="menu-gear hud-cam-rig__gear"
               onClick={() => {
-                setGear((v) => !v);
+                setGear((v) => {
+                  if (v) setResetArmed(false);
+                  return !v;
+                });
                 setLeaderboard(false);
               }}
               aria-label="Settings"
@@ -431,17 +435,48 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
               ))}
             </div>
           )}
-          <button
-            type="button"
-            className="menu-row mt-2 w-full border-red-400/30 text-red-200"
-            onClick={() => {
-              if (!window.confirm('Reset all progress? Dew, upgrades, and worlds will be wiped.')) return;
-              void game.reset();
-              setGear(false);
-            }}
-          >
-            Reset all progress
-          </button>
+          {resetArmed ? (
+            <div className="menu-reset-confirm mt-2">
+              <p className="menu-card__sub menu-reset-confirm__warn">
+                Wipe all dew, upgrades, and restored land? This cannot be undone.
+              </p>
+              <div className="menu-reset-confirm__actions">
+                <button
+                  type="button"
+                  className="menu-row menu-reset-confirm__yes border-red-400/40 text-red-100"
+                  onClick={() => {
+                    game.audio.ui();
+                    void game.reset();
+                    setResetArmed(false);
+                    setGear(false);
+                  }}
+                >
+                  Yes, wipe everything
+                </button>
+                <button
+                  type="button"
+                  className="menu-row menu-reset-confirm__no"
+                  onClick={() => {
+                    game.audio.ui();
+                    setResetArmed(false);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="menu-row mt-2 w-full border-red-400/30 text-red-200"
+              onClick={() => {
+                game.audio.ui();
+                setResetArmed(true);
+              }}
+            >
+              Reset all progress
+            </button>
+          )}
         </div>
       )}
 
