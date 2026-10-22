@@ -189,17 +189,43 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
               </div>
             </div>
           </div>
-          <div className="hud-bottom-bar absolute bottom-[2.4%] left-[1.4%] flex items-end gap-2 select-none">
-            <div
-              className={`hud-reclaimed-chip pixel${model.revivalGlow > 0.2 ? ' hud-reclaimed-chip--glow' : ''}`}
-              aria-label={`${model.worldName} ${formatPct(model.restored)} reclaimed`}
-            >
-              <span className="hud-reclaimed-chip__world">{model.worldName}</span>
-              <span className="hud-reclaimed-chip__sep" aria-hidden>·</span>
-              <span className="hud-reclaimed-chip__pct tabular-nums">{formatPct(model.restored)}</span>
-              <span className="hud-reclaimed-chip__label">Reclaimed</span>
+          <div className="hud-play-footer select-none">
+            {model.nextGoal && (
+              <div className="hud-goal pixel" aria-label={`Next: ${model.nextGoal.name}`}>
+                <span className="hud-goal__label">Next</span>
+                <span className="hud-goal__name">{model.nextGoal.name}</span>
+                <span className="hud-goal__cost tabular-nums">
+                  {model.nextGoal.blooms > 0 ? `${model.nextGoal.blooms} blooms` : formatDew(model.nextGoal.cost)}
+                </span>
+                <span className="hud-goal__bar" aria-hidden>
+                  <span
+                    className="hud-goal__fill"
+                    style={{ transform: `scaleX(${model.nextGoal.progress.toFixed(3)})` }}
+                  />
+                </span>
+              </div>
+            )}
+            <div className="hud-bottom-bar flex items-end gap-2">
+              <div
+                className={`hud-reclaimed-chip pixel${model.revivalGlow > 0.2 ? ' hud-reclaimed-chip--glow' : ''}`}
+                aria-label={`${model.worldName} ${formatPct(model.restored)} reclaimed`}
+              >
+                <span className="hud-reclaimed-chip__world">{model.worldName}</span>
+                <span className="hud-reclaimed-chip__sep" aria-hidden>·</span>
+                <span className="hud-reclaimed-chip__pct tabular-nums">{formatPct(model.restored)}</span>
+                <span className="hud-reclaimed-chip__label">Reclaimed</span>
+              </div>
+              <ControlHints />
             </div>
-            <ControlHints />
+            {model.patchesLeft > 0 && model.restored > 0.35 && model.restored < 0.99 && (
+              <div className="hud-patches pixel" aria-label={`${model.pocketsLeft} spots left to restore`}>
+                <span className="hud-patches__count tabular-nums">{model.pocketsLeft}</span>
+                <span className="hud-patches__label">
+                  {model.pocketsLeft === 1 ? 'spot left' : 'spots left'}
+                </span>
+                {model.pocketsLeft > 1 && <span className="hud-patches__spots">follow the light</span>}
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -210,30 +236,6 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             <span className="hud-ping__ring" aria-hidden />
             <span className="hud-ping__label">Scan</span>
           </button>
-          {model.patchesLeft > 0 && model.restored > 0.35 && model.restored < 0.99 && (
-            <div className="hud-patches pixel" aria-label={`${model.pocketsLeft} spots left to restore`}>
-              <span className="hud-patches__count tabular-nums">{model.pocketsLeft}</span>
-              <span className="hud-patches__label">
-                {model.pocketsLeft === 1 ? 'spot left' : 'spots left'}
-              </span>
-              {model.pocketsLeft > 1 && <span className="hud-patches__spots">follow the light</span>}
-            </div>
-          )}
-          {model.nextGoal && (
-            <div className="hud-goal pixel" aria-label={`Next: ${model.nextGoal.name}`}>
-              <span className="hud-goal__label">Next</span>
-              <span className="hud-goal__name">{model.nextGoal.name}</span>
-              <span className="hud-goal__cost tabular-nums">
-                {model.nextGoal.blooms > 0 ? `${model.nextGoal.blooms} blooms` : formatDew(model.nextGoal.cost)}
-              </span>
-              <span className="hud-goal__bar" aria-hidden>
-                <span
-                  className="hud-goal__fill"
-                  style={{ transform: `scaleX(${model.nextGoal.progress.toFixed(3)})` }}
-                />
-              </span>
-            </div>
-          )}
         </>
       )}
 
