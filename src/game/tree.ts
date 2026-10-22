@@ -46,7 +46,8 @@ export type NodeId =
   | 'buddy'
   | 'sparkle'
   | 'hum'
-  | 'press';
+  | 'press'
+  | 'drift';
 
 /**
  * One spoke of the web. Every branch owns a direction so a player can read the
@@ -120,6 +121,7 @@ export const NODE_IDS: readonly NodeId[] = [
   'sparkle',
   'hum',
   'press',
+  'drift',
 ];
 
 /**
@@ -152,6 +154,7 @@ export const PRIORITY: readonly NodeId[] = [
   'reservoir',
   'linger',
   'flow',
+  'drift',
   'spring',
   'geyser',
   'spore',
@@ -321,6 +324,19 @@ const NODES: readonly UpgradeNode[] = [
     color: '#5ec8ff',
     costs: [51434, 1451096, 1668779, 58999999, 67849998, 78027498],
     effect: (level) => `Pour x${(1.3 ** level).toFixed(2)}`,
+  },
+  {
+    id: 'drift',
+    parent: 'flow',
+    branch: 'rain',
+    kind: 'upgrade',
+    name: 'Tailwind',
+    desc: 'Soak grows faster while you fly. Same water — greener ground when you keep moving.',
+    max: 5,
+    color: '#9ed4ff',
+    costs: [28400, 198000, 920000, 4100000, 15500000],
+    worldMin: 2,
+    effect: (level) => `Moving +${Math.round(level * 14)}% soak`,
   },
   {
     id: 'spring',
@@ -786,6 +802,7 @@ export function emptyRanks(): Ranks {
     mist: 0,
     soak: 0,
     flow: 0,
+    drift: 0,
     spring: 0,
     downpour: 0,
     reach: 0,
@@ -879,6 +896,8 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
       return ranks.soak >= 2;
     case 'flow':
       return ranks.soak >= 2;
+    case 'drift':
+      return ranks.flow >= 1;
     case 'spring':
       return ranks.mist >= 2;
     case 'circle':
@@ -1019,6 +1038,11 @@ export function soakPerTick(ranks: Ranks): number {
   return 1.35 * 1.28 ** ranks.soak * 1.22 ** ranks.downpour * 1.3 ** ranks.flow;
 }
 
+/** Extra soak per rain tick while the cloud is moving (Tailwind). */
+export function movingSoakMultiplier(ranks: Ranks): number {
+  return 1 + ranks.drift * 0.14;
+}
+
 /** Fraction of spilled rain that stands on finished ground. */
 export function poolGain(ranks: Ranks): number {
   return 0.72 + 0.22 * ranks.spring;
@@ -1122,6 +1146,7 @@ const SPOKES: readonly SpokeDef[] = [
       { id: 'spring', after: 'mist', side: -1 },
       { id: 'hail', after: 'mist', side: 1 },
       { id: 'flow', after: 'soak', side: -1 },
+      { id: 'drift', after: 'flow', side: 1 },
       { id: 'geyser', after: 'soak', side: 1 },
       { id: 'monsoon', after: 'downpour', side: 1 },
     ],
@@ -1162,7 +1187,7 @@ const SPOKES: readonly SpokeDef[] = [
 ];
 
 const DROP_NODES = new Set<NodeId>([
-  'drizzle', 'specks', 'mist', 'soak', 'downpour', 'flow', 'spring',
+  'drizzle', 'specks', 'mist', 'soak', 'downpour', 'flow', 'drift', 'spring',
   'charm', 'dew', 'bounty', 'crit', 'harvest', 'purify',
 ]);
 

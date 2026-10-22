@@ -45,6 +45,7 @@ import {
   loadPlaythroughLog,
   type PlaythroughLogFile,
 } from './playthroughLog';
+import { syncLeaderboardScores } from './leaderboard';
 import { clearProgress, readProgress, writeProgress } from './save';
 import { SaveState, formatDew, walletDew, type DryTarget, type HudModel, type RunPhase, type SoakResult } from './state';
 import { loadStowKitPack } from '../loadStowKitPack';
@@ -1773,13 +1774,14 @@ export class RainGame {
       }
     }
     const speed = Math.hypot(this.cloudX - this.prevX, this.cloudZ - this.prevZ) / Math.max(dt, 0.001);
+    const moving = speed > 0.4;
     this.slosh += (clamp((this.cloudX - this.prevX) * 14, -1, 1) - this.slosh) * Math.min(1, dt * 4);
     this.prevX = this.cloudX;
     this.prevZ = this.cloudZ;
 
     const held = this.wantsRain();
     const raining = held && state.tank > 0.008;
-    state.tick(dt, { raining: held, moving: speed > 0.4 });
+    state.tick(dt, { raining: held, moving });
     if (this.syncRunPhase()) return;
     if (raining && !this.audio.muted) {
       this.audio.rainStart();
@@ -1794,7 +1796,7 @@ export class RainGame {
     while (this.soakAcc >= 0.1) {
       this.soakAcc -= 0.1;
       if (!raining) continue;
-      const hit = state.drizzle(this.cloudX, this.cloudZ);
+      const hit = state.drizzle(this.cloudX, this.cloudZ, moving);
       state.flowWaterStep();
       splashDew += hit.dew;
       splashCrits += hit.crits;
@@ -5147,6 +5149,7 @@ export class RainGame {
     if (!this.state || this.dead || this.skipSave) return;
     this.stampView();
     await writeProgress(this.state.toJSON());
+    syncLeaderboardScores(this.state);
   }
 
   private resize(): void {

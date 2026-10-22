@@ -148,6 +148,12 @@ function NodeSymbol({
         <path d="M5 -7.6c1.2 3 1.6 5 1.6 6.4a1.6 1.6 0 1 1-3.2 0c0-1.4.4-3.4 1.6-6.4z" />
       </>
     ),
+    drift: (
+      <>
+        <path d="M-7.2 0h12.4l-2.8-2.6 2.8-2.6" fill="none" strokeWidth={2.2} />
+        <path d="M-5.6 4.2h9.2l-2-1.8 2-1.8" fill="none" strokeWidth={1.6} opacity={0.75} />
+      </>
+    ),
     spring: (
       <>
         <path d="M0 7.4V1.2" fill="none" strokeWidth={2} />

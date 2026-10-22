@@ -40,6 +40,7 @@ import {
   emptyRanks,
   maskOf,
   maxLiters,
+  movingSoakMultiplier,
   NODE_IDS,
   nodeBloomCost,
   nodeCost,
@@ -73,6 +74,15 @@ export const BLOOM_STEPS = 10;
 export function islandBlooms(ratio: number, cleared: boolean): number {
   if (ratio <= 0) return 0;
   return Math.min(BLOOM_STEPS - 1, Math.floor(ratio * BLOOM_STEPS)) + (cleared ? 1 : 0);
+}
+
+/** Next reclaimed % that awards another bloom on this island, or null when none left. */
+export function nextBloomThresholdPct(ratio: number, cleared: boolean): number | null {
+  const earned = islandBlooms(ratio, cleared);
+  if (earned >= BLOOM_STEPS) return null;
+  const nextStep = Math.floor(ratio * BLOOM_STEPS) + 1;
+  if (nextStep >= BLOOM_STEPS) return cleared ? null : 100;
+  return Math.ceil((nextStep / BLOOM_STEPS) * 100);
 }
 
 export interface TileState {
@@ -186,6 +196,8 @@ export interface HudModel {
   stats: Stats;
   achievements: Array<AchievementDef & { done: boolean; current: number; goal: number }>;
   spendableBlooms: number;
+  /** Reclaimed % needed for the next bloom on this island (10, 20, … 100). */
+  nextBloomPct: number | null;
   /** Every message the game wants to show, oldest first. */
   toasts: { seq: number; text: string }[];
   /** The chain multiplier on the dew this bottle is paying. */
@@ -399,6 +411,8 @@ export class SaveState {
   runLog: RunLogEntry[] = [];
   private runBuys: string[] = [];
   private runBlooms = 0;
+  /** Blooms from the bottle that just ended (results still read this after logRun). */
+  private lastBottleBlooms = 0;
   private runIndex = 0;
   private runOpen = false;
   runDew = 0;
@@ -646,7 +660,8 @@ export class SaveState {
     this.blooms += earned - had;
     this.runBlooms += earned - had;
     this.pendingBlooms += earned - had;
-    this.toast = earned - had > 1 ? 'Blooms open!' : 'A bloom opens!';
+    const gained = earned - had;
+    this.toast = gained > 1 ? `${gained} blooms open!` : 'A bloom opens!';
   }
 
   /** Close the books on the bottle that just ended (dry or island cleared). */
@@ -676,6 +691,7 @@ export class SaveState {
         reason,
       });
     }
+    this.lastBottleBlooms = this.runBlooms;
     this.runBuys = [];
     this.runBlooms = 0;
   }
@@ -729,6 +745,7 @@ export class SaveState {
       if (this.tank <= 0.001) {
         this.tank = 0;
         this.reconcileLandProgress();
+        this.syncBlooms();
         this.captureRunPeak();
         this.phase = 'dry';
         this.screen = 'results';
@@ -1144,10 +1161,11 @@ export class SaveState {
    * Paint the circular patch under the cloud. Most of the circle stays dry until
    * Specks and Mist open more of it. Returns dew banked this splash.
    */
-  drizzle(x: number, z: number): { dew: number; filled: number; crits: number } {
+  drizzle(x: number, z: number, moving = false): { dew: number; filled: number; crits: number } {
     if (this.phase !== 'play') return { dew: 0, filled: 0, crits: 0 };
     const radius = this.reach();
-    return this.paint(x, z, radius, soakPerTick(this.ranks), true);
+    const soak = soakPerTick(this.ranks) * (moving ? movingSoakMultiplier(this.ranks) : 1);
+    return this.paint(x, z, radius, soak, true);
   }
 
   /** Finish a handful of cells inside a circle. Lightning, sprinkler, and the twister. */
@@ -1912,7 +1930,8 @@ export class SaveState {
             : this.screen,
       runDew: this.runDew,
       runTiles: this.runTiles,
-      runBlooms: this.runBlooms,
+      runBlooms:
+        this.phase === 'dry' || this.phase === 'clear' ? this.lastBottleBlooms : this.runBlooms,
       runReached: this.runReached,
       best: this.best[this.world] ?? 0,
       cleared: this.phase === 'clear',
@@ -1933,6 +1952,7 @@ export class SaveState {
         return { ...a, done: this.achievements.includes(a.id), current: track.current, goal: track.goal };
       }),
       spendableBlooms: wallet.blooms,
+      nextBloomPct: nextBloomThresholdPct(this.ratio(), this.islandRestored()),
       toasts: this.toastLog.map((t) => ({ ...t })),
       chain: this.chainMultiplier(),
       patchesLeft: dry.cells,
@@ -2385,6 +2405,7 @@ export class SaveState {
 
   beginFinale(): void {
     if (this.phase !== 'play') return;
+    this.syncBlooms();
     this.captureRunPeak();
     this.logRun('cleared');
     this.phase = 'finale';

@@ -441,7 +441,7 @@ export class AudioBus {
     const from = 260 * 2 ** (Math.random() * 1.85);
     const rise = 1.12 + Math.random() * 0.7;
     const dur = 0.07 + Math.random() * 0.08 + strength * 0.03;
-    const peak = (0.01 + strength * 0.008 + Math.random() * 0.004) * 1.15;
+    const peak = (0.01 + strength * 0.008 + Math.random() * 0.004) * 1.32;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(from, t);

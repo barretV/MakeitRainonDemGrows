@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { RainGame } from '../game/RainGame';
 import { milestoneIsland, worldDef } from '../game/balance';
 import { formatDew, walletDew, type HudModel } from '../game/state';
+import { dismissControlHints, loadControlPrefs, noteBottleEnded } from '../game/uiPrefs';
 import { TWEAK_KNOBS } from '../tweak';
 import { Bottle } from './Bottle';
 import { HudDewIcon, HudPlantIcon } from './HudCurrencyIcons';
 import { HudToast } from './HudToast';
+import { LeaderboardIcon, LeaderboardPanel } from './LeaderboardPanel';
 import { UpgradeTree } from './UpgradeTree';
 
 /** Touch-first play (phones, RUN app): coarse pointer or our scaled touch shell. */
@@ -39,14 +41,45 @@ function Key({ children, wide }: { children: ReactNode; wide?: boolean }) {
  * The control legend along the bottom row. Desktop shows the keys, touch shows
  * the two-stick scheme: one finger flies, a second finger turns the world.
  */
-function ControlHints() {
-  const touch = useTouchControls();
+function ControlHints({
+  touch,
+  collapsed,
+  onDismiss,
+  onExpand,
+}: {
+  touch: boolean;
+  collapsed: boolean;
+  onDismiss: () => void;
+  onExpand: () => void;
+}) {
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        className="hud-controls hud-controls--peek pixel pointer-events-auto"
+        aria-label="Show controls"
+        onClick={() => {
+          onExpand();
+        }}
+      >
+        <span className="hud-controls__title">Controls</span>
+        <span className="hud-controls__peek">?</span>
+      </button>
+    );
+  }
   return (
     <div
       className={`hud-controls pixel pointer-events-auto${touch ? '' : ' hud-controls--keyboard'}`}
       aria-label="How to play"
     >
-      <span className="hud-controls__title">Controls</span>
+      <div className="hud-controls__head">
+        <span className="hud-controls__title">Controls</span>
+        {touch ? (
+          <button type="button" className="hud-controls__dismiss pixel" onClick={onDismiss}>
+            Got it
+          </button>
+        ) : null}
+      </div>
       <div className="hud-controls__row">
         {touch ? (
           <>
@@ -105,17 +138,22 @@ function HudChip({
   display,
   icon,
   ariaLabel,
+  hint,
   bump,
 }: {
   display: string;
   icon: ReactNode;
   ariaLabel: string;
+  hint?: string;
   bump?: boolean;
 }) {
   return (
     <div className="hud-chip pixel" aria-label={ariaLabel}>
       <span className="hud-chip__icon" aria-hidden>{icon}</span>
-      <span className={`hud-chip__amt tabular-nums${bump ? ' hud-chip__amt--bump' : ''}`}>{display}</span>
+      <span className="hud-chip__body">
+        <span className={`hud-chip__amt tabular-nums${bump ? ' hud-chip__amt--bump' : ''}`}>{display}</span>
+        {hint ? <span className="hud-chip__hint tabular-nums">{hint}</span> : null}
+      </span>
     </div>
   );
 }
@@ -131,7 +169,30 @@ function formatPct(ratio: number): string {
 
 export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
   const [gear, setGear] = useState(false);
+  const [leaderboard, setLeaderboard] = useState(false);
+  const [controlsCollapsed, setControlsCollapsed] = useState(false);
+  const bottleCountedRef = useRef(false);
+  const touchControls = useTouchControls();
   const playing = model.screen === 'play';
+
+  useEffect(() => {
+    void loadControlPrefs().then((p) => {
+      if (p.dismissed) setControlsCollapsed(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (model.screen !== 'results') {
+      bottleCountedRef.current = false;
+      return;
+    }
+    if (model.phase !== 'dry' && model.phase !== 'clear') return;
+    if (bottleCountedRef.current) return;
+    bottleCountedRef.current = true;
+    void noteBottleEnded().then((prefs) => {
+      if (prefs.dismissed) setControlsCollapsed(true);
+    });
+  }, [model.screen, model.phase]);
   const blooms = model.spendableBlooms;
   const dewNow = walletDew(model.dew);
   const bumpRef = useRef({ dew: dewNow, blooms, liters: model.liters });
@@ -176,7 +237,16 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
                   <HudChip
                     display={String(blooms)}
                     icon={<HudPlantIcon />}
-                    ariaLabel={`${blooms} blooms`}
+                    ariaLabel={
+                      model.nextBloomPct != null && blooms === 0
+                        ? `${blooms} blooms. Next bloom at ${model.nextBloomPct}% reclaimed on this island`
+                        : `${blooms} blooms`
+                    }
+                    hint={
+                      model.phase === 'play' && model.nextBloomPct != null && blooms === 0
+                        ? `@ ${model.nextBloomPct}%`
+                        : undefined
+                    }
                     bump={bumpBlooms}
                   />
                 </div>
@@ -191,20 +261,54 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
               </div>
             </div>
           </div>
-          <div className="hud-bottom-bar absolute bottom-[2.4%] left-[1.4%] flex items-end gap-2 select-none">
-            <div
-              className={`hud-reclaimed-chip pixel${model.revivalGlow > 0.2 ? ' hud-reclaimed-chip--glow' : ''}`}
-              aria-label={`${model.worldName} ${formatPct(model.restored)} reclaimed`}
-            >
-              <span className="hud-reclaimed-chip__world">{model.worldName}</span>
-              <span className="hud-reclaimed-chip__sep" aria-hidden>·</span>
-              <span className="hud-reclaimed-chip__pct tabular-nums">{formatPct(model.restored)}</span>
-              <span className="hud-reclaimed-chip__label">Reclaimed</span>
-              {model.phase === 'play' && model.nextLandmark && (
-                <span className="hud-reclaimed-chip__next">Rising · {model.nextLandmark}</span>
-              )}
+          <div className="hud-bottom-stack select-none">
+            {model.nextGoal && (
+              <div className="hud-goal pixel" aria-label={`Next: ${model.nextGoal.name}`}>
+                <span className="hud-goal__label">Next</span>
+                <span className="hud-goal__name">{model.nextGoal.name}</span>
+                <span className="hud-goal__cost tabular-nums">
+                  {model.nextGoal.blooms > 0 ? `${model.nextGoal.blooms} blooms` : formatDew(model.nextGoal.cost)}
+                </span>
+                <span className="hud-goal__bar" aria-hidden>
+                  <span
+                    className="hud-goal__fill"
+                    style={{ transform: `scaleX(${model.nextGoal.progress.toFixed(3)})` }}
+                  />
+                </span>
+              </div>
+            )}
+            {showDryPockets && (
+              <div className="hud-patches pixel" aria-label={`${model.pocketsLeft} spots left to restore`}>
+                <span className="hud-patches__count tabular-nums">{model.pocketsLeft}</span>
+                <span className="hud-patches__label">
+                  {model.pocketsLeft === 1 ? 'spot left' : 'spots left'}
+                </span>
+                {model.pocketsLeft > 1 && <span className="hud-patches__spots">follow the light</span>}
+              </div>
+            )}
+            <div className="hud-bottom-bar flex items-end gap-2">
+              <div
+                className={`hud-reclaimed-chip pixel${model.revivalGlow > 0.2 ? ' hud-reclaimed-chip--glow' : ''}`}
+                aria-label={`${model.worldName} ${formatPct(model.restored)} reclaimed`}
+              >
+                <span className="hud-reclaimed-chip__world">{model.worldName}</span>
+                <span className="hud-reclaimed-chip__sep" aria-hidden>·</span>
+                <span className="hud-reclaimed-chip__pct tabular-nums">{formatPct(model.restored)}</span>
+                <span className="hud-reclaimed-chip__label">Reclaimed</span>
+                {model.phase === 'play' && model.nextLandmark && (
+                  <span className="hud-reclaimed-chip__next">Rising · {model.nextLandmark}</span>
+                )}
+              </div>
+              <ControlHints
+                touch={touchControls}
+                collapsed={controlsCollapsed && touchControls}
+                onDismiss={() => {
+                  setControlsCollapsed(true);
+                  void dismissControlHints();
+                }}
+                onExpand={() => setControlsCollapsed(false)}
+              />
             </div>
-            <ControlHints />
           </div>
           <button
             type="button"
@@ -215,33 +319,6 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             <span className="hud-ping__ring" aria-hidden />
             <span className="hud-ping__label">Scan</span>
           </button>
-          {showDryPockets && (
-            <div className="hud-patches pixel" aria-label={`${model.pocketsLeft} spots left to restore`}>
-              <span className="hud-patches__count tabular-nums">{model.pocketsLeft}</span>
-              <span className="hud-patches__label">
-                {model.pocketsLeft === 1 ? 'spot left' : 'spots left'}
-              </span>
-              {model.pocketsLeft > 1 && <span className="hud-patches__spots">follow the light</span>}
-            </div>
-          )}
-          {model.nextGoal && (
-            <div
-              className={`hud-goal pixel${showDryPockets ? ' hud-goal--lift' : ''}`}
-              aria-label={`Next: ${model.nextGoal.name}`}
-            >
-              <span className="hud-goal__label">Next</span>
-              <span className="hud-goal__name">{model.nextGoal.name}</span>
-              <span className="hud-goal__cost tabular-nums">
-                {model.nextGoal.blooms > 0 ? `${model.nextGoal.blooms} blooms` : formatDew(model.nextGoal.cost)}
-              </span>
-              <span className="hud-goal__bar" aria-hidden>
-                <span
-                  className="hud-goal__fill"
-                  style={{ transform: `scaleX(${model.nextGoal.progress.toFixed(3)})` }}
-                />
-              </span>
-            </div>
-          )}
         </>
       )}
 
@@ -274,13 +351,31 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             <CamBtn label="Zoom out" hint="out" onClick={() => game.zoomCamera(0.08)}>+</CamBtn>
             <CamBtn label="Rotate right" hint="E" onClick={() => game.orbitCamera(0.55)}>↻</CamBtn>
           </div>
-          <button
-            className="menu-gear hud-cam-rig__gear"
-            onClick={() => setGear((v) => !v)}
-            aria-label="Settings"
-          >
-            <GearIcon />
-          </button>
+          <div className="hud-cam-rig__tools">
+            <button
+              type="button"
+              className="menu-lb hud-cam-rig__lb"
+              onClick={() => {
+                game.audio.ui();
+                setLeaderboard(true);
+                setGear(false);
+              }}
+              aria-label="Leaderboards"
+            >
+              <LeaderboardIcon />
+            </button>
+            <button
+              type="button"
+              className="menu-gear hud-cam-rig__gear"
+              onClick={() => {
+                setGear((v) => !v);
+                setLeaderboard(false);
+              }}
+              aria-label="Settings"
+            >
+              <GearIcon />
+            </button>
+          </div>
           {import.meta.env.DEV && model.devZoom != null && (
             <div className="hud-dev-zoom pixel tabular-nums" aria-hidden>
               <span>zoom {model.devZoom.toFixed(2)}</span>
@@ -292,6 +387,8 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
           )}
         </div>
       )}
+
+      <LeaderboardPanel open={leaderboard && playing} onClose={() => setLeaderboard(false)} />
 
       {gear && playing && (
         <div className="menu-card menu-card--pop pointer-events-auto absolute top-[12%] right-[2%] w-[260px] text-left">
@@ -437,16 +534,24 @@ function Results({ model, game }: { model: HudModel; game: RainGame }) {
         <div className="results-card__head">
           <div className="menu-card__title">{model.cleared ? 'A living world' : 'Bottle empty'}</div>
           <p className="menu-card__sub">{model.worldName}</p>
-          <p className="menu-wallet">Wallet · {formatDew(model.dew)} dew</p>
+          <p className="menu-wallet">
+            Wallet · {formatDew(model.dew)} dew · {model.spendableBlooms} bloom
+            {model.spendableBlooms === 1 ? '' : 's'}
+          </p>
           {model.runDew > 0 && (
             <p className="results-earned">
-              Rain earned {formatDew(model.runDew)} dew
-              {model.runBlooms > 0 ? ` · ${model.runBlooms} bloom${model.runBlooms > 1 ? 's' : ''}` : ''} · {model.runTiles}{' '}
-              patches
+              Rain earned {formatDew(model.runDew)} dew · {model.runTiles} patch{model.runTiles === 1 ? '' : 'es'}
             </p>
           )}
           <div className="results-stats">
             <Stat label="This bottle" value="" count={model.runDew} suffix=" dew" />
+            {model.runBlooms > 0 ? (
+              <Stat
+                label="Blooms this bottle"
+                value={`+${model.runBlooms}`}
+                tag={model.runBlooms > 1 ? 'Rare haul' : undefined}
+              />
+            ) : null}
             <Stat
               label="Reached"
               value={pct}

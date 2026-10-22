@@ -1,0 +1,30 @@
+{
+  "requiresToken": false,
+  "minScore": 0,
+  "maxScore": 999999999,
+  "minDurationSec": 1,
+  "maxDurationSec": 864000,
+  "modes": {
+    "dew": {
+      "displayName": "Dew collected"
+    },
+    "blooms": {
+      "displayName": "Blooms earned"
+    },
+    "tiles": {
+      "displayName": "Land restored"
+    },
+    "skytime": {
+      "displayName": "Rain time"
+    },
+    "islands": {
+      "displayName": "Islands unlocked"
+    }
+  },
+  "periods": {
+    "alltime": {
+      "displayName": "All time",
+      "type": "alltime"
+    }
+  }
+}
