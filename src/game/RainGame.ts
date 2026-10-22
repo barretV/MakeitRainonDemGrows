@@ -4,14 +4,31 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { GLOBE_WORLD, TILE, gridOf, tileIsLand, worldDef, type Decor } from './balance';
+import {
+  GLOBE_WORLD,
+  TILE,
+  WORLD_FLAIR_SPOTS,
+  flairWorldPoint,
+  gridOf,
+  tileAtWorld,
+  tileIsLand,
+  worldDef,
+  type Decor,
+} from './balance';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
 import { litColor, litOpacity, makeLitSprite, makePondWater, setLitMap, setPondFill } from './litSprite';
-import { ABILITIES, type AbilityId } from './abilities';
 import { AbilityVfx } from './abilityVfx';
+import { Weather } from './weather';
 import { BASE_SCALE, maskOf, upgradeNode, type NodeId, type Ranks } from './tree';
 import { AudioBus } from './audio';
+import {
+  clearPlaythroughLog,
+  downloadPlaythroughLog,
+  hydratePlaythroughLog,
+  loadPlaythroughLog,
+  type PlaythroughLogFile,
+} from './playthroughLog';
 import { clearProgress, readProgress, writeProgress } from './save';
 import { SaveState, formatDew, walletDew, type DryTarget, type HudModel, type RunPhase, type SoakResult } from './state';
 import { loadStowKitPack } from '../loadStowKitPack';
@@ -29,8 +46,8 @@ const MOVE = 6.4;
 const STEER = 0.042;
 /** Radians of camera turn per pixel of the second touch stick. */
 const TURN_TOUCH = 0.007;
-/** 1 = default framing (closest). Larger values pull the camera back. */
-const CAM_ZOOM_MIN = 1;
+/** 1 = default framing. Below 1 zooms in for a closer look; above 1 pulls back. */
+const CAM_ZOOM_MIN = 0.58;
 const CAM_ZOOM_MAX = 1.85;
 /**
  * Katamari framing: the rig keeps a close patch of land in frame and follows the
@@ -57,88 +74,19 @@ const AURA_COUNT = 6;
 /** The face of the aura ring, so it can lie flat on the ground or on the globe. */
 const AURA_NORMAL = new THREE.Vector3(0, 0, 1);
 
-/** A jagged lightning ribbon, built in the XY plane so the billboard faces the camera. */
-function boltGeometry(height: number, width: number): THREE.BufferGeometry {
-  const segments = 7;
-  const points: THREE.Vector2[] = [];
-  for (let i = 0; i <= segments; i += 1) {
-    const t = i / segments;
-    const edge = i === 0 || i === segments;
-    const zig = edge ? 0 : (i % 2 === 0 ? 1 : -1) * width * (1.1 + (i % 3) * 0.6);
-    points.push(new THREE.Vector2(zig, height * (0.5 - t)));
-  }
-  const positions = new Float32Array((segments + 1) * 2 * 3);
-  const uvs = new Float32Array((segments + 1) * 2 * 2);
-  const index: number[] = [];
-  for (let i = 0; i < points.length; i += 1) {
-    const p = points[i]!;
-    const prev = points[Math.max(0, i - 1)]!;
-    const next = points[Math.min(points.length - 1, i + 1)]!;
-    const dx = next.x - prev.x;
-    const dy = next.y - prev.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len;
-    const ny = dx / len;
-    const w = i === 0 || i === points.length - 1 ? width * 0.5 : width;
-    const base = i * 6;
-    positions[base] = p.x + nx * w;
-    positions[base + 1] = p.y + ny * w;
-    positions[base + 2] = 0;
-    positions[base + 3] = p.x - nx * w;
-    positions[base + 4] = p.y - ny * w;
-    positions[base + 5] = 0;
-    const u = i * 4;
-    uvs[u] = 0;
-    uvs[u + 1] = i / segments;
-    uvs[u + 2] = 1;
-    uvs[u + 3] = i / segments;
-    if (i < segments) {
-      const a = i * 2;
-      index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-  geo.setIndex(index);
-  return geo;
-}
-
-/** Bright core with a soft halo around the bolt. */
-function boltMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    uniforms: {},
-    vertexShader: /* glsl */ `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      varying vec2 vUv;
-      void main() {
-        float edge = abs(vUv.x - 0.5) * 2.0;
-        float core = 1.0 - smoothstep(0.0, 0.45, edge);
-        float glow = 1.0 - smoothstep(0.2, 1.0, edge);
-        vec3 col = mix(vec3(0.55, 0.85, 1.0), vec3(1.0), core);
-        gl_FragColor = vec4(col, (core * 0.95 + glow * 0.45) * (0.55 + 0.45 * (1.0 - vUv.y)));
-      }
-    `,
-  });
-}
-
 /**
- * Katamari-style pull: distance grows with the cloud, a little slower than
- * the sprite, so the island shrinks in frame and the face stays readable.
+ * Katamari-style pull. Early ranks stay close. Once the cloud is large the
+ * camera steps back faster, and bigger islands ask for more of that step so
+ * the land around you stays in frame.
  */
-function growPullForScale(scale: number): number {
+function growPullForScale(scale: number, island = 1): number {
   const t = Math.max(BASE_SCALE, scale) / BASE_SCALE;
-  return Math.pow(t, 0.88);
+  const base = Math.pow(t, 1.12);
+  const grown = Math.min(1, Math.max(0, (t - 1) / 1.77));
+  const bonus = grown * grown * Math.max(0, island - 1) * 0.9;
+  const widened = base * (1 + bonus);
+  // Keep the close start. The wide framing was about 30% too far on the big islands.
+  return 1 + (widened - 1) * 0.7;
 }
 
 const TiltShiftShader = {
@@ -405,6 +353,8 @@ export class RainGame {
   private stick: Stick | null = null;
   private rotateStick: TurnStick | null = null;
   private cloudX = 0;
+  /** Where the last bottle ran dry, so the next pour starts there. */
+  private resumeAt: { world: number; x: number; z: number } | null = null;
   private cloudZ = 0;
   private prevX = 0;
   private prevZ = 0;
@@ -450,9 +400,11 @@ export class RainGame {
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private maskTex: THREE.DataTexture | null = null;
   private pulseTex: THREE.DataTexture | null = null;
+  private playableTex: THREE.DataTexture | null = null;
   private terrain: Terrain | null = null;
   private maskMats: THREE.ShaderMaterial[] = [];
   private abilityVfx: AbilityVfx;
+  private weather: Weather;
   private globe = false;
   private track = new THREE.Group();
   private views: TileView[] = [];
@@ -496,24 +448,39 @@ export class RainGame {
   private animals: Critter[] = [];
   private helpers: THREE.Mesh[] = [];
   private boxes: THREE.Mesh[] = [];
+  private worldFlairMeshes: THREE.Mesh[] = [];
   private butterflies: THREE.Mesh[] = [];
   private babies: Array<{ mesh: THREE.Mesh; x: number; z: number }> = [];
-  private tornado: { mesh: THREE.Mesh; x: number; z: number; life: number; acc: number } | null = null;
-  private bolts: Array<{ mesh: THREE.Mesh; life: number }> = [];
   private rings: Array<{ mesh: THREE.Mesh; life: number }> = [];
   private texts: Floater[] = [];
   private motes: Mote[] = [];
   private drops: Drop[] = [];
   private readonly resizeObserver: ResizeObserver;
+  /** Drawing-buffer scale. Phones stay at 1.5 so bloom and the tilt shift still fit the fill rate. */
+  private readonly renderScale: number;
+  private readonly msaaSamples: number;
+  private readonly skyNdc = new THREE.Vector3();
+  private readonly skyScratch = new THREE.Vector3();
+  /** Scan wave timer. Negative means idle. */
+  private scanT = -1;
+  private scanTravel = 2.6;
+  private readonly scanOrigin = new THREE.Vector2();
+  private scanReach = 1;
 
   constructor(container: HTMLDivElement, onHud: (model: HudModel) => void) {
     this.container = container;
     this.onHud = onHud;
     this.art = getArt();
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const fine = window.matchMedia('(any-pointer: fine)').matches;
+    const mobile = coarse && !fine;
+    this.renderScale = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2);
+    this.msaaSamples = mobile ? 2 : 4;
     const w = Math.max(1, container.clientWidth);
     const h = Math.max(1, container.clientHeight);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // Antialias lives on the composer targets. The canvas flag would allocate a
+    // second multisample buffer that the post stack never presents.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setSize(w, h, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     // ACES desaturates and flattens the midtones, which turns a sunset into
@@ -533,6 +500,33 @@ export class RainGame {
     this.scene.add(this.track);
     this.scene.add(this.camera);
     this.abilityVfx = new AbilityVfx(this.track);
+    this.weather = new Weather({
+      scene: this.scene,
+      drop: this.art.drop,
+      baby: this.art.baby,
+      tornado: this.art.tornado,
+      place: (mesh, x, z, lift) => {
+        if (this.globe) {
+          const p = this.lonLatPoint(x, z, 6.9 + lift * 0.08);
+          mesh.position.set(p.x, p.y, p.z);
+          return;
+        }
+        mesh.position.set(x, this.groundY(x, z) + lift, z);
+      },
+      cloudLift: () => {
+        if (this.globe) return 2.4;
+        return Math.max(1.8, this.cloud.position.y - this.groundY(this.cloudX, this.cloudZ));
+      },
+      shake: (amount) => {
+        this.shake = Math.max(this.shake, amount);
+      },
+      zap: () => this.audio.zap(),
+      label: (x, y, z, text) => this.floatText(x, y, text, false, z),
+      spark: (x, y, z, count) => this.burst(x, y, z, count),
+      spinCloud: (seconds) => {
+        this.spin = Math.max(this.spin, seconds);
+      },
+    });
 
     this.mountain = this.litBillboard(this.art.mountain, 15, 9.2, 0.12, true);
     this.scene.add(this.mountain);
@@ -1187,10 +1181,10 @@ export class RainGame {
 
     this.seedPools();
     this.composer = new EffectComposer(this.renderer);
-    // The composer renders offscreen, so the renderer's own antialias is lost.
-    // Multisampling the target brings the edges back.
-    this.composer.renderTarget1.samples = 4;
-    this.composer.renderTarget2.samples = 4;
+    // The composer renders offscreen, so the canvas antialias flag never shows.
+    // These samples are the edges the player actually sees.
+    this.composer.renderTarget1.samples = this.msaaSamples;
+    this.composer.renderTarget2.samples = this.msaaSamples;
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     // Only the things that are really bright may glow: the sun disc, the
     // praise shafts, the fireflies. A low threshold lets the whole sunset sky
@@ -1238,6 +1232,7 @@ export class RainGame {
     window.removeEventListener('pointercancel', this.onUp);
     window.removeEventListener('keydown', this.onKey);
     window.removeEventListener('keyup', this.onKeyUp);
+    this.weather.dispose();
     this.audio.dispose();
     this.composer.dispose();
     this.renderer.dispose();
@@ -1253,7 +1248,7 @@ export class RainGame {
     void this.saveNow();
     this.state.retryRun();
     this.rebuild();
-    this.dropCloud(this.spawnAt());
+    this.dropCloud(this.bottleStart());
     this.pushHud(true);
   }
 
@@ -1266,7 +1261,7 @@ export class RainGame {
     const oldReach = snap?.reach ?? this.state.reach();
     this.state.retryRun();
     this.rebuild();
-    this.dropCloud(this.spawnAt());
+    this.dropCloud(this.bottleStart());
     const newScale = this.state.scale();
     const newReach = this.state.reach();
     const puffGrew = newScale > oldScale * 1.008;
@@ -1291,8 +1286,8 @@ export class RainGame {
     this.introT = 0;
     this.introDuration = major ? 1.45 : 0.85;
     this.introScaleFrom = Math.min(1, oldScale / Math.max(newScale, 0.001));
-    this.introPullFrom = growPullForScale(oldScale);
-    this.introPullTo = growPullForScale(newScale);
+    this.introPullFrom = growPullForScale(oldScale, this.islandFrame());
+    this.introPullTo = growPullForScale(newScale, this.islandFrame());
     if (newReach > oldReach * 1.02) {
       this.introPullTo *= 1 + Math.min(0.12, (newReach - oldReach) / Math.max(oldReach, 0.5) * 0.08);
     }
@@ -1375,34 +1370,20 @@ export class RainGame {
     return true;
   }
 
-  private fireAbility(cast: AbilityId, state: SaveState): void {
-    this.abilityVfx.play(cast, this.cloudX, this.groundY(this.cloudX, this.cloudZ), this.cloudZ, state.reach());
-    if (cast === 'lightning') {
-      this.audio.zap();
-      this.shake = 0.4;
-      this.flashBolt(this.nearestTile());
-    }
-    if (cast === 'sprinkler' || cast === 'whirlpool') {
-      this.spin = 0.48;
-      this.burst(this.cloudX, 1.3, this.cloudZ, 10);
-    }
-    if (cast === 'waterbomb' || cast === 'geyser') this.shake = Math.max(this.shake, 0.32);
-    this.grin = Math.max(this.grin, 0.38);
+  private castOrigin(): { cloudX: number; cloudZ: number; faceX: number; faceZ: number } {
+    return { cloudX: this.cloudX, cloudZ: this.cloudZ, faceX: this.faceX, faceZ: this.faceZ };
   }
 
   cast(which: 'lightning' | 'tornado'): void {
     if (!this.state) return;
+    const origin = this.castOrigin();
     if (which === 'lightning') {
       if (!this.state.armLightning()) return;
-      const hit = this.state.burst(this.cloudX, this.cloudZ, this.state.reach() * 0.62, 18 + this.state.ranks.zap * 12);
-      this.audio.zap();
-      this.shake = 0.4;
-      this.flashBolt(this.nearestTile());
-      if (hit.filled > 0) this.grin = 0.6;
+      this.weather.spawn('lightning', this.state, origin);
     } else if (this.state.startTornado()) {
-      this.spawnTornado(false);
-      this.audio.zap();
+      this.weather.spawn('tornado', this.state, origin);
     }
+    this.grin = Math.max(this.grin, 0.4);
     this.pushHud(true);
   }
 
@@ -1413,6 +1394,7 @@ export class RainGame {
       this.pushHud(true);
       return;
     }
+    this.resumeAt = null;
     this.rebuild();
     this.dropCloud(this.spawnAt());
     this.pushHud(true);
@@ -1462,9 +1444,25 @@ export class RainGame {
     this.pushHud(true);
   }
 
-  /** Dev-only: what the player really earned, bottle by bottle. */
+  /** Bottle-by-bottle ledger (in-memory this session + `playbook()` for full history). */
   analytics(): { version: number; runs: unknown[] } {
     return this.state ? this.state.analytics() : { version: 1, runs: [] };
+  }
+
+  /** Full campaign play log (persists across saves; mirrored to balance/playthrough-log.json in dev). */
+  playbook(): PlaythroughLogFile {
+    return loadPlaythroughLog();
+  }
+
+  exportPlaybook(): void {
+    downloadPlaythroughLog(loadPlaythroughLog());
+  }
+
+  /** Dev-only: unlock and enter any island so themes can be checked without clearing the previous one. */
+  devVisit(world: number): void {
+    if (!import.meta.env.DEV || !this.state) return;
+    this.state.unlocked = Math.max(this.state.unlocked, world);
+    this.goto(world);
   }
 
   /** Dev-only visual QA hooks (scripts/shot.mjs); no-ops in production builds. */
@@ -1491,15 +1489,18 @@ export class RainGame {
   };
 
   private async boot(): Promise<void> {
-    const fresh = new URLSearchParams(window.location.search).has('fresh');
+    const params = new URLSearchParams(window.location.search);
+    const fresh = params.has('fresh');
     if (fresh) await clearProgress();
+    if (import.meta.env.DEV) {
+      if (fresh && params.has('clearPlaybook')) clearPlaythroughLog('?fresh&clearPlaybook');
+      else await hydratePlaythroughLog();
+    }
     const raw = fresh ? null : await readProgress();
     if (this.dead) return;
     const loaded = raw ? SaveState.fromJSON(raw) : null;
     this.state = loaded ?? SaveState.fresh();
     this.skipSave = false;
-    // Every boot opens on the world picker: the player picks a land, then it rains.
-    this.state.openStart();
     if (fresh) await this.saveNow();
     // Dev: `?finale` plays the 100% wave from a dry island. `?puff=10` previews the zoom-out.
     if (import.meta.env.DEV) {
@@ -1685,15 +1686,15 @@ export class RainGame {
         this.audio.restore();
       }
       if (hit.crits > 0) this.audio.crit();
-      const cast = state.tryCastAbility({
-        cloudX: this.cloudX,
-        cloudZ: this.cloudZ,
-        faceX: this.faceX,
-        faceZ: this.faceZ,
-        velX: this.cloudX - this.prevX,
-        velZ: this.cloudZ - this.prevZ,
-      });
-      if (cast) this.fireAbility(cast, state);
+    }
+    if (raining) {
+      const origin = this.castOrigin();
+      for (const id of state.readyAbilities()) {
+        if (this.weather.spawn(id, state, origin)) {
+          state.armAbility(id);
+          this.grin = Math.max(this.grin, 0.35);
+        }
+      }
     }
     state.tryCompleteIsland();
     if (this.syncRunPhase()) return;
@@ -1703,17 +1704,6 @@ export class RainGame {
           ? `CRIT +${formatSplashDew(splashDew)}`
           : `+${formatSplashDew(splashDew)}`;
       this.floatText(this.cloud.position.x, this.cloud.position.y + 0.45, label, splashCrits > 0);
-    }
-
-    if (
-      raining &&
-      !this.tornado &&
-      state.tornadoCd <= 0 &&
-      ABILITIES.tornado.enabled(state.ranks, state.world) &&
-      state.startTornado()
-    ) {
-      this.spawnTornado(state.consumeLifeStorm());
-      this.audio.zap();
     }
 
     this.babyAcc -= dt;
@@ -1728,26 +1718,6 @@ export class RainGame {
       if (Math.hypot(baby.x - this.cloudX, baby.z - this.cloudZ) < 0.85) baby.mesh.visible = false;
     }
     this.babies = this.babies.filter((b) => b.mesh.visible);
-
-    if (this.tornado) {
-      this.tornado.life -= dt;
-      this.tornado.x += this.faceX * 4.2 * dt;
-      this.tornado.z += this.faceZ * 4.2 * dt;
-      this.tornado.mesh.position.set(this.tornado.x, 1.05, this.tornado.z);
-      this.tornado.mesh.rotation.z += dt * 8;
-      this.tornado.acc += dt;
-      if (this.tornado.acc >= 0.12) {
-        this.tornado.acc = 0;
-        const spun = state.burst(this.tornado.x, this.tornado.z, 0.85 + state.ranks.twist * 0.28, 5 + state.ranks.twist * 3);
-        state.stampWaveAt(this.tornado.x, this.tornado.z, 1.1);
-        if (spun.filled > 0) this.grin = 0.35;
-      }
-      const outside = this.tornado.x < -2 || this.tornado.z < -2 || this.tornado.x > maxX + 2 || this.tornado.z > maxZ + 2;
-      if (this.tornado.life <= 0 || outside) {
-        this.scene.remove(this.tornado.mesh);
-        this.tornado = null;
-      }
-    }
 
     if (state.toast !== this.lastToast) {
       this.lastToast = state.toast;
@@ -1842,7 +1812,7 @@ export class RainGame {
       this.cloud.position.y = this.hoverY + bob;
     }
     this.spin = Math.max(0, this.spin - dt);
-    const twirl = this.spin > 0 ? (1 - this.spin / 0.48) * Math.PI * 2 : 0;
+    const twirl = this.spin > 0 ? t * 5.5 : 0;
     this.cloud.userData['roll'] = clamp(lean * 0.7, -0.28, 0.28) + twirl;
 
     const curtainMat = this.curtain.material as THREE.ShaderMaterial;
@@ -1861,6 +1831,7 @@ export class RainGame {
         mat.uniforms['uSeek'].value = seek * fade * 0.55;
       }
     }
+    this.stepScan(dt);
     this.updateRainRing(raining, state.reach());
     this.updateAuras(t, dt);
     if (raining) {
@@ -1917,6 +1888,7 @@ export class RainGame {
     }
     if (state.pulseDirty || !this.pulseTex) this.syncPulse();
     this.abilityVfx.update(dt);
+    this.weather.update(dt, this.cloudX, this.cloudZ, this.state);
     for (const pulse of state.takeGrowthPulses()) {
       this.burst(pulse.x, 1.05, pulse.z, 6 + pulse.stage * 2);
       this.audio.grow();
@@ -1954,6 +1926,7 @@ export class RainGame {
     const phaseNow: RunPhase = state.phase;
     if (phaseNow === this.lastPhase) return phaseNow !== 'play';
     if (phaseNow === 'finale') this.startWorldFinale();
+    if (phaseNow === 'dry') this.noteDrySpot();
     if (phaseNow !== 'play') {
       this.pushHud(true);
       void this.saveNow();
@@ -2101,6 +2074,7 @@ export class RainGame {
     if (!state) return;
     this.animals = [];
     this.boxes = [];
+    this.worldFlairMeshes = [];
     for (const fall of this.waterfalls) {
       this.track.remove(fall.fall);
       this.track.remove(fall.mist);
@@ -2109,10 +2083,7 @@ export class RainGame {
     this.waterfalls = [];
     this.clearGroup(this.track);
     this.views = [];
-    if (this.tornado) {
-      this.scene.remove(this.tornado.mesh);
-      this.tornado = null;
-    }
+    this.weather.clear();
     const art = this.art;
     const world = state.world;
     this.globe = world === GLOBE_WORLD;
@@ -2202,6 +2173,7 @@ export class RainGame {
     const maskSize = maskOf(world);
     this.maskTex = this.makeMask(state.pixels, maskSize.cols, maskSize.rows);
     this.pulseTex = this.makePulse(state.pulse, maskSize.cols, maskSize.rows);
+    this.playableTex = this.makePlayable(state.playableMask(), maskSize.cols, maskSize.rows);
     this.maskMats = [];
     this.terrain = null;
     let voxelMat: THREE.ShaderMaterial | null = null;
@@ -2211,6 +2183,7 @@ export class RainGame {
     const ground = terrain.buildMesh(
       this.maskTex,
       this.pulseTex,
+      this.playableTex,
       maskSize,
       this.timeU,
       fog,
@@ -2354,7 +2327,34 @@ export class RainGame {
 
     this.syncBoxes(true);
     this.syncCritters(0, 0, true);
+    this.syncWorldFlair();
     this.restoreWaterfalls();
+  }
+
+  /** Fun set dressing per island — snowmen, lanterns, cactus signs, toxic barrels. */
+  private syncWorldFlair(): void {
+    const state = this.state;
+    if (!state || this.globe || !this.terrain) return;
+    const world = state.world;
+    const tex = this.art.worldFlair[world];
+    if (!tex) return;
+    const spots = WORLD_FLAIR_SPOTS[world];
+    if (!spots?.length) return;
+    for (let i = 0; i < spots.length; i += 1) {
+      const spot = spots[i]!;
+      const at = flairWorldPoint(world, spot.u, spot.v);
+      const { col, row } = tileAtWorld(world, at.x, at.z);
+      if (!tileIsLand(world, col, row)) continue;
+      const gy = this.groundY(at.x, at.z);
+      const scale = spot.scale ?? 1;
+      const mesh = this.litBillboard(tex, 1.05 * scale, 1.42 * scale, 0.14);
+      mesh.position.set(at.x, gy + 0.04, at.z);
+      mesh.rotation.y = (i * 1.37 + spot.u * 4.2) % (Math.PI * 2);
+      mesh.userData['baseY'] = mesh.position.y;
+      mesh.userData['flair'] = i;
+      this.track.add(mesh);
+      this.worldFlairMeshes.push(mesh);
+    }
   }
 
   private dressView(view: TileView, index: number, restored: boolean, world: number): void {
@@ -2793,6 +2793,12 @@ export class RainGame {
       shadows.count = shadowIndex;
       shadows.instanceMatrix.needsUpdate = true;
     }
+    for (const mesh of this.worldFlairMeshes) {
+      const base = mesh.userData['baseY'] as number | undefined;
+      if (base == null) continue;
+      const i = (mesh.userData['flair'] as number) ?? 0;
+      mesh.position.y = base + Math.sin(t * 1.15 + i * 1.9) * 0.025;
+    }
   }
 
   /** 0–1 gust intensity sweeping across the board; shared by shaders, props and wind trails. */
@@ -2973,13 +2979,6 @@ export class RainGame {
       (mote.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, mote.life);
       mote.mesh.visible = mote.life > 0;
     }
-    for (const bolt of this.bolts) {
-      bolt.life -= dt;
-      bolt.mesh.scale.x = 1 + (0.25 - bolt.life) * 4;
-      (bolt.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, bolt.life * 4);
-      if (bolt.life <= 0) this.scene.remove(bolt.mesh);
-    }
-    this.bolts = this.bolts.filter((b) => b.life > 0);
     for (const ring of this.rings) {
       ring.life -= dt;
       const s = 1 + (1 - ring.life) * 14;
@@ -3095,7 +3094,10 @@ export class RainGame {
     const key = event.key.toLowerCase();
     if (key === ' ' || key === 'spacebar' || key.startsWith('arrow')) event.preventDefault();
     this.keys.add(key);
-    if (key === ' ' || key === 'spacebar') this.audio.unlock();
+    if (key === ' ' || key === 'spacebar') {
+      this.audio.unlock();
+      if (!event.repeat) this.pingScan();
+    }
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
@@ -3109,7 +3111,46 @@ export class RainGame {
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   }
 
-  /** The bottle pours on its own while a run is live. Steering does not start or stop it. */
+  /** One scan from the island centre. Every thirsty cell lights as the ring reaches it. */
+  pingScan(): void {
+    const state = this.state;
+    if (!state || this.globe) return;
+    if (state.screen !== 'play' || (state.phase !== 'play' && state.phase !== 'dry')) return;
+    if (this.scanT >= 0 && this.scanT < 0.45) return;
+    const focal = state.islandFocal();
+    this.scanOrigin.set(focal.x, focal.z);
+    this.scanReach = Math.max(6, state.islandCoverRadius() + 1.5);
+    this.scanTravel = clamp(1.8 + this.scanReach * 0.035, 2.2, 3.5);
+    this.scanT = 0;
+    this.audio.ui();
+    this.pushScan(0, 0);
+  }
+
+  private pushScan(radius: number, amp: number): void {
+    for (const mat of this.maskMats) {
+      const origin = mat.uniforms['uScanOrigin']?.value as THREE.Vector2 | undefined;
+      if (!origin || mat.uniforms['uScanRadius'] == null || mat.uniforms['uScanAmp'] == null) continue;
+      origin.copy(this.scanOrigin);
+      mat.uniforms['uScanRadius']!.value = radius;
+      mat.uniforms['uScanAmp']!.value = amp;
+    }
+  }
+
+  private stepScan(dt: number): void {
+    if (this.scanT < 0) return;
+    this.scanT += dt;
+    const rise = clamp(this.scanT / 0.16, 0, 1);
+    const travel = this.scanTravel;
+    const radius = Math.min(this.scanReach, (this.scanT / travel) * this.scanReach);
+    let amp = rise;
+    if (this.scanT > travel) amp = 1 - (this.scanT - travel) / 1.05;
+    if (amp <= 0) {
+      this.scanT = -1;
+      this.pushScan(this.scanReach, 0);
+      return;
+    }
+    this.pushScan(radius, amp);
+  }
   private wantsRain(): boolean {
     const state = this.state;
     return !!state && state.phase === 'play' && state.screen === 'play' && !this.introActive;
@@ -3608,6 +3649,21 @@ export class RainGame {
     state.maskDirty = false;
   }
 
+  private makePlayable(mask: Uint8Array, cols: number, rows: number): THREE.DataTexture {
+    const data = new Uint8Array(cols * rows);
+    const n = Math.min(mask.length, data.length);
+    for (let i = 0; i < n; i += 1) data[i] = mask[i] ? 255 : 0;
+    const tex = new THREE.DataTexture(data as never, cols, rows, THREE.RedFormat);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.flipY = false;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
   private makePulse(data: Uint8Array, cols: number, rows: number): THREE.DataTexture {
     const tex = new THREE.DataTexture(data as never, cols, rows, THREE.RedFormat);
     tex.magFilter = THREE.NearestFilter;
@@ -3636,11 +3692,19 @@ export class RainGame {
     state.pulseDirty = false;
   }
 
+  /** How much bigger this island is than the first, so the camera can frame it. */
+  private islandFrame(): number {
+    const world = this.state?.world ?? 0;
+    if (world === GLOBE_WORLD) return 1.6;
+    const { cols, rows } = gridOf(world);
+    return Math.hypot(cols, rows) / Math.hypot(11, 8);
+  }
+
   /** Camera pull-back vs puff size; lerps so upgrades feel like stepping back. */
   private cameraGrowPull(dt: number): number {
     if (this.introActive) return this.camGrowPull;
     const scale = Math.max(BASE_SCALE, this.state?.scale() ?? BASE_SCALE);
-    const target = growPullForScale(scale);
+    const target = growPullForScale(scale, this.islandFrame());
     if (dt <= 0) {
       this.camGrowPull = target;
       return target;
@@ -3653,14 +3717,14 @@ export class RainGame {
     const pull = this.cameraGrowPull(dt);
     if (this.globe) return (9 + 6 / pull) * Math.pow(pull, 0.35);
     // Local rig: the fog band follows the close framing, not the whole island.
-    return clamp(CAM_FRAME_SPAN * 0.34 * pull, 6.2, 36);
+    return clamp(CAM_FRAME_SPAN * 0.34 * pull, 6.2, 78);
   }
 
   /** Point on a virtual sky shell at the given screen NDC position (sun, clouds, distant islands). */
   private skyPoint(ndcX: number, ndcY: number, dist: number): THREE.Vector3 {
-    const v = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(this.camera);
-    const dir = v.sub(this.camera.position).normalize();
-    return this.camera.position.clone().addScaledVector(dir, dist);
+    this.skyNdc.set(ndcX, ndcY, 0.5).unproject(this.camera);
+    this.skyNdc.sub(this.camera.position).normalize();
+    return this.skyScratch.copy(this.camera.position).addScaledVector(this.skyNdc, dist);
   }
 
   private dressSky(t: number): void {
@@ -3928,6 +3992,20 @@ export class RainGame {
     return { x: ((cols - 1) * TILE) / 2, z: ((rows - 1) * TILE) * 0.52 };
   }
 
+  /** Next bottle on this island starts where the last one ran dry. */
+  private bottleStart(): { x: number; z: number } {
+    const state = this.state;
+    const spot = this.resumeAt;
+    if (!state || !spot || spot.world !== state.world) return this.spawnAt();
+    return { x: spot.x, z: spot.z };
+  }
+
+  private noteDrySpot(): void {
+    const state = this.state;
+    if (!state) return;
+    this.resumeAt = { world: state.world, x: this.cloudX, z: this.cloudZ };
+  }
+
   private dropCloud(at: { x: number; z: number }): void {
     this.cloudX = at.x;
     this.cloudZ = at.z;
@@ -3971,40 +4049,6 @@ export class RainGame {
     mesh.position.set(x, 2.5, z);
     this.scene.add(mesh);
     this.babies.push({ mesh, x, z });
-  }
-
-  private spawnTornado(lifeStorm = false): void {
-    if (this.tornado) this.scene.remove(this.tornado.mesh);
-    const len = Math.hypot(this.faceX, this.faceZ) || 1;
-    this.faceX /= len;
-    this.faceZ /= len;
-    const mesh = this.billboard(this.art.tornado, 1.15, 1.35, 0.15);
-    if (lifeStorm) (mesh.material as THREE.MeshBasicMaterial).color.set('#9ef0b4');
-    mesh.position.set(this.cloudX, 1.05, this.cloudZ);
-    this.scene.add(mesh);
-    this.tornado = { mesh, x: this.cloudX, z: this.cloudZ, life: lifeStorm ? 4.2 : 3.4, acc: 0 };
-    if (lifeStorm) {
-      this.abilityVfx.play(
-        'lifestorm',
-        this.cloudX,
-        this.groundY(this.cloudX, this.cloudZ),
-        this.cloudZ,
-        this.state?.reach() ?? 1,
-      );
-    }
-  }
-
-  private flashBolt(center: number): void {
-    const at = this.views[center] ?? this.tilePos(center);
-    const x = 'x' in at ? at.x : 0;
-    const z = 'z' in at ? at.z : 0;
-    const mesh = new THREE.Mesh(boltGeometry(6.4, 0.13), boltMaterial());
-    mesh.position.set(x, 3.2, z);
-    mesh.userData['bb'] = 1;
-    this.scene.add(mesh);
-    this.bolts.push({ mesh, life: 0.24 });
-    // The strike lands with a flash on the ground.
-    this.rippleAt(x, z, '#dff4ff');
   }
 
   private rippleAt(x: number, z: number, color: string): void {
@@ -4063,7 +4107,7 @@ export class RainGame {
     }
   }
 
-  private floatText(x: number, y: number, text: string, crit: boolean): void {
+  private floatText(x: number, y: number, text: string, crit: boolean, z = 0): void {
     const floater = this.texts.find((f) => f.life <= 0);
     if (!floater) return;
     const mat = floater.mesh.material as THREE.MeshBasicMaterial;
@@ -4083,7 +4127,7 @@ export class RainGame {
     ctx.fillStyle = grd;
     ctx.fillText(text, canvas.width / 2, 62);
     map.needsUpdate = true;
-    floater.mesh.position.set(x, y, 0);
+    floater.mesh.position.set(x, y, z);
     floater.mesh.scale.setScalar(1);
     floater.life = 1.05;
     floater.vy = 0.7;
@@ -4150,16 +4194,15 @@ export class RainGame {
   }
 
   private propMesh(decor: Decor, world: number, index: number): THREE.Mesh | null {
-    void world;
     void index;
     const upright = (mesh: THREE.Mesh) => {
       mesh.userData['upright'] = 1;
       return this.anchorAtBase(mesh);
     };
-    if (decor === 'tree') return upright(this.litBillboard(this.art.sapling, 2.6, 3.6, 0.12));
-    if (decor === 'bush') return upright(this.litBillboard(this.art.bushDead, 0.72, 0.55, 0.2));
+    if (decor === 'tree') return upright(this.litBillboard(this.art.saplingByWorld[world] ?? this.art.sapling, 2.6, 3.6, 0.12));
+    if (decor === 'bush') return upright(this.litBillboard(this.art.bushDeadByWorld[world] ?? this.art.bushDead, 0.72, 0.55, 0.2));
     if (decor === 'rock') return upright(this.litBillboard(this.art.rock, 0.62, 0.42, 0.2));
-    return upright(this.litBillboard(this.art.twig, 0.55, 0.4, 0.18));
+    return upright(this.litBillboard(this.art.twigByWorld[world] ?? this.art.twig, 0.55, 0.4, 0.18));
   }
 
   /**
@@ -4175,21 +4218,21 @@ export class RainGame {
   private propTexture(decor: Decor, step: number, world: number, index: number): THREE.Texture {
     const art = this.art;
     if (decor === 'tree') {
-      // Every island grows its own grove.
       const grove = art.groveByWorld[world] ?? art.grove;
       if (step === 2) return grove[(index + world * 3) % grove.length] ?? art.liveTree[0]!;
-      if (step === 1) return art.sapling;
+      if (step === 1) return art.saplingByWorld[world] ?? art.sapling;
       return art.deadTree[world] ?? art.deadTree[0]!;
     }
     if (decor === 'bush') {
       if (step === 2) return art.bushByWorld[world] ?? art.bushLive;
-      return step === 1 ? art.bushSprout : art.bushDead;
+      if (step === 1) return art.bushSproutByWorld[world] ?? art.bushSprout;
+      return art.bushDeadByWorld[world] ?? art.bushDead;
     }
     if (decor === 'rock') {
       if (world === 3 && step === 0) return art.barrel;
       return step === 1 ? art.rockMoss : art.rock;
     }
-    return step === 1 ? art.flowers : art.twig;
+    return step === 1 ? (art.flowersByWorld[world] ?? art.flowers) : (art.twigByWorld[world] ?? art.twig);
   }
 
   private glowTexture(
@@ -4377,13 +4420,17 @@ export class RainGame {
   private resize(): void {
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
+    const bw = Math.max(1, Math.round(w * this.renderScale));
+    const bh = Math.max(1, Math.round(h * this.renderScale));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h, false);
-    this.composer.setSize(w, h);
-    this.bloom.setSize(w, h);
+    this.renderer.setSize(bw, bh, false);
+    this.composer.setSize(bw, bh);
+    this.composer.renderTarget1.samples = this.msaaSamples;
+    this.composer.renderTarget2.samples = this.msaaSamples;
+    this.bloom.setSize(bw, bh);
     const texel = this.tilt.uniforms['uTexel']?.value as THREE.Vector2 | undefined;
-    if (texel) texel.set(1 / (w * this.renderer.getPixelRatio()), 1 / (h * this.renderer.getPixelRatio()));
+    if (texel) texel.set(1 / bw, 1 / bh);
   }
 
   private clearGroup(group: THREE.Group): void {

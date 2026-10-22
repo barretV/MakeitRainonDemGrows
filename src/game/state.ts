@@ -12,7 +12,13 @@ import {
   tileSpec,
   worldDef,
 } from './balance';
-import { abilityCooldown, pickAutoAbility, type AbilityId, ABILITIES } from './abilities';
+import {
+  loadPlaythroughLog,
+  recordPlaythroughBottle,
+  recordPlaythroughMilestone,
+  type BottleEndReason,
+} from './playthroughLog';
+import { abilityCooldown, readyCasts, WEATHER_CASTS, type AbilityId, ABILITIES } from './abilities';
 import {
   growthStage,
   type GrowthPulseEvent,
@@ -190,8 +196,6 @@ export interface HudModel {
   pocketsLeft: number;
   /** How much of the island is still thirsty, 0-1. */
   dryFraction: number;
-  nextAbility: string;
-  abilityCdNorm: number;
   revivalGlow: number;
   /** 0–1 during the 100% restoration spectacle (play screen). */
   finaleProgress: number;
@@ -403,8 +407,6 @@ export class SaveState {
   maskDirty = false;
   pulseDirty = false;
   abilityCds: Record<string, number> = {};
-  nextAbilityId: AbilityId | '' = '';
-  lifeStormPulse = false;
   revivalGlow = 0;
   finaleProgress = 0;
   newBest = false;
@@ -579,10 +581,27 @@ export class SaveState {
   }
 
   /**
-   * Dev-only export of what the player actually earned, bottle by bottle.
+   * Export of what the player actually earned, bottle by bottle.
    * `balance/analytics.py` compares this against the simulator.
    */
   analytics(): { version: number; runs: RunLogEntry[] } {
+    const persisted = loadPlaythroughLog().bottles;
+    if (persisted.length > 0) {
+      return {
+        version: 1,
+        runs: persisted.map((b) => ({
+          world: b.world,
+          run: b.run,
+          seconds: b.seconds,
+          dew: b.dew,
+          cells: b.cells,
+          blooms: b.blooms,
+          radius: b.radius,
+          ratio: b.ratio,
+          buys: b.buys,
+        })),
+      };
+    }
     return { version: 1, runs: this.runLog };
   }
 
@@ -602,15 +621,12 @@ export class SaveState {
     this.toast = earned - had > 1 ? 'Blooms open!' : 'A bloom opens!';
   }
 
-  /**
-   * Dev-only: close the books on the bottle that just ended. The simulator is
-   * only a guess, this is what the game really paid.
-   */
-  private logRun(): void {
-    if (!import.meta.env.DEV || !this.runOpen) return;
+  /** Close the books on the bottle that just ended (dry or island cleared). */
+  private logRun(reason: BottleEndReason = 'dry'): void {
+    if (!this.runOpen) return;
     this.runOpen = false;
     this.runIndex += 1;
-    this.runLog.push({
+    const entry: RunLogEntry = {
       world: this.world,
       run: this.runIndex,
       seconds: Math.round(this.bottleTime() * 10) / 10,
@@ -620,7 +636,18 @@ export class SaveState {
       radius: Math.round(this.reach() * 100) / 100,
       ratio: Math.round(this.ratio() * 1000) / 1000,
       buys: [...this.runBuys],
-    });
+    };
+    if (import.meta.env.DEV) {
+      this.runLog.push(entry);
+      recordPlaythroughBottle(entry, {
+        peak: this.runReached,
+        best: this.best[this.world] ?? 0,
+        dewWallet: walletDew(this.dew),
+        ranks: this.ranks,
+        unlocked: this.unlocked,
+        reason,
+      });
+    }
     this.runBuys = [];
     this.runBlooms = 0;
   }
@@ -673,6 +700,7 @@ export class SaveState {
       this.tank = Math.max(0, this.tank - (drainPerSec(this.ranks) / max) * dt);
       if (this.tank <= 0.001) {
         this.tank = 0;
+        this.reconcileLandProgress();
         this.captureRunPeak();
         this.phase = 'dry';
         this.screen = 'results';
@@ -730,6 +758,15 @@ export class SaveState {
     return mask;
   }
 
+  /**
+   * Cells the player can restore before the finale. Sea and the scenic shore
+   * rim are excluded — those only green up in the end cinematic.
+   */
+  playableMask(): Uint8Array {
+    const { cols, rows } = maskOf(this.world);
+    return this.landOf(this.world, cols, rows);
+  }
+
   /** How many cells of the island are land. The sea does not count. */
   landCells(world = this.world): number {
     const { cols, rows } = maskOf(world);
@@ -770,10 +807,9 @@ export class SaveState {
     this.growthPulses = [];
     this.pulse.fill(0);
     // Ocean progress used to inflate the percentage. Drop it before the pixels rebuild.
-    this.scrubSea();
+    this.reconcileLandProgress();
     this.rebuildMaskPixels();
     this.refreshGreenFromProgress();
-    this.recountLand();
   }
 
   /**
@@ -786,7 +822,15 @@ export class SaveState {
     for (let i = 0; i < this.progress.length; i += 1) {
       if (land[i]) continue;
       this.progress[i] = 0;
+      this.waterPool[i] = 0;
     }
+  }
+
+  /** Land-only progress total. Sea soak used to inflate the % until the next bottle. */
+  private reconcileLandProgress(): void {
+    this.scrubSea();
+    this.recountLand();
+    this.dryCache = null;
   }
 
   /**
@@ -1226,16 +1270,6 @@ export class SaveState {
     }
   }
 
-  flagLifeStorm(): void {
-    this.lifeStormPulse = true;
-  }
-
-  consumeLifeStorm(): boolean {
-    if (!this.lifeStormPulse) return false;
-    this.lifeStormPulse = false;
-    return true;
-  }
-
   tickAbilityCooldowns(dt: number): void {
     for (const key of Object.keys(this.abilityCds)) {
       this.abilityCds[key] = Math.max(0, (this.abilityCds[key] ?? 0) - dt);
@@ -1243,46 +1277,32 @@ export class SaveState {
     this.lightningCd = Math.max(0, this.lightningCd - dt);
     this.tornadoCd = Math.max(0, this.tornadoCd - dt);
     this.spinCd = Math.max(0, this.spinCd - dt);
-    const next = pickAutoAbility(this, this.abilityCds);
-    this.nextAbilityId = next ?? '';
-    if (next) {
-      const cd = abilityCooldown(next, this.ranks);
-      const left = this.abilityCds[next] ?? 0;
-      this.nextAbilityId = next;
-      void cd;
-      void left;
-    }
   }
 
-  abilityTelegraph(): { id: string; cdNorm: number } {
-    const id = this.nextAbilityId;
-    if (!id) return { id: '', cdNorm: 0 };
-    const cd = abilityCooldown(id, this.ranks);
-    const left = this.abilityCds[id] ?? 0;
-    return { id: ABILITIES[id].label, cdNorm: cd > 0 ? 1 - left / cd : 0 };
+  /** Weather whose hidden timers have elapsed. They fire together, not one at a time. */
+  readyAbilities(): AbilityId[] {
+    if (this.phase !== 'play' || this.tank < 0.02) return [];
+    return readyCasts(this, this.abilityCds);
+  }
+
+  /** Start the hidden timer after the effect actually appears. */
+  armAbility(id: AbilityId): void {
+    this.abilityCds[id] = abilityCooldown(id, this.ranks);
+    if (id === 'sprinkler') this.spinCd = SPIN_CD;
+    if (id === 'lightning') this.lightningCd = LIGHTNING_CD;
+    if (id === 'tornado') this.tornadoCd = abilityCooldown('tornado', this.ranks);
   }
 
   resetAbilityCooldowns(short = false): void {
-    for (const id of Object.keys(ABILITIES) as AbilityId[]) {
+    let i = 0;
+    for (const id of WEATHER_CASTS) {
       const def = ABILITIES[id];
       if (!def.enabled(this.ranks, this.world)) continue;
       const cd = abilityCooldown(id, this.ranks);
-      this.abilityCds[id] = short ? Math.min(6, cd * 0.28) : cd;
+      // Stagger the first beats of a bottle so the storms arrive one after another.
+      this.abilityCds[id] = short ? Math.min(cd, 1.1 + i * 1.35) : cd;
+      i += 1;
     }
-  }
-
-  tryCastAbility(ctx: import('./abilities').AbilityContext): AbilityId | null {
-    if (this.phase !== 'play' || this.tank < 0.08) return null;
-    const id = pickAutoAbility(this, this.abilityCds);
-    if (!id) return null;
-    const cd = abilityCooldown(id, this.ranks);
-    if ((this.abilityCds[id] ?? 0) > 0) return null;
-    this.abilityCds[id] = cd;
-    if (id === 'sprinkler') this.spinCd = SPIN_CD;
-    if (id === 'lightning') this.lightningCd = LIGHTNING_CD;
-    if (id === 'tornado') this.tornadoCd = TORNADO_CD;
-    ABILITIES[id].execute(this, ctx);
-    return id;
   }
 
   takeGrowthPulses(): GrowthPulseEvent[] {
@@ -1346,6 +1366,7 @@ export class SaveState {
     const transfers: Array<{ from: number; to: number; amt: number }> = [];
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
+        if (!this.isLand(c, r)) continue;
         const i = r * cols + c;
         const pool = this.waterPool[i] ?? 0;
         if (pool <= eps) continue;
@@ -1363,6 +1384,7 @@ export class SaveState {
           const nr = pair[1];
           if (nc === undefined || nr === undefined) continue;
           if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+          if (!this.isLand(nc, nr)) continue;
           const ni = nr * cols + nc;
           const nProg = this.progress[ni] ?? 0;
           const nPool = this.waterPool[ni] ?? 0;
@@ -1379,12 +1401,13 @@ export class SaveState {
       }
     }
     for (const t of transfers) {
+      const bc = t.to % cols;
+      const br = Math.floor(t.to / cols);
+      if (!this.isLand(bc, br)) continue;
       this.waterPool[t.from] = (this.waterPool[t.from] ?? 0) - t.amt;
       this.waterPool[t.to] = (this.waterPool[t.to] ?? 0) + t.amt;
       const nProg = this.progress[t.to] ?? 0;
       if (nProg < hp) {
-        const bc = t.to % cols;
-        const br = Math.floor(t.to / cols);
         const at = this.cellCenter(bc, br, cols, rows);
         if (this.gap(this.rainX, this.rainZ, at.x, at.z) > this.reach() * 1.05) continue;
         this.applySoak(t.to, bc, br, cols, rows, t.amt * poolFlow(this.ranks), hp, false, 0);
@@ -1514,6 +1537,60 @@ export class SaveState {
       }
     }
     return max + 2.5;
+  }
+
+  /**
+   * A thirsty cell, sampled so a cast does not walk the whole mask.
+   * Prefers land away from the origin when minDist is set.
+   */
+  driestNear(originX: number, originZ: number, minDist = 0, maxDist = Number.POSITIVE_INFINITY): { x: number; z: number } | null {
+    const { cols, rows } = maskOf(this.world);
+    const hp = cellHp(this.world);
+    const stride = Math.max(3, Math.floor(Math.min(cols, rows) / 36));
+    let best: { x: number; z: number; score: number } | null = null;
+    let any: { x: number; z: number; score: number } | null = null;
+    for (let r = 1; r < rows; r += stride) {
+      for (let c = 1; c < cols; c += stride) {
+        if (!this.isLand(c, r)) continue;
+        const prog = this.progress[r * cols + c] ?? 0;
+        if (prog >= hp * 0.98) continue;
+        const at = this.cellCenter(c, r, cols, rows);
+        const dist = this.gap(originX, originZ, at.x, at.z);
+        const thirst = 1 - prog / hp;
+        const score = thirst + Math.min(dist, 8) * 0.05;
+        const spot = { x: at.x, z: at.z, score };
+        if (!any || spot.score > any.score) any = spot;
+        if (dist < minDist || dist > maxDist) continue;
+        if (!best || spot.score > best.score) best = spot;
+      }
+    }
+    const pick = best ?? any;
+    return pick ? { x: pick.x, z: pick.z } : null;
+  }
+
+  /** A crossing over the island for a tidal sheet or a mirage wave. */
+  sheetRun(length: number): { x: number; z: number; dx: number; dz: number; length: number } | null {
+    const focal = this.islandFocal();
+    const far = this.driestNear(focal.x, focal.z, Math.min(2.5, length * 0.25));
+    if (!far) return null;
+    let dx = far.x - focal.x;
+    let dz = far.z - focal.z;
+    const mag = Math.hypot(dx, dz) || 1;
+    dx /= mag;
+    dz /= mag;
+    if (Math.random() < 0.5) {
+      const swap = dx;
+      dx = -dz;
+      dz = swap;
+    }
+    const travel = Math.max(2.8, length);
+    return {
+      x: focal.x - dx * travel * 0.5,
+      z: focal.z - dz * travel * 0.5,
+      dx,
+      dz,
+      length: travel,
+    };
   }
 
   isRestored(index: number, world = this.world): boolean {
@@ -1832,8 +1909,6 @@ export class SaveState {
       patchesLeft: dry.cells,
       pocketsLeft: dry.pockets,
       dryFraction: dry.total > 0 ? dry.cells / dry.total : 0,
-      nextAbility: this.abilityTelegraph().id,
-      abilityCdNorm: this.abilityTelegraph().cdNorm,
       revivalGlow: this.phase === 'finale' ? Math.max(this.revivalGlow, 0.85 + this.finaleProgress * 0.4) : this.revivalGlow,
       finaleProgress: this.finaleProgress,
     };
@@ -1960,7 +2035,10 @@ export class SaveState {
     const was = this.progress[index] ?? 0;
     if (value === was) return;
     this.progress[index] = value;
-    this.progressSum += value - was;
+    const { cols } = maskOf(this.world);
+    const c = index % cols;
+    const r = Math.floor(index / cols);
+    if (this.isLand(c, r)) this.progressSum += value - was;
   }
 
   private applySoak(
@@ -1974,6 +2052,7 @@ export class SaveState {
     respectPatches: boolean,
     gate: number,
   ): { dew: number; filled: number; crits: number; hill: number } {
+    if (!this.isLand(c, r)) return { dew: 0, filled: 0, crits: 0, hill: -1 };
     const was = this.progress[index] ?? 0;
     if (was >= hp) return { dew: 0, filled: 0, crits: 0, hill: -1 };
     let crit = false;
@@ -2257,7 +2336,7 @@ export class SaveState {
   beginFinale(): void {
     if (this.phase !== 'play') return;
     this.captureRunPeak();
-    this.logRun();
+    this.logRun('cleared');
     this.phase = 'finale';
     this.screen = 'play';
     this.finaleProgress = 0;
@@ -2395,6 +2474,10 @@ export class SaveState {
     this.noteBest();
     if (this.world < GLOBE_WORLD && this.unlocked < this.world + 1) this.unlocked = this.world + 1;
     this.toast = `${worldDef(this.world).name} is green again.`;
+    recordPlaythroughMilestone('world_cleared', this.world, worldDef(this.world).name);
+    if (this.world < GLOBE_WORLD) {
+      recordPlaythroughMilestone('world_unlocked', this.world + 1, worldDef(this.world + 1).name);
+    }
     this.claim();
     this.screen = this.world < GLOBE_WORLD ? 'worlds' : 'results';
   }

@@ -31,8 +31,8 @@ function useTouchControls(): boolean {
   return touch;
 }
 
-function Key({ children }: { children: ReactNode }) {
-  return <span className="hud-controls__key">{children}</span>;
+function Key({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  return <span className={`hud-controls__key${wide ? ' hud-controls__key--wide' : ''}`}>{children}</span>;
 }
 
 /**
@@ -42,7 +42,10 @@ function Key({ children }: { children: ReactNode }) {
 function ControlHints() {
   const touch = useTouchControls();
   return (
-    <div className="hud-controls pixel pointer-events-auto" aria-label="How to play">
+    <div
+      className={`hud-controls pixel pointer-events-auto${touch ? '' : ' hud-controls--keyboard'}`}
+      aria-label="How to play"
+    >
       <span className="hud-controls__title">Controls</span>
       <div className="hud-controls__row">
         {touch ? (
@@ -83,6 +86,12 @@ function ControlHints() {
                 <Key>E</Key>
               </span>
               <span className="hud-controls__verb">Turn</span>
+            </span>
+            <span className="hud-controls__item">
+              <span className="hud-controls__keys" aria-hidden>
+                <Key wide>Space</Key>
+              </span>
+              <span className="hud-controls__verb">Scan</span>
             </span>
           </>
         )}
@@ -192,6 +201,15 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             </div>
             <ControlHints />
           </div>
+          <button
+            type="button"
+            className="hud-ping pixel"
+            aria-label="Scan for land that still needs water"
+            onClick={() => game.pingScan()}
+          >
+            <span className="hud-ping__ring" aria-hidden />
+            <span className="hud-ping__label">Scan</span>
+          </button>
           {model.patchesLeft > 0 && model.restored > 0.35 && model.restored < 0.99 && (
             <div className="hud-patches pixel" aria-label={`${model.pocketsLeft} spots left to restore`}>
               <span className="hud-patches__count tabular-nums">{model.pocketsLeft}</span>
@@ -240,21 +258,6 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
         </div>
       )}
 
-      {playing && model.nextAbility && (
-        <div
-          className="hud-ability-telegraph pointer-events-none absolute top-[18%] right-[2%] select-none"
-          aria-hidden
-        >
-          <div
-            className="hud-ability-telegraph__ring"
-            style={{
-              background: `conic-gradient(var(--color-primary) ${model.abilityCdNorm * 360}deg, rgba(0,0,0,0.45) 0deg)`,
-            }}
-          />
-          <span className="hud-ability-telegraph__label">{model.nextAbility}</span>
-        </div>
-      )}
-
       {playing && (
         <div className="hud-cam-rig pointer-events-auto absolute top-[2.6%] right-[2%] z-20 flex flex-col items-end gap-1.5 select-none">
           <div className="hud-cam-rig__cluster pixel" role="toolbar" aria-label="Camera">
@@ -294,6 +297,26 @@ export function Hud({ model, game }: { model: HudModel; game: RainGame }) {
             />
           </div>
           <p className="menu-card__sub mt-3">Full wipe needs Reset below (browser cache alone keeps saved dew).</p>
+          {import.meta.env.DEV && (
+            <div className="mt-3 grid gap-1">
+              <p className="menu-card__sub">Dev · any island</p>
+              {model.worlds.map((world) => (
+                <button
+                  key={world.index}
+                  type="button"
+                  className="menu-row"
+                  onClick={() => {
+                    game.audio.ui();
+                    game.devVisit(world.index);
+                    setGear(false);
+                  }}
+                >
+                  {world.name}
+                  {world.current ? ' · here' : ''}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             className="menu-row mt-2 w-full border-red-400/30 text-red-200"
@@ -507,10 +530,11 @@ function Worlds({ model, game, start = false }: { model: HudModel; game: RainGam
           {model.worlds.map((world) => (
             <button
               key={world.index}
-              disabled={world.locked}
+              disabled={world.locked && !import.meta.env.DEV}
               onClick={() => {
                 game.audio.ui();
-                game.goto(world.index);
+                if (import.meta.env.DEV) game.devVisit(world.index);
+                else game.goto(world.index);
               }}
               className="menu-row"
             >

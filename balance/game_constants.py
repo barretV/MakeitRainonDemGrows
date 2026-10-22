@@ -11,9 +11,9 @@ GLOBE_WORLD = 4
 # hp is tuned so that pour still takes about twenty minutes to finish an island.
 WORLDS = [
     (11, 8, 133, 97, 76, 3),
-    (18, 16, 244, 217, 3070, 2),
-    (31, 24, 355, 275, 2400, 3),
-    (34, 26, 340, 260, 13700, 5),
+    (18, 16, 244, 217, 700, 3),
+    (31, 24, 355, 275, 1040, 3),
+    (34, 26, 340, 260, 2200, 5),
     (14, 9, 800, 120, 1120000, 300),
 ]
 
@@ -145,6 +145,7 @@ def prereq(node, state):
         "spring": state["mist"] >= 2,
         "circle": state["reach"] >= 1,
         "waterbomb": state["circle"] >= 1,
+        "tide": state["waterbomb"] >= 1,
         "wide": state["circle"] >= 1,
         "horizon": state["wide"] >= 2,
         "mirage": state["wide"] >= 1,
@@ -156,9 +157,10 @@ def prereq(node, state):
         "crit": state["bounty"] >= 1,
         "sprinkler": state["drizzle"] >= 1,
         "spin": state["sprinkler"] >= 1,
+        "drone": state["sprinkler"] >= 1,
         "lightning": state["sprinkler"] >= 1 and state["specks"] >= 2,
         "zap": state["lightning"] >= 1,
-        "tornado": state["lightning"] >= 1 and state["zap"] >= 1,
+        "tornado": state["lightning"] >= 1,
         "twist": state["tornado"] >= 1,
         "blush": puff >= 1,
         "bow": state["blush"] >= 1,
@@ -204,7 +206,7 @@ def rain_radius(state):
         * (1 + 0.06 * state["spin"])
         * (1 + 0.12 * state["lightning"])
         * (1 + 0.04 * state["zap"])
-        * (1 + 0.12 * state["tornado"])
+        * (1 + 0.07 * state["tornado"])
         * (1 + 0.04 * state["twist"])
         * (1 + 0.12 * state["monsoon"])
     )

@@ -26,6 +26,7 @@ export type NodeId =
   | 'crit'
   | 'sprinkler'
   | 'spin'
+  | 'drone'
   | 'lightning'
   | 'zap'
   | 'tornado'
@@ -36,6 +37,7 @@ export type NodeId =
   | 'hail'
   | 'mirage'
   | 'waterbomb'
+  | 'tide'
   | 'purify'
   | 'monsoon'
   | 'blush'
@@ -94,6 +96,7 @@ export const NODE_IDS: readonly NodeId[] = [
   'wide',
   'horizon',
   'waterbomb',
+  'tide',
   'mirage',
   'charm',
   'dew',
@@ -103,6 +106,7 @@ export const NODE_IDS: readonly NodeId[] = [
   'purify',
   'sprinkler',
   'spin',
+  'drone',
   'lightning',
   'zap',
   'tornado',
@@ -132,6 +136,7 @@ export const PRIORITY: readonly NodeId[] = [
   'reach',
   'circle',
   'sprinkler',
+  'drone',
   'spin',
   'lightning',
   'zap',
@@ -157,6 +162,7 @@ export const PRIORITY: readonly NodeId[] = [
   'glacier',
   'mirage',
   'waterbomb',
+  'tide',
   'purify',
   'tornado',
   'twist',
@@ -383,7 +389,7 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'reach',
     kind: 'upgrade',
     name: 'Water Bomb',
-    desc: 'Lobs a soaking splash ahead of the cloud.',
+    desc: 'A fat drop arcs out and craters a dry patch.',
     max: 7,
     color: '#7ec8f0',
     costs: [1698429, 1953193, 2246171, 2583097, 2970560, 3416144, 3928566],
@@ -404,6 +410,20 @@ const NODES: readonly UpgradeNode[] = [
     blooms: [1, 0, 0, 0, 0, 0, 0],
     worldMin: 2,
     effect: (level) => `Wave +${level}`,
+  },
+  {
+    id: 'tide',
+    parent: 'waterbomb',
+    branch: 'reach',
+    kind: 'upgrade',
+    name: 'Tidal Sheet',
+    desc: 'A wall of water rolls across a strip of the island.',
+    max: 3,
+    color: '#7ec8f0',
+    costs: [750000, 14000000, 21000000],
+    blooms: [1, 1, 2],
+    worldMin: 3,
+    effect: (level) => `Sheet +${level}`,
   },
   // ------------------------------------------------------------- fortune
   {
@@ -489,7 +509,7 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'storm',
     kind: 'gate',
     name: 'Sprinkler',
-    desc: 'The cloud spins and paints a ring of rain behind it.',
+    desc: 'The cloud spins out jets of water, like a lawn sprinkler.',
     max: 1,
     color: '#ff9bb8',
     costs: [17],
@@ -502,12 +522,25 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'storm',
     kind: 'upgrade',
     name: 'Spin',
-    desc: 'The ring reaches further.',
+    desc: 'More jets, and they reach further.',
     max: 3,
     color: '#ff9bb8',
     costs: [17, 4400, 1482969],
     blooms: [1, 0, 0],
-    effect: (level) => `Ring +${level}`,
+    effect: (level) => `${4 + level} jets`,
+  },
+  {
+    id: 'drone',
+    parent: 'sprinkler',
+    branch: 'storm',
+    kind: 'upgrade',
+    name: 'Drizzle Drones',
+    desc: 'Little clouds fly off and rain on land you have not touched.',
+    max: 3,
+    color: '#9fd7ff',
+    costs: [1200, 18000, 240000],
+    blooms: [1, 1, 1],
+    effect: (level) => `${level} drone${level === 1 ? '' : 's'}`,
   },
   {
     id: 'lightning',
@@ -515,12 +548,13 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'storm',
     kind: 'gate',
     name: 'Water Bolt',
-    desc: 'A bolt finishes a tight circle of patches.',
+    desc: 'A bolt falls on dead ground and wakes the spot.',
     max: 1,
     color: '#ffd56a',
-    costs: [1497627],
+    costs: [22000],
     blooms: [1],
-    effect: () => 'Bolt unlocked',
+    worldMin: 1,
+    effect: () => 'Sky bolt',
   },
   {
     id: 'zap',
@@ -528,7 +562,7 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'storm',
     kind: 'upgrade',
     name: 'Zap',
-    desc: 'The bolt covers more patches.',
+    desc: 'A second bolt follows the first.',
     max: 3,
     color: '#ffd56a',
     costs: [1729115, 1988482, 56998335],
@@ -541,10 +575,10 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'storm',
     kind: 'gate',
     name: 'Water Spout',
-    desc: 'A twister walks ahead and greens what it touches.',
+    desc: 'A waterspout hunts dead ground and leaves a green trail.',
     max: 4,
     color: '#d7c4ff',
-    costs: [697446631, 1894330933, 5367687457, 14877496141],
+    costs: [12000, 1894330933, 5367687457, 14877496141],
     blooms: [1, 0, 0, 0],
     worldMin: 1,
     effect: () => 'Spout unlocked',
@@ -555,7 +589,7 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'storm',
     kind: 'upgrade',
     name: 'Twist',
-    desc: 'A fatter twister.',
+    desc: 'A fatter spout that stays out longer.',
     max: 7,
     color: '#d7c4ff',
     costs: [619823651, 1701364217, 4796920081, 13006574943, 25934190676, 45933940806, 81865148337],
@@ -570,11 +604,12 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'spark',
     kind: 'upgrade',
     name: 'Geyser Burst',
-    desc: 'Auto geysers punch through dry ground when you pour.',
+    desc: 'A geyser punches up out of dry ground.',
     max: 6,
     color: '#5ec8ff',
-    costs: [200001210, 319799845, 559068439, 1501217668, 4296497954, 11006583631],
+    costs: [26000, 319799845, 559068439, 1501217668, 4296497954, 11006583631],
     blooms: [1, 1, 2, 2, 2, 2],
+    worldMin: 1,
     effect: (level) => `Geyser rank ${level}`,
   },
   {
@@ -764,6 +799,7 @@ export function emptyRanks(): Ranks {
     crit: 0,
     sprinkler: 0,
     spin: 0,
+    drone: 0,
     lightning: 0,
     zap: 0,
     tornado: 0,
@@ -774,6 +810,7 @@ export function emptyRanks(): Ranks {
     hail: 0,
     mirage: 0,
     waterbomb: 0,
+    tide: 0,
     purify: 0,
     monsoon: 0,
     blush: 0,
@@ -862,12 +899,14 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
       return ranks.drizzle >= 1;
     case 'spin':
       return ranks.sprinkler >= 1;
+    case 'drone':
+      return ranks.sprinkler >= 1;
     case 'lightning':
       return ranks.sprinkler >= 1 && ranks.specks >= 2;
     case 'zap':
       return ranks.lightning >= 1;
     case 'tornado':
-      return ranks.lightning >= 1 && ranks.zap >= 1;
+      return ranks.lightning >= 1;
     case 'twist':
       return ranks.tornado >= 1;
     case 'geyser':
@@ -882,6 +921,8 @@ export function prereqMet(id: NodeId, ranks: Ranks): boolean {
       return ranks.wide >= 1;
     case 'waterbomb':
       return ranks.circle >= 1;
+    case 'tide':
+      return ranks.waterbomb >= 1;
     case 'purify':
       return ranks.bounty >= 1;
     case 'monsoon':
@@ -951,7 +992,7 @@ export function rainRadius(ranks: Ranks): number {
     (1 + 0.06 * ranks.spin) *
     (1 + 0.12 * ranks.lightning) *
     (1 + 0.04 * ranks.zap) *
-    (1 + 0.12 * ranks.tornado) *
+    (1 + 0.07 * ranks.tornado) *
     (1 + 0.04 * ranks.twist) *
     (1 + 0.12 * ranks.monsoon);
   return 0.92 * grown * reach;
@@ -1076,6 +1117,7 @@ const SPOKES: readonly Spoke[] = [
     buds: [
       { id: 'waterbomb', after: 'circle', turn: 0.4 },
       { id: 'mirage', after: 'wide', turn: 0.38 },
+      { id: 'tide', after: 'horizon', turn: 0.46 },
     ],
   },
   {
@@ -1090,7 +1132,10 @@ const SPOKES: readonly Spoke[] = [
     ids: ['sprinkler', 'lightning', 'zap', 'tornado', 'twist'],
     step: 76,
     drift: 0.034,
-    buds: [{ id: 'spin', after: 'sprinkler', turn: -0.42 }],
+    buds: [
+      { id: 'spin', after: 'sprinkler', turn: -0.42 },
+      { id: 'drone', after: 'sprinkler', turn: 0.48 },
+    ],
   },
   {
     angle: -Math.PI + 0.42,

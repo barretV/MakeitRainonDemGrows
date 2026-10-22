@@ -199,6 +199,13 @@ function NodeSymbol({
         <path d="M6 6l-3-1 1-3" fill="none" />
       </>
     ),
+    drone: (
+      <>
+        <ellipse cx={-4} cy={1} rx={4} ry={2.4} fill="none" />
+        <ellipse cx={4} cy={-1} rx={3.2} ry={2} fill="none" />
+        <path d="M-4 3v3M4 1v3" fill="none" />
+      </>
+    ),
     lightning: <path d="M3 -9L-4 2h5l-2 9 9-11h-5z" fill="none" />,
     zap: (
       <>
@@ -238,6 +245,12 @@ function NodeSymbol({
     hail: <path d="M-4 -6l4 8 4-8M0 2v6" fill="none" />,
     mirage: <path d="M-9 0h18M-6 3h12" fill="none" />,
     waterbomb: <circle cx={0} cy={0} r={5} fill="none" />,
+    tide: (
+      <>
+        <path d="M-10 2c2-3 4-3 6 0s4 3 6 0" fill="none" />
+        <path d="M-10 6c2-3 4-3 6 0s4 3 6 0" fill="none" />
+      </>
+    ),
     purify: <path d="M0 7C-7-2-7-8 0-4c7-4 7 2 0 11z" fill="none" />,
     monsoon: <path d="M-10 0h20M-6 -4h12M-6 4h12" fill="none" />,
     harvest: (

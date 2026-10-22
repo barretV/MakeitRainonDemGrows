@@ -22,6 +22,7 @@
     "wide",
     "horizon",
     "waterbomb",
+    "tide",
     "mirage",
     "charm",
     "dew",
@@ -31,6 +32,7 @@
     "purify",
     "sprinkler",
     "spin",
+    "drone",
     "lightning",
     "zap",
     "tornado",
@@ -54,6 +56,7 @@
     "reach",
     "circle",
     "sprinkler",
+    "drone",
     "spin",
     "lightning",
     "zap",
@@ -79,6 +82,7 @@
     "glacier",
     "mirage",
     "waterbomb",
+    "tide",
     "purify",
     "tornado",
     "twist",
@@ -395,6 +399,23 @@
       "worldMin": 2
     },
     {
+      "id": "tide",
+      "parent": "waterbomb",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        750000,
+        14000000,
+        21000000
+      ],
+      "blooms": [
+        1,
+        1,
+        2
+      ],
+      "worldMin": 3
+    },
+    {
       "id": "charm",
       "parent": "puff",
       "kind": "gate",
@@ -704,17 +725,34 @@
       "worldMin": 0
     },
     {
+      "id": "drone",
+      "parent": "sprinkler",
+      "kind": "upgrade",
+      "max": 3,
+      "costs": [
+        1200,
+        18000,
+        240000
+      ],
+      "blooms": [
+        1,
+        1,
+        1
+      ],
+      "worldMin": 0
+    },
+    {
       "id": "lightning",
       "parent": "sprinkler",
       "kind": "gate",
       "max": 1,
       "costs": [
-        1497627
+        22000
       ],
       "blooms": [
         1
       ],
-      "worldMin": 0
+      "worldMin": 1
     },
     {
       "id": "zap",
@@ -739,7 +777,7 @@
       "kind": "gate",
       "max": 4,
       "costs": [
-        697446631,
+        12000,
         1894330933,
         5367687457,
         14877496141
@@ -783,7 +821,7 @@
       "kind": "upgrade",
       "max": 6,
       "costs": [
-        200001210,
+        26000,
         319799845,
         559068439,
         1501217668,
@@ -798,7 +836,7 @@
         2,
         2
       ],
-      "worldMin": 0
+      "worldMin": 1
     },
     {
       "id": "spore",
