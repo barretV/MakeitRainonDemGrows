@@ -139,12 +139,42 @@ function bake(draw: (p: Pix) => void, w: number, h: number, smooth = false): THR
   return tex;
 }
 
-export type CloudMood = 'idle' | 'joy' | 'sleep' | 'grin' | 'pout' | 'blink';
+export type CloudMood =
+  | 'idle'
+  | 'joy'
+  | 'sleep'
+  | 'grin'
+  | 'pout'
+  | 'blink'
+  | 'wow'
+  | 'dizzy'
+  | 'squint'
+  | 'gasp'
+  | 'wink'
+  | 'cheer'
+  | 'lookL'
+  | 'lookR';
+
+function smile(p: Pix, cx: number, cy: number, wide: number, open: number): void {
+  p.line(cx - wide, cy, cx, cy + wide * 0.7, '#3a3038');
+  p.line(cx, cy + wide * 0.7, cx + wide, cy, '#3a3038');
+  if (open > 0) p.ellipse(cx, cy + wide * 0.45, open, open * 0.72, '#ff8fab');
+}
+
+function pairEyes(p: Pix, cx: number, cy: number, dx: number, rx: number, ry: number): void {
+  const eye = '#2b2b33';
+  p.ellipse(cx - 9 + dx, cy, rx, ry, eye);
+  p.ellipse(cx + 9 + dx, cy, rx, ry, eye);
+  p.set(cx - 10 + dx, cy - 1, '#fff');
+  p.set(cx + 8 + dx, cy - 1, '#fff');
+}
 
 function face(p: Pix, mood: CloudMood, cx: number, cy: number): void {
-  const blush = mood === 'sleep' ? '#e7b7c4' : mood === 'grin' ? '#ff7aa2' : '#ff9bb8';
-  p.ellipse(cx - 16, cy + 4, mood === 'grin' ? 5 : 4.2, mood === 'grin' ? 3.1 : 2.6, blush);
-  p.ellipse(cx + 16, cy + 4, mood === 'grin' ? 5 : 4.2, mood === 'grin' ? 3.1 : 2.6, blush);
+  const hot = mood === 'grin' || mood === 'cheer' || mood === 'gasp' || mood === 'wow';
+  const blush = mood === 'sleep' ? '#e7b7c4' : hot ? '#ff7aa2' : '#ff9bb8';
+  const cheek = hot ? 5.2 : 4.2;
+  p.ellipse(cx - 16, cy + 4, cheek, hot ? 3.2 : 2.6, blush);
+  p.ellipse(cx + 16, cy + 4, cheek, hot ? 3.2 : 2.6, blush);
   if (mood === 'sleep') {
     p.line(cx - 8, cy, cx - 3, cy + 2, '#596174');
     p.line(cx + 8, cy, cx + 3, cy + 2, '#596174');
@@ -152,27 +182,55 @@ function face(p: Pix, mood: CloudMood, cx: number, cy: number): void {
     return;
   }
   if (mood === 'blink') {
-    p.line(cx - 11, cy, cx - 6, cy, '#2b2b33');
-    p.line(cx + 6, cy, cx + 11, cy, '#2b2b33');
-    p.line(cx - 4, cy + 7, cx + 4, cy + 6, '#3a3038');
+    p.line(cx - 12, cy, cx - 5, cy, '#2b2b33');
+    p.line(cx + 5, cy, cx + 12, cy, '#2b2b33');
+    smile(p, cx, cy + 6, 4, 0);
     return;
   }
-  const eye = '#2b2b33';
-  const tall = mood === 'grin' ? 3.8 : mood === 'pout' ? 3.6 : 3.3;
-  p.ellipse(cx - 9, cy - 1, 2.4, tall, eye);
-  p.ellipse(cx + 9, cy - 1, 2.4, tall, eye);
-  p.set(cx - 10, cy - 2, '#fff');
-  p.set(cx + 8, cy - 2, '#fff');
-  if (mood === 'grin' || mood === 'joy') {
-    p.line(cx - 6, cy + 5, cx, cy + 9, '#3a3038');
-    p.line(cx, cy + 9, cx + 6, cy + 5, '#3a3038');
-    p.ellipse(cx, cy + 8, mood === 'grin' ? 3.2 : 2.2, mood === 'grin' ? 2.2 : 1.4, '#ff8fab');
-  } else if (mood === 'pout') {
+  if (mood === 'wink') {
+    p.line(cx - 12, cy, cx - 5, cy + 1, '#2b2b33');
+    p.ellipse(cx + 9, cy, 2.3, 3.4, '#2b2b33');
+    p.set(cx + 8, cy - 1, '#fff');
+    smile(p, cx, cy + 6, 6, 2.2);
+    return;
+  }
+  if (mood === 'dizzy') {
+    p.line(cx - 13, cy - 3, cx - 5, cy + 3, '#2b2b33');
+    p.line(cx - 13, cy + 3, cx - 5, cy - 3, '#2b2b33');
+    p.line(cx + 5, cy - 3, cx + 13, cy + 3, '#2b2b33');
+    p.line(cx + 5, cy + 3, cx + 13, cy - 3, '#2b2b33');
+    smile(p, cx, cy + 6, 5, 0);
+    p.ellipse(cx + 1, cy + 9, 2.2, 2.8, '#ff8fab');
+    return;
+  }
+  if (mood === 'squint') {
+    p.line(cx - 13, cy - 2, cx - 5, cy + 1, '#2b2b33');
+    p.line(cx + 5, cy + 1, cx + 13, cy - 2, '#2b2b33');
+    p.ellipse(cx - 9, cy + 1, 1.6, 1.2, '#2b2b33');
+    p.ellipse(cx + 9, cy + 1, 1.6, 1.2, '#2b2b33');
+    smile(p, cx, cy + 7, 5, 1.2);
+    return;
+  }
+  if (mood === 'wow' || mood === 'gasp') {
+    const big = mood === 'gasp';
+    pairEyes(p, cx, cy - 1, 0, big ? 3.4 : 3.1, big ? 4.8 : 4.4);
+    p.ellipse(cx, cy + 8, big ? 3.6 : 2.6, big ? 4.2 : 3.2, '#3a3038');
+    p.ellipse(cx, cy + 8, big ? 1.8 : 1.1, big ? 2.4 : 1.6, '#ffd0dc');
+    return;
+  }
+  const look = mood === 'lookL' ? -3 : mood === 'lookR' ? 3 : 0;
+  const tall = mood === 'grin' || mood === 'cheer' ? 4.1 : mood === 'pout' ? 3.5 : 3.3;
+  pairEyes(p, cx, cy - 1, look, mood === 'cheer' ? 2.2 : 2.4, tall);
+  if (mood === 'pout') {
     p.line(cx - 5, cy + 9, cx, cy + 7, '#3a3038');
     p.line(cx, cy + 7, cx + 5, cy + 9, '#3a3038');
-  } else {
-    p.line(cx - 3, cy + 6, cx + 3, cy + 7, '#3a3038');
+    return;
   }
+  if (mood === 'grin' || mood === 'joy' || mood === 'cheer') {
+    smile(p, cx, cy + 5, mood === 'cheer' ? 7 : mood === 'grin' ? 6 : 5, mood === 'joy' ? 1.5 : 2.4);
+    return;
+  }
+  p.line(cx - 3 + look, cy + 6, cx + 3 + look, cy + 7, '#3a3038');
 }
 
 function drawCloud(mood: CloudMood): THREE.CanvasTexture {
@@ -197,10 +255,11 @@ function drawCloud(mood: CloudMood): THREE.CanvasTexture {
       p.star(12, 14, '#fff4b0');
       p.star(84, 16, '#fff');
       p.star(18, 48, '#d9f4ff');
-      if (mood === 'joy') {
+      if (mood === 'joy' || mood === 'cheer' || mood === 'wow' || mood === 'grin') {
         p.star(8, 28, '#ffe27a');
         p.star(88, 34, '#fff');
       }
+      if (mood === 'cheer') p.star(78, 12, '#ffd0e4');
     }
   }, 96, 64);
 }
@@ -692,10 +751,10 @@ const TREE_PALETTES: TreePalette[] = [
     crown: '#3f9a3a', crownShade: '#2f7a32', crownLit: '#5cb83a', crownTop: '#7dce4a',
     edge: '#1f4a22', trunk: '#6b4630', trunkShade: '#4e3222', trunkLight: '#3b2718', accent: '#ff8fb8',
   },
-  // Frostbite Forest: frosted blue green.
+  // Frostbite Forest: deep spruce with snow only on the highlights.
   {
-    crown: '#5fb0a8', crownShade: '#3f8a86', crownLit: '#9fe0d8', crownTop: '#cdeef4',
-    edge: '#2f6a72', trunk: '#c8d4dc', trunkShade: '#a2b2bc', trunkLight: '#8a9aa6', accent: '#bfe6fb',
+    crown: '#1c6a58', crownShade: '#0e3e36', crownLit: '#3d9a84', crownTop: '#f4fbff',
+    edge: '#082824', trunk: '#d5e0e8', trunkShade: '#8aa0b0', trunkLight: '#6a8494', accent: '#ffffff',
   },
   // Parched Desert: dry olive.
   {
@@ -960,6 +1019,180 @@ const FLORA_PALETTES: FloraPalette[] = [
   // Toxic Sludge Dump: sickly yellow greens and violet flowers.
   { grass: '#6f9a3a', grassHi: '#b6d86a', stem: '#4a6a2f', bloom: '#c084fc', bloom2: '#ff6f9e', pollen: '#e8ff6a', tall: '#a8c86a', frond: '#5d8a38', frondHi: '#a6c463' },
 ];
+
+/** Ground cover with a different silhouette on every island, not a recolor of the meadow. */
+function biomeFlora(world: number): THREE.CanvasTexture {
+  return bake((p) => {
+    const at = (frame: number, x: number, y: number, color: string) => p.set(frame * 16 + x, y, color);
+    const stem = (frame: number, x: number, top: number, color: string) => {
+      for (let y = top; y < 15; y += 1) at(frame, x, y, color);
+    };
+    if (world === 1) {
+      const spruce = '#14584c';
+      const shade = '#0c342c';
+      const snow = '#f7fbff';
+      // Ice shards stay pale. Living plants are dark spruce with a snow tip.
+      for (const [x, y] of [[6, 8], [7, 9], [8, 6], [8, 10], [9, 8], [10, 7]] as Array<[number, number]>) at(0, x, y, '#d7e8f4');
+      at(0, 8, 11, '#6a90b0');
+      at(0, 7, 12, shade);
+      for (const [x, y, c] of [[5, 13, snow], [6, 14, '#d5e4f0'], [7, 13, '#8aa4b8'], [10, 14, snow], [11, 13, '#6a8498']] as Array<[number, number, string]>) at(1, x, y, c);
+      stem(2, 8, 7, shade);
+      at(2, 7, 7, snow);
+      at(2, 9, 8, snow);
+      stem(4, 8, 8, shade);
+      p.ellipse(4 * 16 + 8, 7, 2.4, 2.8, shade);
+      p.ellipse(4 * 16 + 8, 7, 1.6, 2, snow);
+      for (const [x, h] of [[4, 5], [6, 8], [8, 6], [10, 9], [12, 4]] as Array<[number, number]>) {
+        for (let y = 15 - h; y < 15; y += 1) at(5, x, y, y < 15 - h + 2 ? snow : spruce);
+      }
+      for (let row = 0; row < 6; row += 1) {
+        for (let x = 8 - row; x <= 8 + row; x += 1) at(6, x, 6 + row, row === 0 ? snow : row % 2 === 0 ? spruce : shade);
+      }
+      stem(6, 8, 12, shade);
+      p.ellipse(7 * 16 + 8, 11, 6, 3.4, spruce);
+      p.ellipse(7 * 16 + 6, 10, 3, 2.2, shade);
+      at(7, 8, 8, snow);
+      at(7, 11, 9, snow);
+      for (const x of [5, 8, 11]) {
+        stem(8, x, x === 8 ? 4 : 7, '#d7eef8');
+        at(8, x, 14, '#3a6078');
+      }
+      for (let x = 4; x < 13; x += 1) {
+        const y = 12 - Math.round(Math.sin(((x - 4) / 8) * Math.PI) * 6);
+        at(9, x, y, spruce);
+        if (x % 2 === 0) at(9, x, y - 1, snow);
+        at(9, x, y + 1, shade);
+      }
+      for (const [x, y] of [[8, 8], [6, 8], [10, 8], [8, 6], [8, 10]] as Array<[number, number]>) at(10, x, y, snow);
+      at(10, 8, 9, shade);
+      stem(10, 8, 11, spruce);
+      p.ellipse(11 * 16 + 8, 8, 3.4, 4.4, '#1a4a68');
+      p.ellipse(11 * 16 + 8, 8, 2, 2.8, '#d7f4ff');
+      at(11, 8, 6, snow);
+      stem(11, 8, 12, shade);
+      for (const x of [5, 8, 12]) {
+        stem(12, x, 9, shade);
+        p.ellipse(12 * 16 + x, 8, 2.1, 2.4, '#143848');
+        p.ellipse(12 * 16 + x, 8, 1.3, 1.6, snow);
+      }
+      for (let row = 0; row < 4; row += 1) {
+        for (let x = 8 - row; x <= 8 + row; x += 1) at(13, x, 7 + row, row === 0 ? snow : spruce);
+      }
+      at(13, 8, 5, snow);
+      p.ellipse(14 * 16 + 8, 12, 5, 2.6, '#4a6274');
+      p.ellipse(14 * 16 + 8, 10, 4, 1.6, snow);
+      stem(15, 8, 8, shade);
+      p.ellipse(15 * 16 + 8, 6, 2.6, 3, '#143848');
+      p.ellipse(15 * 16 + 8, 6, 1.5, 1.8, snow);
+      return;
+    }
+    if (world === 2) {
+      stem(0, 6, 10, '#c4a06a');
+      stem(0, 10, 8, '#a07848');
+      at(0, 10, 7, '#e8d0a0');
+      for (const [x, y] of [[6, 13], [7, 14], [11, 14], [12, 13]] as Array<[number, number]>) at(1, x, y, '#e6d2a8');
+      p.ellipse(2 * 16 + 8, 10, 4, 3, '#c8a060');
+      at(2, 5, 10, '#8a6840');
+      at(2, 11, 11, '#8a6840');
+      // Cactus pup.
+      stem(4, 8, 5, '#7f9a3a');
+      at(4, 6, 8, '#9ab84a');
+      at(4, 10, 9, '#6a8430');
+      at(4, 8, 7, '#e8f0a0');
+      // Dry grass.
+      for (const [x, h] of [[4, 4], [7, 7], [9, 5], [12, 6]] as Array<[number, number]>) {
+        for (let y = 15 - h; y < 15; y += 1) at(5, x, y, '#d8c070');
+      }
+      // Agave.
+      for (const [dx, dy] of [[-4, 2], [-2, 0], [0, -2], [2, 0], [4, 2]] as Array<[number, number]>) {
+        at(6, 8 + dx, 10 + dy, '#8aaa44');
+        at(6, 8 + dx, 11 + dy, '#c8dc70');
+      }
+      // Tumbleweed.
+      p.ellipse(7 * 16 + 8, 10, 5, 4, '#c49a62');
+      at(7, 4, 8, '#8a6840');
+      at(7, 12, 12, '#e8d0a0');
+      at(7, 8, 6, '#a07848');
+      // Yellow bloom.
+      stem(8, 8, 8, '#6a7630');
+      p.ellipse(8 * 16 + 8, 6, 3, 3, '#ffd36e');
+      at(8, 8, 6, '#fff6c2');
+      // Succulent rosette.
+      p.ellipse(9 * 16 + 8, 11, 4, 2.4, '#9ab84a');
+      p.ellipse(9 * 16 + 6, 10, 2, 1.4, '#d8e88a');
+      p.ellipse(9 * 16 + 10, 10, 2, 1.4, '#6a8430');
+      // Spine cluster.
+      for (const [x, y] of [[8, 6], [6, 9], [10, 8], [8, 11], [5, 12], [11, 12]] as Array<[number, number]>) at(10, x, y, '#e8d8a8');
+      stem(10, 8, 12, '#7a9a40');
+      // Barrel cactus.
+      p.ellipse(11 * 16 + 8, 10, 4, 5, '#8aaa44');
+      at(11, 8, 7, '#ffb45e');
+      at(11, 6, 10, '#d8e88a');
+      at(11, 10, 11, '#6a8430');
+      // Desert daisy.
+      stem(12, 8, 9, '#8a7630');
+      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]] as Array<[number, number]>) at(12, 8 + dx, 7 + dy, '#ffb45e');
+      at(12, 8, 7, '#fff0a8');
+      // Joshua sprout.
+      stem(13, 8, 6, '#a07848');
+      at(13, 6, 6, '#c8dc70');
+      at(13, 10, 7, '#c8dc70');
+      at(13, 8, 5, '#e8f0a0');
+      // Sand rock.
+      p.ellipse(14 * 16 + 8, 12, 5.5, 2.8, '#e2c08a');
+      at(14, 6, 11, '#c49a62');
+      // Bud.
+      stem(15, 8, 9, '#6a7630');
+      p.ellipse(15 * 16 + 8, 7, 2.2, 2.6, '#ffd36e');
+      return;
+    }
+    // Toxic: ooze, glow-caps, tendrils.
+    for (let y = 8; y < 15; y += 1) at(0, 8, y, y % 2 === 0 ? '#7a5aa0' : '#86efac');
+    at(0, 7, 8, '#c084fc');
+    at(0, 9, 9, '#67e8f9');
+    p.ellipse(1 * 16 + 8, 12, 5, 2.4, '#5eead4');
+    at(1, 6, 12, '#c084fc');
+    stem(2, 7, 8, '#4a3360');
+    stem(2, 10, 6, '#86efac');
+    at(2, 10, 5, '#e879f9');
+    stem(4, 8, 7, '#f4e3c8');
+    p.ellipse(4 * 16 + 8, 6, 4, 2.6, '#c084fc');
+    at(4, 6, 6, '#e8ff6a');
+    at(4, 10, 5, '#ffffff');
+    for (const [x, h] of [[5, 6], [8, 9], [11, 5]] as Array<[number, number]>) {
+      for (let y = 15 - h; y < 15; y += 1) at(5, x, y, y < 15 - h + 2 ? '#e8ff6a' : '#5eead4');
+    }
+    for (let i = 0; i < 6; i += 1) at(6, 5 + i, 8 + (i % 2), i % 2 === 0 ? '#86efac' : '#c084fc');
+    stem(6, 8, 12, '#4a6a2f');
+    p.ellipse(7 * 16 + 8, 10, 5, 3.5, '#6f9a3a');
+    at(7, 5, 9, '#e879f9');
+    at(7, 11, 8, '#67e8f9');
+    at(7, 8, 8, '#e8ff6a');
+    stem(8, 6, 5, '#86efac');
+    stem(8, 10, 7, '#c084fc');
+    at(8, 6, 4, '#ffffff');
+    p.ellipse(9 * 16 + 8, 9, 3.4, 4, '#67e8f9');
+    at(9, 8, 7, '#e8ff6a');
+    stem(9, 8, 13, '#4a3360');
+    for (const [x, y] of [[8, 7], [6, 9], [10, 8], [8, 10]] as Array<[number, number]>) at(10, x, y, '#e879f9');
+    at(10, 8, 8, '#ffffff');
+    p.ellipse(11 * 16 + 7, 8, 3, 2.2, '#c084fc');
+    p.ellipse(11 * 16 + 11, 10, 2.4, 2, '#86efac');
+    stem(11, 7, 10, '#f4e3c8');
+    stem(11, 11, 12, '#f4e3c8');
+    stem(12, 8, 8, '#5eead4');
+    p.ellipse(12 * 16 + 8, 6, 2.6, 2.4, '#e8ff6a');
+    at(12, 8, 6, '#ffffff');
+    for (let row = 0; row < 5; row += 1) {
+      at(13, 8 - row, 6 + row, '#86efac');
+      at(13, 8 + row, 6 + row, '#c084fc');
+    }
+    p.ellipse(14 * 16 + 8, 12, 5, 2.4, '#4a3360');
+    p.ellipse(14 * 16 + 8, 10, 3, 1.6, '#5eead4');
+    stem(15, 8, 8, '#6f9a3a');
+    p.ellipse(15 * 16 + 8, 6, 2.6, 3, '#e879f9');
+  }, 256, 16);
+}
 
 function floraAtlas(palette: FloraPalette = FLORA_PALETTES[0]!): THREE.CanvasTexture {
   return bake((p) => {
@@ -1230,7 +1463,36 @@ function bushSprout(): THREE.CanvasTexture {
 
 /** Young tree: trunk first, two leaf clumps, so trees visibly grow in. */
 function sapling(): THREE.CanvasTexture {
+  return saplingFor(0);
+}
+
+/** Young tree silhouette for each island. */
+function saplingFor(world: number): THREE.CanvasTexture {
   return bake((p) => {
+    if (world === 1) {
+      p.line(16, 38, 16, 22, '#1a4038');
+      for (let row = 0; row < 5; row += 1) {
+        for (let x = 16 - row; x <= 16 + row; x += 1) p.set(x, 12 + row, row === 0 ? '#f4fbff' : row % 2 === 0 ? '#14584c' : '#0c342c');
+      }
+      p.set(16, 11, '#f7fbff');
+      return;
+    }
+    if (world === 2) {
+      p.line(16, 38, 16, 16, '#7f9a3a');
+      p.line(16, 24, 10, 20, '#9ab84a');
+      p.line(16, 22, 22, 18, '#6a8430');
+      p.set(16, 14, '#ffd36e');
+      p.set(10, 19, '#e8f0a0');
+      return;
+    }
+    if (world === 3) {
+      p.line(16, 38, 16, 18, '#f4e3c8');
+      p.ellipse(16, 16, 8, 5, '#c084fc');
+      p.ellipse(10, 20, 4, 3, '#86efac');
+      p.set(14, 15, '#e8ff6a');
+      p.set(18, 14, '#ffffff');
+      return;
+    }
     p.line(16, 38, 16, 20, '#6a4a2a');
     p.line(15, 38, 15, 24, '#8a6038');
     p.line(16, 26, 10, 21, '#8a6038');
@@ -1241,6 +1503,98 @@ function sapling(): THREE.CanvasTexture {
     p.outline('#2f7a32');
     p.set(14, 14, '#dff8b0');
   }, 32, 40);
+}
+
+function bushFor(world: number, stage: 0 | 1 | 2): THREE.CanvasTexture {
+  return bake((p) => {
+    if (stage === 0) {
+      const stick = world === 1 ? '#9ec4e0' : world === 2 ? '#c4a06a' : world === 3 ? '#6a4a8a' : '#5c5148';
+      const tip = world === 1 ? '#ffffff' : world === 2 ? '#e8d0a0' : world === 3 ? '#86efac' : '#6a5e54';
+      p.line(8, 20, 16, 8, stick);
+      p.line(24, 22, 20, 6, tip);
+      p.line(24, 22, 34, 8, stick);
+      if (world === 1) p.set(20, 6, '#ffffff');
+      if (world === 2) p.ellipse(18, 14, 3, 2, '#c49a62');
+      if (world === 3) p.ellipse(16, 12, 3, 2, '#5eead4');
+      return;
+    }
+    if (world === 1) {
+      for (let row = 0; row < (stage === 2 ? 7 : 4); row += 1) {
+        for (let x = 16 - row; x <= 16 + row; x += 1) p.set(x, 6 + row, row === 0 ? '#f7fbff' : row % 2 === 0 ? '#14584c' : '#0c342c');
+      }
+      p.set(16, 5, '#f7fbff');
+      return;
+    }
+    if (world === 2) {
+      p.line(14, 22, 14, 8, '#7f9a3a');
+      p.line(18, 22, 18, 10, '#9ab84a');
+      if (stage === 2) {
+        p.line(14, 12, 8, 14, '#6a8430');
+        p.line(18, 14, 24, 12, '#c8dc70');
+        p.set(14, 7, '#ffd36e');
+      }
+      return;
+    }
+    if (world === 3) {
+      p.line(16, 22, 16, 12, '#f4e3c8');
+      p.ellipse(16, 10, stage === 2 ? 8 : 5, stage === 2 ? 4 : 3, '#c084fc');
+      if (stage === 2) {
+        p.ellipse(8, 14, 4, 3, '#86efac');
+        p.set(15, 9, '#e8ff6a');
+      }
+      return;
+    }
+    const crown = stage === 2 ? '#7dce4a' : '#5cb83a';
+    p.ellipse(16, 16, stage === 2 ? 12 : 7, stage === 2 ? 8 : 5, crown);
+    p.ellipse(10, 18, 6, 4, '#b6e86a');
+    p.set(14, 14, '#ff8fb8');
+  }, 32, 28);
+}
+
+function flowersFor(world: number): THREE.CanvasTexture {
+  return bake((p) => {
+    const bloom = world === 1 ? '#f7fbff' : world === 2 ? '#ffd36e' : world === 3 ? '#e879f9' : '#ff8fb8';
+    const stem = world === 1 ? '#0c342c' : world === 2 ? '#8a7630' : world === 3 ? '#5eead4' : '#3e8a32';
+    const heart = world === 1 ? '#7ec8e8' : world === 2 ? '#fff0a8' : world === 3 ? '#e8ff6a' : '#fff6c2';
+    for (let i = 0; i < 6; i += 1) {
+      const x = 5 + (i % 3) * 8;
+      const y = 7 + (i % 2) * 6;
+      p.set(x, y + 4, stem);
+      p.set(x, y + 5, stem);
+      if (world === 2 && i % 2 === 0) {
+        p.line(x, y + 5, x, y - 2, '#7f9a3a');
+        p.set(x, y - 2, bloom);
+        continue;
+      }
+      if (world === 1) {
+        p.ellipse(x, y, 2, 2.6, bloom);
+        p.set(x, y + 1, heart);
+        continue;
+      }
+      p.ellipse(x, y, 2.2, 2.2, bloom);
+      p.set(x, y, heart);
+    }
+  }, 32, 24);
+}
+
+function twigFor(world: number): THREE.CanvasTexture {
+  return bake((p) => {
+    const a = world === 1 ? '#d7e8f8' : world === 2 ? '#c4a06a' : world === 3 ? '#7a5aa0' : '#8a7c6e';
+    const b = world === 1 ? '#ffffff' : world === 2 ? '#e8d0a0' : world === 3 ? '#86efac' : '#7a6c60';
+    p.line(6, 18, 14, 9, a);
+    p.line(14, 9, 22, 7, b);
+    p.line(14, 12, 18, 18, a);
+    if (world === 1) {
+      p.set(22, 6, '#ffffff');
+      p.set(14, 8, '#bfe6fb');
+    } else if (world === 2) {
+      p.ellipse(16, 12, 3, 2, '#c49a62');
+    } else if (world === 3) {
+      p.ellipse(14, 10, 2.4, 2, '#5eead4');
+    } else {
+      p.set(22, 6, '#b09a7a');
+    }
+  }, 32, 24);
 }
 
 /** Translucent gust streak for wind trails. */
@@ -1399,6 +1753,77 @@ function barrel(): THREE.CanvasTexture {
   }, 32, 32);
 }
 
+function flairSnowman(): THREE.CanvasTexture {
+  return bake((p) => {
+    const snow = '#f6fbff';
+    const shade = '#b8cee8';
+    const coal = '#1c2430';
+    const carrot = '#ff8c42';
+    const scarf = '#ff5c7a';
+    p.ellipse(16, 35, 9, 7.5, shade);
+    p.ellipse(16, 33, 9, 7.5, snow);
+    p.ellipse(16, 23, 6.5, 5.5, snow);
+    p.ellipse(16, 14, 5, 4.8, snow);
+    for (let x = 9; x <= 23; x += 1) p.set(x, 18, x < 11 || x > 21 ? scarf : '#ff7a96');
+    p.set(13, 13, coal);
+    p.set(18, 13, coal);
+    p.set(16, 14, carrot);
+    p.set(17, 14, carrot);
+    p.set(18, 15, carrot);
+    p.line(8, 23, 4, 19, '#6a4a32');
+    p.line(24, 23, 28, 19, '#6a4a32');
+    p.ellipse(16, 8, 5.5, 2.2, '#1a2030');
+    p.ellipse(16, 6, 4.5, 2, '#2a3040');
+    p.ellipse(16, 5, 4, 1.2, '#1a2030');
+  }, 32, 40);
+}
+
+function flairForestLantern(): THREE.CanvasTexture {
+  return bake((p) => {
+    p.ellipse(16, 30, 3.5, 4.5, '#4a3a32');
+    p.ellipse(16, 22, 5, 6, '#3a3028');
+    for (let y = 14; y < 22; y += 1) {
+      for (let x = 11; x < 21; x += 1) {
+        if ((x + y) % 2 === 0) p.set(x, y, '#ffe08a');
+      }
+    }
+    p.ellipse(16, 17, 4, 3, '#ffb830');
+    p.ellipse(16, 8, 6, 2.5, '#5a4038');
+    p.line(10, 8, 22, 8, '#3a2820');
+  }, 32, 36);
+}
+
+function flairDesertCactus(): THREE.CanvasTexture {
+  return bake((p) => {
+    const green = '#5a9a48';
+    const dark = '#3a6a32';
+    p.ellipse(16, 28, 4.5, 11, dark);
+    p.ellipse(16, 28, 4, 10, green);
+    p.ellipse(9, 22, 3.5, 2.8, green);
+    p.ellipse(23, 25, 3.5, 2.8, green);
+    p.line(7, 12, 25, 12, '#c4a070');
+    p.line(7, 12, 7, 20, '#c4a070');
+    p.line(25, 12, 25, 20, '#c4a070');
+    p.set(14, 10, '#2a2820');
+    p.set(18, 10, '#2a2820');
+    p.set(16, 11, '#8a5a38');
+  }, 32, 38);
+}
+
+function flairToxicBarrel(): THREE.CanvasTexture {
+  return bake((p) => {
+    p.ellipse(16, 28, 8, 9, '#5a6a38');
+    p.line(8, 20, 24, 20, '#4a5a28');
+    p.line(8, 26, 24, 26, '#4a5a28');
+    p.ellipse(16, 14, 7, 3, '#c8f070');
+    p.set(13, 22, '#1a2030');
+    p.set(19, 22, '#1a2030');
+    p.set(14, 24, '#7cf0d2');
+    p.set(18, 25, '#7cf0d2');
+    p.ellipse(16, 30, 9, 2, '#7cf0d2');
+  }, 32, 36);
+}
+
 function babyCloud(): THREE.CanvasTexture {
   return bake((p) => {
     p.ellipse(16, 12, 8, 5, '#fff');
@@ -1443,6 +1868,11 @@ export interface ArtSet {
   /** A grove of trees for each island, in the colours of that island. */
   groveByWorld: THREE.CanvasTexture[][];
   bushByWorld: THREE.CanvasTexture[];
+  bushDeadByWorld: THREE.CanvasTexture[];
+  bushSproutByWorld: THREE.CanvasTexture[];
+  saplingByWorld: THREE.CanvasTexture[];
+  flowersByWorld: THREE.CanvasTexture[];
+  twigByWorld: THREE.CanvasTexture[];
   money: THREE.CanvasTexture;
   boombox: THREE.CanvasTexture;
   bushDead: THREE.CanvasTexture;
@@ -1485,6 +1915,8 @@ export interface ArtSet {
   flora: THREE.CanvasTexture;
   /** The same plants, in the colours of each island. */
   floraByWorld: THREE.CanvasTexture[];
+  /** Set dressing per island (null = none). */
+  worldFlair: Array<THREE.CanvasTexture | null>;
 }
 
 let cached: ArtSet | null = null;
@@ -1499,6 +1931,14 @@ export function getArt(): ArtSet {
       grin: drawCloud('grin'),
       pout: drawCloud('pout'),
       blink: drawCloud('blink'),
+      wow: drawCloud('wow'),
+      dizzy: drawCloud('dizzy'),
+      squint: drawCloud('squint'),
+      gasp: drawCloud('gasp'),
+      wink: drawCloud('wink'),
+      cheer: drawCloud('cheer'),
+      lookL: drawCloud('lookL'),
+      lookR: drawCloud('lookR'),
     },
     baby: babyCloud(),
     skies: [0, 1, 2, 3].map((i) => {
@@ -1564,11 +2004,11 @@ export function getArt(): ArtSet {
       ],
       // Frostbite Forest: frosted pines and pale birches.
       [
-        pineTree('#9be7ff', '#4a7fa8'),
-        pineTree('#cfeef8', '#5f8fa8'),
+        pineTree('#1a5c4c', '#071c18'),
+        pineTree('#246e5c', '#0a2822'),
         birchTree(TREE_PALETTES[1]!),
         oakTree(TREE_PALETTES[1]!),
-        pineTree('#8fd4e8', '#3f6a86'),
+        pineTree('#145044', '#061612'),
         birchTree(TREE_PALETTES[1]!),
       ],
       // Parched Desert: cacti and dry, tough trees.
@@ -1590,12 +2030,12 @@ export function getArt(): ArtSet {
         oakTree(TREE_PALETTES[3]!),
       ],
     ],
-    bushByWorld: [
-      bush(true, TREE_PALETTES[0]),
-      bush(true, TREE_PALETTES[1]),
-      bush(true, TREE_PALETTES[2]),
-      bush(true, TREE_PALETTES[3]),
-    ],
+    bushByWorld: [0, 1, 2, 3].map((world) => bushFor(world, 2)),
+    bushDeadByWorld: [0, 1, 2, 3].map((world) => bushFor(world, 0)),
+    bushSproutByWorld: [0, 1, 2, 3].map((world) => bushFor(world, 1)),
+    saplingByWorld: [0, 1, 2, 3].map((world) => saplingFor(world)),
+    flowersByWorld: [0, 1, 2, 3].map((world) => flowersFor(world)),
+    twigByWorld: [0, 1, 2, 3].map((world) => twigFor(world)),
     money: moneyTree(),
     boombox: boomboxTree(),
     bushDead: bush(false),
@@ -1636,7 +2076,8 @@ export function getArt(): ArtSet {
     sun: drawSun(),
     barrel: barrel(),
     flora: floraAtlas(FLORA_PALETTES[0]!),
-    floraByWorld: FLORA_PALETTES.map((palette) => floraAtlas(palette)),
+    floraByWorld: [0, 1, 2, 3].map((world) => (world === 0 ? floraAtlas(FLORA_PALETTES[0]!) : biomeFlora(world))),
+    worldFlair: [flairForestLantern(), flairSnowman(), flairDesertCactus(), flairToxicBarrel(), null],
   };
   return cached;
 }

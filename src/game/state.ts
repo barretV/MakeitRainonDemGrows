@@ -224,6 +224,8 @@ interface PersistedV6 {
   sfxVolume?: number;
   musicVolume?: number;
   lastSave: number;
+  /** Per island: where the cloud was, and the camera zoom and yaw. */
+  views?: Array<{ x: number; z: number; zoom: number; yaw: number } | null>;
 }
 
 interface PersistedV5 {
@@ -362,6 +364,8 @@ export class SaveState {
   sfxVolume = 0.7;
   /** How loud the music bed is, 0 to 1. */
   musicVolume = 1;
+  /** Last spot and camera on each island, so coming back feels like you never left. */
+  views: Array<{ x: number; z: number; zoom: number; yaw: number } | null> = [null, null, null, null, null];
   lastSave = Date.now();
   /** Latest message. Every write also lands in the toast log so the HUD can
    * show them one at a time instead of overwriting each other. */
@@ -492,6 +496,19 @@ export class SaveState {
           s.migratePetals(data.petals);
         }
       }
+      const savedViews = (data as { views?: unknown }).views;
+      if (Array.isArray(savedViews)) {
+        for (let i = 0; i < 5; i += 1) {
+          const slot = savedViews[i] as { x?: unknown; z?: unknown; zoom?: unknown; yaw?: unknown } | null;
+          if (!slot || typeof slot.x !== 'number' || typeof slot.z !== 'number') continue;
+          s.views[i] = {
+            x: slot.x,
+            z: slot.z,
+            zoom: typeof slot.zoom === 'number' ? slot.zoom : 1,
+            yaw: typeof slot.yaw === 'number' ? slot.yaw : 0,
+          };
+        }
+      }
       s.screen = 'play';
       s.phase = 'play';
       s.beginWorld(s.world, false);
@@ -520,6 +537,7 @@ export class SaveState {
       music: this.music,
       sfxVolume: this.sfxVolume,
       musicVolume: this.musicVolume,
+      views: this.views,
       lastSave: Date.now(),
     };
     this.lastSave = data.lastSave;

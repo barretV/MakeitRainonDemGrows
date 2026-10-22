@@ -182,7 +182,7 @@ const NODES: readonly UpgradeNode[] = [
     branch: 'core',
     kind: 'upgrade',
     name: 'Cloud Puff',
-    desc: 'Get bigger. A bigger cloud drinks a wider circle, and the view steps back so more of the land fits in frame.',
+    desc: 'Get bigger. A bigger cloud drinks a wider circle, and stays close enough that you can still see what grows.',
     max: 10,
     color: '#ffe56a',
     costs: [17, 23, 31, 41, 52, 63, 77, 91, 159, 239],

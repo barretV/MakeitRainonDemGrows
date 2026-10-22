@@ -247,6 +247,15 @@ export class Weather {
     }
   }
 
+  /** The storm the cloud should react to, if one is on screen. */
+  faceCue(): string | null {
+    const rank = ['sprinkler', 'bolt', 'geyser', 'bomb', 'spout', 'sheet', 'drone', 'arc', 'hail'];
+    for (const kind of rank) {
+      if (this.actors.some((actor) => actor.kind === kind)) return kind;
+    }
+    return null;
+  }
+
   /** Start one weather event. False means try again next frame (the sky is full). */
   spawn(id: AbilityId, state: SaveState, origin: CastOrigin): boolean {
     if (this.actors.length >= MAX_ACTORS) return false;
