@@ -1368,7 +1368,7 @@ export class SaveState {
   }
 
   decayPulse(dt: number): void {
-    const step = Math.max(1, Math.floor(255 * dt / 0.55));
+    const step = Math.max(1, Math.floor(255 * dt / 0.9));
     let any = false;
     for (let i = 0; i < this.pulse.length; i += 1) {
       const v = this.pulse[i] ?? 0;
@@ -2263,6 +2263,27 @@ export class SaveState {
     }
     this.justGreen.push(index);
     this.spawnHillWave(index);
+  }
+
+  /** Relight every mask cell of a finished hill so the gold pulse holds on the whole tile. */
+  holdHillGlow(index: number): void {
+    const { cols, rows } = gridOf(this.world);
+    if (index < 0 || index >= cols * rows) return;
+    const { cols: maskCols, rows: maskRows } = maskOf(this.world);
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const c0 = Math.floor((col / cols) * maskCols);
+    const c1 = Math.max(c0 + 1, Math.floor(((col + 1) / cols) * maskCols));
+    const r0 = Math.floor((row / rows) * maskRows);
+    const r1 = Math.max(r0 + 1, Math.floor(((row + 1) / rows) * maskRows));
+    for (let r = r0; r < r1; r += 1) {
+      for (let c = c0; c < c1; c += 1) {
+        const i = r * maskCols + c;
+        if (i < 0 || i >= this.pulse.length) continue;
+        this.pulse[i] = 255;
+      }
+    }
+    this.pulseDirty = true;
   }
 
   private spawnHillWave(tileIndex: number): void {

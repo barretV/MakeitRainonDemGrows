@@ -38,6 +38,7 @@ const LIT_FRAG = /* glsl */ `
   uniform float uAlpha;
   uniform float uBeacon;
   uniform vec3 uLamp;
+  uniform float uLife;
   varying vec2 vUv;
   varying vec3 vT;
   varying vec3 vB;
@@ -60,6 +61,17 @@ const LIT_FRAG = /* glsl */ `
     float fres = pow(clamp(1.0 - nTex.z, 0.0, 1.0), 1.25);
     col += uLamp * fres * uBeacon * 0.7;
     col += albedo * uLamp * uBeacon * 0.28;
+    // Alive foliage holds the sun. Edges go lime-gold; the shaded body stays
+    // deep emerald. Dead sprites leave uLife at 0 and skip both terms.
+    float foliage = smoothstep(0.04, 0.2, albedo.g - max(albedo.r, albedo.b));
+    float edge = clamp(1.0 - nTex.z, 0.0, 1.0);
+    float sunFace = clamp(dot(N, normalize(uSunDir)), 0.0, 1.0);
+    col += vec3(0.72, 1.2, 0.42) * sunFace * edge * foliage * uLife * 0.34;
+    float core = smoothstep(0.2, 0.75, nTex.z) * (1.0 - sunFace);
+    col = mix(col, col * vec3(0.42, 0.72, 0.36), core * foliage * uLife * 0.5);
+    float fromBelow = clamp(0.55 - nTex.y, 0.0, 1.0);
+    col += vec3(0.42, 0.9, 0.36) * fromBelow * uLife * 0.32;
+    col += vec3(1.05, 0.95, 0.5) * fromBelow * edge * foliage * uLife * 0.16;
     col = mix(col, uFog, smoothstep(uFogRange.x, uFogRange.y, vDepth));
     gl_FragColor = vec4(col, tex.a * uOpacity);
   }
@@ -89,6 +101,7 @@ export function makeLitSprite(
       uAlpha: { value: alphaTest },
       uBeacon: { value: 0 },
       uLamp: { value: new THREE.Color('#ffe0a0') },
+      uLife: { value: 0 },
     },
     vertexShader: LIT_VERT,
     fragmentShader: LIT_FRAG,
@@ -106,6 +119,12 @@ export function litColor(mat: THREE.Material): THREE.Color {
 
 export function litOpacity(mat: THREE.Material): { value: number } {
   return (mat as THREE.ShaderMaterial).uniforms['uOpacity'] as { value: number };
+}
+
+/** 0 = dusk litter, 1 = a grown crown that holds sun and meadow bounce. */
+export function litLife(mat: THREE.Material, value: number): void {
+  const uniform = (mat as THREE.ShaderMaterial).uniforms?.['uLife'] as { value: number } | undefined;
+  if (uniform) uniform.value = value;
 }
 
 const POND_VERT = /* glsl */ `

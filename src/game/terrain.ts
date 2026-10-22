@@ -628,20 +628,32 @@ const VOXEL_FRAG = /* glsl */ `
     } else {
       float below = vTop - vWorld.y;
       vec4 m = maskAtCell(maskCell());
-      float grown = step(0.999, m.r);
+      float grown = smoothstep(0.55, 0.98, m.r);
       float along = vWorld.x * abs(vN.z) + vWorld.z * abs(vN.x);
       vec2 fine = floor(vec2(along, vWorld.y) * 12.5);
       float n = h21(fine);
-      float band = step(0.5, fract(vWorld.y * 1.4 + h21(vec2(floor(along * 1.5), 3.0)) * 0.35));
-      band = mix(band, n, uGlobe);
-      vec3 rock = mix(uRockA, uRockB, band) * (0.9 + 0.18 * n);
-      vec3 dirt = mix(uDirtA, uDirtB, band) * (0.88 + 0.2 * n);
+      float stripe = step(0.5, fract(vWorld.y * 1.4 + h21(vec2(floor(along * 1.5), 3.0)) * 0.35));
+      stripe = mix(stripe, n, uGlobe);
+      vec3 rock = mix(uRockA, uRockB, stripe) * (0.9 + 0.18 * n);
+      vec3 dirt = mix(uDirtA, uDirtB, stripe) * (0.88 + 0.2 * n);
       if (n > 0.94) dirt = mix(dirt, uRockA, 0.7);
       vec3 body = mix(rock, dirt, mix(grown, 0.45 + 0.3 * n, uGlobe));
       body = mix(body, rock * 0.72, smoothstep(-0.5, -2.5, vWorld.y));
-      float lipDepth = 0.1 + 0.08 * h21(vec2(floor(along * 12.5), 1.0)) + grown * 0.06;
-      vec3 lipCol = mix(uDeadB * 0.95, uLiveB * 0.92, grown);
-      col = mix(body, lipCol, step(below, lipDepth) * (1.0 - uGlobe * 0.8));
+      // A moss lip, thicker where the land is alive, with a few hanging strands
+      // so the island's silhouette reads as a jewel box instead of a charcoal block.
+      float lipJitter = h21(vec2(floor(along * 12.5), 1.0));
+      float lipDepth = mix(0.1, 0.3, grown) + 0.1 * lipJitter;
+      float strandId = floor(along * 5.5);
+      float strandOn = step(0.76, h21(vec2(strandId, 9.0)));
+      float strandLen = strandOn * grown * (0.22 + 0.36 * h21(vec2(strandId, 4.0)));
+      float strandPix = step(0.4, h21(vec2(strandId, floor(below * 7.0))));
+      float reach = lipDepth + strandLen * strandPix;
+      float broken = smoothstep(0.05, 0.22, h21(vec2(floor(along * 8.0), floor(below * 9.0))));
+      float lipMask = step(below, reach) * mix(broken, 1.0, step(below, lipDepth * 0.5)) * (1.0 - uGlobe * 0.75);
+      vec3 moss = mix(uMoss, uLiveB, 0.4 + 0.4 * h21(vec2(floor(along * 3.0), 6.0)));
+      moss = mix(moss, uGrass, 0.35 * strandOn * grown);
+      vec3 lipCol = mix(uDeadB * 0.95, moss, grown);
+      col = mix(body, lipCol, lipMask);
       col *= mix(mix(0.82, 1.0, smoothstep(1.2, 0.0, below)), 0.94 + 0.05 * n, uGlobe);
     }
     vec4 lifeMask = maskAtCell(maskCell());
@@ -698,6 +710,22 @@ const VOXEL_FRAG = /* glsl */ `
     // makes the land feel big.
     float fogDepth = length(vWorld - cameraPosition);
     col = mix(col, uFog, smoothstep(uFogRange.x, uFogRange.y, fogDepth) * (1.0 - uGlobe * 0.85));
+    // Bloom only sees luminance above 1. These spikes are the growth front and
+    // the pulse ring; settled ground stays under the threshold.
+    if (vUp > 0.5) {
+      float front = smoothstep(0.28, 0.4, life) * (1.0 - smoothstep(0.46, 0.62, life));
+      float twinkle = 0.72 + 0.28 * sin(uTime * 6.5 + vWorld.x * 1.7 + vWorld.z * 1.3);
+      float dew = mix(0.4, 1.0, step(0.55, h21(floor(vWorld.xz * 6.0))));
+      col += vec3(1.55, 1.95, 0.9) * front * twinkle * dew * 0.7;
+      vec2 glowLocal = fract(vWorld.xz * 3.125) - 0.5;
+      float pop = pulseAtCell(maskCell());
+      float popRing = smoothstep(0.28, 0.0, abs(length(glowLocal) * 2.0 - 0.22)) * pop;
+      col += vec3(1.85, 2.05, 1.15) * popRing * 0.85;
+    } else {
+      float grownLip = smoothstep(0.78, 0.995, lifeMask.r);
+      float kiss = smoothstep(0.14, 0.0, vTop - vWorld.y) * grownLip * (1.0 - uGlobe);
+      col += vec3(0.95, 1.65, 0.7) * kiss * 0.8;
+    }
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -780,6 +808,11 @@ const FLORA_FRAG = /* glsl */ `
     vec3 col = albedo * lit * mix(0.7, 1.15, wrap);
     float rim = pow(wrap, 2.2) * clamp(1.0 - nTex.z, 0.0, 1.0);
     col += albedo * uSunColor * rim * 0.4 * vLife;
+    float edge = clamp(1.0 - nTex.z, 0.0, 1.0);
+    float sunFace = clamp(dot(N, normalize(uSunDir)), 0.0, 1.0);
+    col += vec3(0.62, 1.05, 0.4) * sunFace * edge * vLife * 0.26;
+    float fromBelow = clamp(0.45 - nTex.y, 0.0, 1.0);
+    col += vec3(0.38, 0.82, 0.32) * fromBelow * vLife * 0.2;
     float fogDepth = vDepth;
     col = mix(col, uFog, smoothstep(uFogRange.x, uFogRange.y, fogDepth));
     gl_FragColor = vec4(col, 1.0);

@@ -33,7 +33,7 @@ import {
 } from './landmarks';
 import { Terrain } from './terrain';
 import { getArt, type ArtSet, type CloudMood } from './pixels';
-import { litColor, litOpacity, makeLitSprite, makePondWater, setLitMap, setPondFill } from './litSprite';
+import { litColor, litLife, litOpacity, makeLitSprite, makePondWater, setLitMap, setPondFill } from './litSprite';
 import { AbilityVfx } from './abilityVfx';
 import { Weather } from './weather';
 import { BASE_SCALE, homeZoomForScale, maskOf, upgradeNode, type NodeId, type Ranks } from './tree';
@@ -286,6 +286,25 @@ interface Drop {
   alive: boolean;
 }
 
+interface SplashRing {
+  mesh: THREE.Mesh;
+  life: number;
+}
+
+interface SprayBit {
+  mesh: THREE.Mesh;
+  life: number;
+  vx: number;
+  vy: number;
+  vz: number;
+}
+
+interface RiseLight {
+  mesh: THREE.Mesh;
+  life: number;
+  y0: number;
+}
+
 interface LandmarkRuntime {
   def: LandmarkDef;
   root: THREE.Group;
@@ -525,6 +544,9 @@ export class RainGame {
   private texts: Floater[] = [];
   private motes: Mote[] = [];
   private drops: Drop[] = [];
+  private splashes: SplashRing[] = [];
+  private spray: SprayBit[] = [];
+  private riseLights: RiseLight[] = [];
   private readonly resizeObserver: ResizeObserver;
   /** Drawing-buffer scale. Phones stay at 1.5 so bloom and the tilt shift still fit the fill rate. */
   private readonly renderScale: number;
@@ -1239,7 +1261,8 @@ export class RainGame {
         transparent: true,
         depthWrite: false,
         side: THREE.DoubleSide,
-        uniforms: {},
+        blending: THREE.AdditiveBlending,
+        uniforms: { uTime: { value: 0 } },
         vertexShader: /* glsl */ `
           varying vec2 vUv;
           void main() {
@@ -1248,21 +1271,25 @@ export class RainGame {
           }
         `,
         fragmentShader: /* glsl */ `
+          uniform float uTime;
           varying vec2 vUv;
           void main() {
             vec2 p = vUv * 2.0 - 1.0;
             float d = length(p);
-            float fill = smoothstep(1.0, 0.15, d) * 0.22;
-            float rim = smoothstep(1.0, 0.86, d) * smoothstep(0.72, 0.86, d);
-            if (fill + rim < 0.02) discard;
-            vec3 col = mix(vec3(0.45, 0.95, 0.62), vec3(0.7, 0.92, 1.0), rim);
-            gl_FragColor = vec4(col, fill + rim * 0.65);
+            if (d > 1.0) discard;
+            float rip = 0.5 + 0.5 * sin(d * 34.0 - uTime * 7.0);
+            float ring = smoothstep(0.72, 1.0, rip);
+            float fade = smoothstep(1.0, 0.5, d) * smoothstep(0.0, 0.1, d);
+            float a = ring * fade * 0.4;
+            if (a < 0.03) discard;
+            gl_FragColor = vec4(vec3(1.15, 1.7, 1.35), a);
           }
         `,
       }),
     );
     this.puddle.rotation.x = -Math.PI / 2;
     this.puddle.visible = false;
+    this.puddle.renderOrder = 2;
     this.scene.add(this.puddle);
 
     this.seedPools();
@@ -1918,7 +1945,8 @@ export class RainGame {
     curtainMat.uniforms['uTime']!.value = t;
     curtainMat.uniforms['uSilver']!.value = state.ranks.trail >= 1 ? 1 : 0;
     this.curtain.visible = raining;
-    this.puddle.visible = false;
+    this.puddle.visible = raining && !this.globe;
+    (this.puddle.material as THREE.ShaderMaterial).uniforms['uTime']!.value = t;
     for (const mat of this.maskMats) {
       if (!mat.uniforms['uSeek']) continue;
       if (state.phase === 'finale') {
@@ -1969,6 +1997,9 @@ export class RainGame {
       drop.mesh.position.y = drop.y;
       const floor = this.globe ? 0.2 : this.groundY(drop.mesh.position.x, drop.mesh.position.z) + 0.05;
       if (drop.y < floor) {
+        if (!this.globe && Math.random() < 0.34) {
+          this.splashAt(drop.mesh.position.x, floor, drop.mesh.position.z);
+        }
         drop.alive = drop.mesh.visible = false;
       }
     }
@@ -1998,7 +2029,7 @@ export class RainGame {
     for (let i = 0; i < this.views.length; i += 1) {
       const view = this.views[i];
       if (!view) continue;
-      if (view.anim > 0) view.anim = Math.max(0, view.anim - dt / 0.45);
+      if (view.anim > 0) view.anim = Math.max(0, view.anim - dt / 0.95);
       if (view.prop) {
         const base = Number(view.prop.userData['s']) || 1;
         const s = base * (1 + Math.sin(view.anim * Math.PI) * 0.28);
@@ -2922,7 +2953,9 @@ export class RainGame {
             : art.seed
           : this.propTexture(spec.decor, step, world, index);
       setLitMap(view.prop.material as THREE.ShaderMaterial, map);
+      const born = restored ? 1 : clamp((wet - 0.12) / 0.72, 0, 1);
       litColor(view.prop.material as THREE.ShaderMaterial).copy(restored ? this.propSun : this.propDusk);
+      litLife(view.prop.material as THREE.ShaderMaterial, born);
       if (flat) {
         const jx = (((index * 37) % 11) / 11 - 0.5) * TILE * 0.5;
         const jz = (((index * 53) % 13) / 13 - 0.5) * TILE * 0.5;
@@ -2981,6 +3014,7 @@ export class RainGame {
       const map = spec.kind === 'seed' ? art.money : this.propTexture(spec.decor, 2, world, index);
       setLitMap(view.prop.material as THREE.ShaderMaterial, map);
       litColor(view.prop.material as THREE.ShaderMaterial).copy(this.propSun);
+      litLife(view.prop.material as THREE.ShaderMaterial, 1);
       if (spec.kind === 'seed') view.prop.userData['s'] = 1.25;
       view.stage = 2;
     }
@@ -2994,6 +3028,8 @@ export class RainGame {
     this.rippleAt(at.x, at.z, result.mega ? '#ffe56a' : '#b6f27a');
     this.burst(at.x, 1.1, at.z, result.mega ? 28 : 20);
     this.burst(at.x, 1.6, at.z, 10);
+    this.riseLight(at.x, (view?.y ?? 0.4) + 0.15, at.z);
+    this.state?.holdHillGlow(index);
     this.shake = Math.max(this.shake, 0.28);
     this.grin = 0.7;
     this.floatText(at.x, 1.8, result.pond ? 'Pond!' : 'Life takes root', false);
@@ -3180,11 +3216,13 @@ export class RainGame {
           if (mat.uniforms['uMap']!.value !== map) setLitMap(mat, map);
           const life = grown ? 1 : clamp((wet - 0.12) / 0.72, 0, 1);
           litColor(mat).copy(this.propDusk).lerp(this.propSun, life);
+          litLife(mat, life);
           const base = Number(view.prop.userData['s']) || 1;
           const pop = grown ? 1 : clamp(0.34 + wet * 0.8, 0.34, 0.98);
           const read = this.detailBoost();
           if (view.growStart > 0) {
-            view.growT = Math.min(1, (t - view.growStart) / 0.85);
+            const growDur = grown ? 1.2 : 0.85;
+            view.growT = Math.min(1, (t - view.growStart) / growDur);
             const gy = easeOutBack(view.growT);
             view.prop.scale.set(base * pop * gy * read, base * pop * Math.max(0.06, gy) * read, base * pop * gy * read);
           } else {
@@ -3444,6 +3482,33 @@ export class RainGame {
       if (ring.life <= 0) this.scene.remove(ring.mesh);
     }
     this.rings = this.rings.filter((r) => r.life > 0);
+    for (const splash of this.splashes) {
+      if (splash.life <= 0) continue;
+      splash.life = Math.max(0, splash.life - dt);
+      const u = 1 - splash.life / 0.36;
+      splash.mesh.scale.setScalar(0.45 + u * 1.45);
+      this.hdrOpacity(splash.mesh).value = (splash.life / 0.36) * 0.9;
+      splash.mesh.visible = splash.life > 0;
+    }
+    for (const bit of this.spray) {
+      if (bit.life <= 0) continue;
+      bit.life = Math.max(0, bit.life - dt);
+      bit.mesh.position.x += bit.vx * dt;
+      bit.mesh.position.y += bit.vy * dt;
+      bit.mesh.position.z += bit.vz * dt;
+      bit.vy -= dt * 4.5;
+      this.hdrOpacity(bit.mesh).value = Math.max(0, bit.life / 0.42);
+      bit.mesh.visible = bit.life > 0;
+    }
+    for (const light of this.riseLights) {
+      if (light.life <= 0) continue;
+      light.life = Math.max(0, light.life - dt);
+      const u = 1 - light.life / 1.35;
+      light.mesh.position.y = light.y0 + u * 2.8;
+      const fade = Math.sin(Math.min(1, Math.max(0, u)) * Math.PI);
+      this.hdrOpacity(light.mesh).value = fade * 0.78;
+      light.mesh.visible = light.life > 0;
+    }
   }
 
   private onDown = (event: PointerEvent): void => {
@@ -4621,6 +4686,99 @@ export class RainGame {
     }
   }
 
+  private hdrOpacity(mesh: THREE.Mesh): { value: number } {
+    return (mesh.material as THREE.ShaderMaterial).uniforms['uOpacity'] as { value: number };
+  }
+
+  /** Additive card bright enough for the bloom pass. A ring lies flat; a disc faces the camera. */
+  private hdrCard(
+    w: number,
+    h: number,
+    color: THREE.Vector3,
+    map: THREE.Texture | null,
+    ring: boolean,
+  ): THREE.Mesh {
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        uniforms: {
+          uMap: { value: map },
+          uOpacity: { value: 0 },
+          uColor: { value: color },
+          uTextured: { value: map ? 1 : 0 },
+          uRing: { value: ring ? 1 : 0 },
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform sampler2D uMap;
+          uniform float uOpacity;
+          uniform vec3 uColor;
+          uniform float uTextured;
+          uniform float uRing;
+          varying vec2 vUv;
+          void main() {
+            vec2 p = vUv - 0.5;
+            float d = length(p);
+            float shape = uRing > 0.5
+              ? smoothstep(0.28, 0.38, d) * smoothstep(0.5, 0.4, d)
+              : smoothstep(0.5, 0.08, d);
+            vec4 tex = texture2D(uMap, vUv);
+            float texA = mix(1.0, max(tex.a, tex.r), uTextured);
+            shape = mix(shape, 1.0, uTextured);
+            float a = shape * texA * uOpacity;
+            if (a < 0.02) discard;
+            gl_FragColor = vec4(uColor, a);
+          }
+        `,
+      }),
+    );
+    mesh.visible = false;
+    mesh.frustumCulled = false;
+    return mesh;
+  }
+
+  private splashAt(x: number, y: number, z: number): void {
+    const splash = this.splashes.find((item) => item.life <= 0);
+    if (splash) {
+      splash.life = 0.36;
+      splash.mesh.position.set(x, y + 0.03, z);
+      splash.mesh.scale.setScalar(0.45);
+      splash.mesh.visible = true;
+      this.hdrOpacity(splash.mesh).value = 0.9;
+    }
+    for (let i = 0; i < 2; i += 1) {
+      const bit = this.spray.find((item) => item.life <= 0);
+      if (!bit) break;
+      bit.life = 0.42;
+      bit.vx = (Math.random() - 0.5) * 1.5;
+      bit.vz = (Math.random() - 0.5) * 1.5;
+      bit.vy = 1.4 + Math.random() * 0.9;
+      bit.mesh.position.set(x, y + 0.08, z);
+      bit.mesh.visible = true;
+      this.hdrOpacity(bit.mesh).value = 1;
+    }
+  }
+
+  private riseLight(x: number, y: number, z: number): void {
+    const light = this.riseLights.find((item) => item.life <= 0);
+    if (!light) return;
+    light.life = 1.35;
+    light.y0 = y;
+    light.mesh.position.set(x, y, z);
+    light.mesh.visible = true;
+    this.hdrOpacity(light.mesh).value = 0;
+  }
+
   private launchDrop(): void {
     const drop = this.drops.find((d) => !d.alive);
     if (!drop) return;
@@ -4710,6 +4868,29 @@ export class RainGame {
       mesh.visible = false;
       this.scene.add(mesh);
       this.drops.push({ mesh, y: 0, vy: 0, vx: 0, vz: 0, alive: false });
+    }
+    for (let i = 0; i < 16; i += 1) {
+      const mesh = this.hdrCard(0.9, 0.9, new THREE.Vector3(1.55, 2.05, 1.45), this.art.spark, true);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.renderOrder = 3;
+      this.scene.add(mesh);
+      this.splashes.push({ mesh, life: 0 });
+    }
+    for (let i = 0; i < 24; i += 1) {
+      const mesh = this.hdrCard(0.16, 0.22, new THREE.Vector3(1.7, 2.15, 1.55), this.art.spark, false);
+      mesh.userData['bb'] = 1;
+      mesh.renderOrder = 4;
+      this.scene.add(mesh);
+      this.spray.push({ mesh, life: 0, vx: 0, vy: 0, vz: 0 });
+    }
+    const riseMap = this.glowTexture('wisp');
+    for (let i = 0; i < 6; i += 1) {
+      const mesh = this.hdrCard(1.35, 2.8, new THREE.Vector3(1.4, 1.9, 1.08), riseMap, false);
+      (mesh.material as THREE.ShaderMaterial).depthTest = false;
+      mesh.userData['bb'] = 1;
+      mesh.renderOrder = 8;
+      this.scene.add(mesh);
+      this.riseLights.push({ mesh, life: 0, y0: 0 });
     }
   }
 
