@@ -12,6 +12,7 @@ python balance/progression.py  # Bottle-by-bottle cadence for the whole campaign
 python balance/diagnose.py     # Restoration curve + dead zones
 python balance/bloom_feel.py   # Bloom earn vs what the bloom branch costs
 python balance/analytics.py play.json   # Real play vs the simulator
+python balance/analytics.py playthrough-log.json --world 0   # Your live playthrough
 python balance/sim.py          # Full campaign (greedy shop)
 python balance/sim.py --one-buy     # Player-like single upgrade per bottle
 python balance/tune.py --world 4    # Solve one island's hp for its target minutes
@@ -19,6 +20,40 @@ python balance/reprice.py --write   # Re-price the tree from the income curve
 npm run balance:check          # Regression gate (feel + world 0 + per-island + sync)
 npm run dump-upgrades          # Refresh upgrades.json from tree.ts
 ```
+
+## Golden world 0 (Dead Forest)
+
+`balance/golden-world0.json` is a locked snapshot of real play (20 bottles, ~34 min wall clock, island cleared). Use it as the Shell Diver pacing target: visible growth every bottle, workshop buys most gaps, finale at ~100%.
+
+```bash
+python balance/golden_pacing.py              # golden curve + sim cross-check
+python balance/analytics.py golden-world0.json --world 0
+```
+
+**Island HP rule:** each world’s `hp` should stay near “one bottle soaks a cell” at arrival power (`golden_pacing.py` prints `one-shot hp`). World 1 was ~3070 (multi-pass slog); tuned to ~700 with pay 3 so Frostbite greens like Dead Forest.
+
+**Upgrade cadence:** golden island 0 ends at ~57 ranks; the full tree has ~290. To stretch purchases across the campaign without starving early bottles, reprice with:
+
+```bash
+BUYS_PER_BOTTLE=2 INCOME_SHARE=0.82 python balance/reprice.py --write
+npm run dump-upgrades
+npm run balance:check
+```
+
+## Live playthrough ledger
+
+**Dev only** — production builds do not record or persist this ledger. While you play in **`npm run dev`**, every bottle is logged to:
+
+- **`balance/playthrough-log.json`** (auto-updated in the repo)
+- Browser storage key `makeitrain_playthrough_v1` (survives refresh; not cleared by `?fresh` alone)
+
+Each entry records dew earned, cells restored, peak %, upgrades bought (`buys`), rank snapshot, wallet, and whether the bottle ended **dry** or **cleared** the island.
+
+- Reset game save only: `?fresh`
+- Reset save **and** ledger: `?fresh&clearPlaybook`
+- Console: `window.__rain.playbook()` or `window.__rain.exportPlaybook()` for a download
+
+When you finish a world, tell balance tuning to read `balance/playthrough-log.json`.
 
 ## Currencies
 

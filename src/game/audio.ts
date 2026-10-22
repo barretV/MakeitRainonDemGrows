@@ -218,10 +218,10 @@ export class AudioBus {
     const now = ctx.currentTime;
     if (now - this.lastGrow < 0.16) return;
     this.lastGrow = now;
-    this.pluck(this.nextNote(), 0.022 + Math.random() * 0.012);
+    this.groundDrop(0.45);
   }
 
-  /** A mask cell just finished greening — brighter than mid-growth pings. */
+  /** A mask cell just finished greening. A wetter drop than the mid-soak patter. */
   restore(): void {
     if (this.muted) return;
     const ctx = this.context();
@@ -229,27 +229,7 @@ export class AudioBus {
     const now = ctx.currentTime;
     if (now - this.lastRestore < 0.085) return;
     this.lastRestore = now;
-    const root = this.nextNote();
-    const pan = (Math.random() - 0.5) * 0.75;
-    this.pluck(root, 0.042, 0, pan);
-    this.tone({
-      type: 'sine',
-      from: root * 1.5,
-      to: root * 2.02,
-      dur: 0.2,
-      gain: 0.034,
-      delay: 0.05,
-      pan,
-    });
-    this.tone({
-      type: 'triangle',
-      from: root * 2.4,
-      to: root * 2.85,
-      dur: 0.24,
-      gain: 0.022,
-      delay: 0.1,
-      pan,
-    });
+    this.groundDrop(0.9);
   }
 
   crit(): void {
@@ -449,12 +429,43 @@ export class AudioBus {
     src.stop(when + 0.03);
   }
 
-  private playSample(buffer: AudioBuffer, opts: { rate: number; gain: number; pan: number }): void {
+  /**
+   * Rain meeting the ground. A soft bubble: a rounded sine that lifts and
+   * settles, at a random pitch, so the shower never locks into a scale.
+   */
+  private groundDrop(strength: number): void {
+    if (this.muted) return;
+    const ctx = this.context();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const from = 260 * 2 ** (Math.random() * 1.85);
+    const rise = 1.12 + Math.random() * 0.7;
+    const dur = 0.07 + Math.random() * 0.08 + strength * 0.03;
+    const peak = (0.01 + strength * 0.008 + Math.random() * 0.004) * 1.15;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(from, t);
+    osc.frequency.exponentialRampToValueAtTime(from * rise, t + dur * 0.42);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(90, from * 0.62), t + dur);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(peak, t + 0.014 + Math.random() * 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = (Math.random() - 0.5) * 0.9;
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.sfxOut(ctx));
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  }
+
+  private playSample(buffer: AudioBuffer, opts: { rate: number; gain: number; pan: number; maxDur?: number }): void {
     if (this.muted) return;
     const ctx = this.context();
     if (!ctx) return;
     const rate = Math.max(0.4, opts.rate);
-    const dur = buffer.duration / rate;
+    const dur = opts.maxDur ? Math.min(buffer.duration / rate, opts.maxDur) : buffer.duration / rate;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = rate;
@@ -553,7 +564,7 @@ export class AudioBus {
     return out;
   }
 
-  private rainPatter(volume: number, centerFreq: number, pan: number, durBase = 0.028): void {
+  private rainPatter(volume: number, centerFreq: number, pan: number, durBase = 0.028, q = 0.65): void {
     const ctx = this.context();
     if (!ctx || this.muted) return;
     const dur = durBase + Math.random() * 0.04;
@@ -571,7 +582,7 @@ export class AudioBus {
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
     filter.frequency.value = centerFreq;
-    filter.Q.value = 0.65;
+    filter.Q.value = q;
     const panner = ctx.createStereoPanner();
     panner.pan.value = Math.max(-1, Math.min(1, pan));
     const gain = ctx.createGain();

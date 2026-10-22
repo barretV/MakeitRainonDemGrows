@@ -53,14 +53,14 @@ TAIL_STEP = float(os.environ.get('TAIL_STEP', '1.12'))
 RANK_STEP = float(os.environ.get('RANK_STEP', '1.15'))
 
 # What share of the money in hand a purchase costs.
-INCOME_SHARE = 0.85
+INCOME_SHARE = float(os.environ.get('INCOME_SHARE', '0.85'))
 
 # How many times the campaign is played while the prices settle.
 ITERATIONS = int(os.environ.get('ITERATIONS', '14'))
 
-# How many ranks one bottle buys while the prices are being worked out. A
-# player takes one upgrade per bottle, not the whole shop.
-BUYS_PER_BOTTLE = 1
+# How many ranks one bottle buys while the prices are being worked out. Set to
+# 2–3 when repricing against golden playthrough cadence (see golden-world0.json).
+BUYS_PER_BOTTLE = int(os.environ.get('BUYS_PER_BOTTLE', '1'))
 
 # Price a rank against the best the island ever paid, or against the last bottle.
 USE_PEAK = os.environ.get('USE_PEAK', '1') == '1'
@@ -131,6 +131,8 @@ def play(costs, bloom_costs):
             # which is what the shop asks.
             taken = 0
             while True:
+                if BUYS_PER_BOTTLE > 0 and taken >= BUYS_PER_BOTTLE:
+                    break
                 node, cost, bloom_cost = next_buy(state, dew, blooms, world, costs, bloom_costs)
                 if node is None:
                     break

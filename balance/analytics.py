@@ -26,6 +26,8 @@ def load(path: str):
         data = json.load(handle)
     if isinstance(data, list):
         return data
+    if isinstance(data.get("bottles"), list):
+        return data["bottles"]
     return data.get("runs", [])
 
 

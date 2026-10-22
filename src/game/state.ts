@@ -1,4 +1,4 @@
-import { landmarkTitlesAt, nextLandmarkTitle } from './landmarks';
+import { risingLandmarkTitle } from './landmarks';
 import {
   ACHIEVEMENTS,
   GLOBE_WORLD,
@@ -1919,7 +1919,7 @@ export class SaveState {
       newBest: this.newBest,
       tree: buildTree(this.ranks, wallet, this.unlocked),
       nextGoal: this.nextGoal(),
-      nextLandmark: nextLandmarkTitle(this.world, this.ratio()),
+      nextLandmark: risingLandmarkTitle(this.world, this.pixels, maskOf(this.world).cols, maskOf(this.world).rows),
       worlds: [0, 1, 2, 3, 4].map((index) => ({
         index,
         name: worldDef(index).name,
@@ -1950,10 +1950,7 @@ export class SaveState {
         this.revivalMilestones.add(m);
         this.revivalGlow = 1.35;
         this.pendingMilestone = m;
-        const names = landmarkTitlesAt(this.world, m);
-        const verb = names.length > 1 ? 'awaken' : 'awakens';
-        const named = names.length ? ` — ${names.join(' & ')} ${verb}` : '';
-        this.toast = m >= 100 ? `The land is whole again!${named}` : `World revival ${m}%!${named}`;
+        this.toast = m >= 100 ? 'The land is whole again!' : `World revival ${m}%!`;
       }
     }
   }

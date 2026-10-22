@@ -36,6 +36,8 @@ const LIT_FRAG = /* glsl */ `
   uniform vec2 uFogRange;
   uniform float uOpacity;
   uniform float uAlpha;
+  uniform float uBeacon;
+  uniform vec3 uLamp;
   varying vec2 vUv;
   varying vec3 vT;
   varying vec3 vB;
@@ -50,9 +52,14 @@ const LIT_FRAG = /* glsl */ `
     vec3 N = normalize(vT * nTex.x + vB * nTex.y + vN * nTex.z);
     float wrap = clamp(dot(N, normalize(uSunDir)) * 0.5 + 0.5, 0.0, 1.0);
     float shade = mix(0.86, 1.16, wrap);
+    float lamp = clamp(uBeacon, 0.0, 1.0);
+    shade = mix(shade, mix(1.05, 1.38, wrap), lamp);
     vec3 col = albedo * uColor * shade;
     float rim = pow(wrap, 2.4) * clamp(1.0 - nTex.z, 0.0, 1.0);
-    col += albedo * uSunColor * rim * 0.22;
+    col += albedo * uSunColor * rim * mix(0.22, 0.62, lamp);
+    float fres = pow(clamp(1.0 - nTex.z, 0.0, 1.0), 1.25);
+    col += uLamp * fres * uBeacon * 0.7;
+    col += albedo * uLamp * uBeacon * 0.28;
     col = mix(col, uFog, smoothstep(uFogRange.x, uFogRange.y, vDepth));
     gl_FragColor = vec4(col, tex.a * uOpacity);
   }
@@ -80,6 +87,8 @@ export function makeLitSprite(
       uFogRange: { value: new THREE.Vector2(fog?.near ?? 1000, fog?.far ?? 2000) },
       uOpacity: { value: 1 },
       uAlpha: { value: alphaTest },
+      uBeacon: { value: 0 },
+      uLamp: { value: new THREE.Color('#ffe0a0') },
     },
     vertexShader: LIT_VERT,
     fragmentShader: LIT_FRAG,

@@ -16,13 +16,41 @@ interface Palette {
   liveB: string;
   dirtA: string;
   dirtB: string;
+  /** Mid restoration (mud / moss) before full cover. */
+  moss: string;
+  /** Blade colour the meadow lerps toward. */
+  grass: string;
+  petal: string;
+  water: string;
+  /** Broad colour drift so a restored field is not one flat sheet. */
+  drift: string;
 }
 
 const PALETTES: Palette[] = [
-  { deadA: '#6a4556', deadB: '#3a2434', rockA: '#4a3542', rockB: '#2a1c28', liveA: '#7dce4a', liveB: '#5cb83a', dirtA: '#6a4030', dirtB: '#3a2418' },
-  { deadA: '#f7fbff', deadB: '#d5e6f6', rockA: '#6e96c8', rockB: '#35598f', liveA: '#b7f0c8', liveB: '#6ed4a0', dirtA: '#7f6a9a', dirtB: '#4d6f96' },
-  { deadA: '#ecd6a6', deadB: '#d9be8a', rockA: '#d9b27e', rockB: '#ad8256', liveA: '#a8dc62', liveB: '#82c44c', dirtA: '#bc8a5c', dirtB: '#90643e' },
-  { deadA: '#76824e', deadB: '#5e683e', rockA: '#6a5e4c', rockB: '#463d32', liveA: '#8cf0b4', liveB: '#5edab6', dirtA: '#7a5aa0', dirtB: '#56407a' },
+  // Dead Forest: charred dusk soil → summer meadow.
+  {
+    deadA: '#6a4556', deadB: '#3a2434', rockA: '#4a3542', rockB: '#2a1c28',
+    liveA: '#7dce4a', liveB: '#5cb83a', dirtA: '#6a4030', dirtB: '#3a2418',
+    moss: '#486b2e', grass: '#38943a', petal: '#ff8fb8', water: '#47a0ea', drift: '#d6e08a',
+  },
+  // Frostbite: snow and blue ice → pale frost meadow, not summer green.
+  {
+    deadA: '#f4fbff', deadB: '#9ec4e8', rockA: '#7aa4d4', rockB: '#2d4f86',
+    liveA: '#d8fff4', liveB: '#7ed4c8', dirtA: '#6a8cb8', dirtB: '#3d5f88',
+    moss: '#7eb8c8', grass: '#b7f0e4', petal: '#ffffff', water: '#7ec8f0', drift: '#e8fbff',
+  },
+  // Parched Desert: cracked sand → oasis gold-green.
+  {
+    deadA: '#ecd6a6', deadB: '#c49a62', rockA: '#d9b27e', rockB: '#8a5a32',
+    liveA: '#c8e070', liveB: '#e8c060', dirtA: '#bc8a5c', dirtB: '#90643e',
+    moss: '#8a9a40', grass: '#c6d45a', petal: '#ffb45e', water: '#3aa0c8', drift: '#ffe08a',
+  },
+  // Toxic dump: sick sludge → neon violet-green.
+  {
+    deadA: '#5a6840', deadB: '#3a4428', rockA: '#6a5e4c', rockB: '#3a2848',
+    liveA: '#86efac', liveB: '#c084fc', dirtA: '#7a5aa0', dirtB: '#3a2848',
+    moss: '#6a8a38', grass: '#5eead4', petal: '#e879f9', water: '#67e8f9', drift: '#bbf7d0',
+  },
 ];
 
 function hash2(x: number, z: number, seed: number): number {
@@ -236,6 +264,7 @@ export class Terrain {
   buildMesh(
     mask: THREE.Texture,
     pulse: THREE.Texture,
+    playable: THREE.Texture,
     maskSize: { cols: number; rows: number },
     time: { value: number },
     fog: THREE.Fog,
@@ -250,6 +279,7 @@ export class Terrain {
       uniforms: {
         uMask: { value: mask },
         uPulse: { value: pulse },
+        uPlayable: { value: playable },
         uMaskSize: { value: new THREE.Vector2(maskSize.cols, maskSize.rows) },
         uBoard: { value: new THREE.Vector4(this.originX, this.originZ, this.width, this.depth) },
         uTime: time,
@@ -261,6 +291,11 @@ export class Terrain {
         uLiveB: { value: linear(pal.liveB) },
         uDirtA: { value: linear(pal.dirtA) },
         uDirtB: { value: linear(pal.dirtB) },
+        uMoss: { value: linear(pal.moss) },
+        uGrass: { value: linear(pal.grass) },
+        uPetal: { value: linear(pal.petal) },
+        uWater: { value: linear(pal.water) },
+        uDrift: { value: linear(pal.drift) },
         uFog: { value: fog.color.clone() },
         uFogRange: { value: new THREE.Vector2(fog.near, fog.far) },
         uGlobe: { value: this.spherical ? 1 : 0 },
@@ -270,6 +305,11 @@ export class Terrain {
         uCloud: { value: cloud },
         uRain: rain,
         uSeek: { value: 0 },
+        uScanOrigin: { value: new THREE.Vector2(0, 0) },
+        uScanRadius: { value: 0 },
+        uScanAmp: { value: 0 },
+        // Frost meadow is already ice and mint. A warm mark is what reads there.
+        uScanWarm: { value: this.world === 1 ? 1 : 0 },
       },
       vertexShader: VOXEL_VERT,
       fragmentShader: VOXEL_FRAG,
@@ -443,6 +483,7 @@ const VOXEL_VERT = /* glsl */ `
 const VOXEL_FRAG = /* glsl */ `
   uniform sampler2D uMask;
   uniform sampler2D uPulse;
+  uniform sampler2D uPlayable;
   uniform vec2 uMaskSize;
   uniform vec4 uBoard;
   uniform float uTime;
@@ -450,10 +491,15 @@ const VOXEL_FRAG = /* glsl */ `
   uniform vec3 uDeadB;
   uniform vec3 uRockA;
   uniform vec3 uRockB;
-  uniform vec3 uLiveA;
-  uniform vec3 uLiveB;
-  uniform vec3 uDirtA;
-  uniform vec3 uDirtB;
+      uniform vec3 uLiveA;
+      uniform vec3 uLiveB;
+      uniform vec3 uDirtA;
+      uniform vec3 uDirtB;
+      uniform vec3 uMoss;
+      uniform vec3 uGrass;
+      uniform vec3 uPetal;
+      uniform vec3 uWater;
+      uniform vec3 uDrift;
   uniform vec3 uFog;
   uniform vec2 uFogRange;
   uniform float uGlobe;
@@ -463,6 +509,10 @@ const VOXEL_FRAG = /* glsl */ `
   uniform vec3 uCloud;
   uniform float uRain;
   uniform float uSeek;
+  uniform vec2 uScanOrigin;
+  uniform float uScanRadius;
+  uniform float uScanAmp;
+  uniform float uScanWarm;
   varying vec3 vWorld;
   varying vec3 vN;
   varying float vUp;
@@ -481,6 +531,10 @@ const VOXEL_FRAG = /* glsl */ `
 
   vec4 maskAtCell(vec2 cell) {
     return texture2D(uMask, (floor(cell) + 0.5) / uMaskSize);
+  }
+
+  float playableAtCell(vec2 cell) {
+    return texture2D(uPlayable, clamp(cell / uMaskSize, 0.0, 0.9999)).r;
   }
 
   float pulseAtCell(vec2 cell) {
@@ -514,8 +568,8 @@ const VOXEL_FRAG = /* glsl */ `
       float crack = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
       dead = mix(dead * 0.48, dead, smoothstep(0.0, mix(0.08, 0.55, uGlobe), crack));
       vec3 mud = mix(uDirtA, uDirtB, n);
-      mud = mix(mud, vec3(0.28, 0.42, 0.18), moss * 0.65);
-      vec3 water = vec3(0.28, 0.62, 0.92);
+      mud = mix(mud, uMoss, moss * 0.75);
+      vec3 water = uWater;
       float sx = sin(vWorld.x * 14.0 + uTime * 2.4);
       float sz = sin(vWorld.z * 11.0 - uTime * 1.8);
       float ripple = sx * sz;
@@ -537,9 +591,9 @@ const VOXEL_FRAG = /* glsl */ `
       vec2 bc = floor((vWorld.xz + wob) * 6.0);
       vec2 bf = fract((vWorld.xz + wob) * 6.0) - 0.5;
       float fleck = smoothstep(0.34, 0.08, length(vec2(bf.x, bf.y * 1.8))) * step(0.4, h21(bc));
-      vec3 root = vec3(0.08, 0.32, 0.1);
-      vec3 midG = mix(uLiveA, vec3(0.22, 0.62, 0.22), 0.55);
-      vec3 tip = mix(uLiveB, vec3(0.42, 0.72, 0.24), 0.35);
+      vec3 root = mix(uMoss, uLiveA, 0.25);
+      vec3 midG = mix(uLiveA, uGrass, 0.62);
+      vec3 tip = mix(uLiveB, uGrass, 0.35);
       vec3 turf = mix(root, midG, grass);
       turf = mix(turf, tip, fleck * grass);
       turf *= 0.9 + 0.16 * n2;
@@ -547,14 +601,14 @@ const VOXEL_FRAG = /* glsl */ `
       float broad = sin(vWorld.x * 0.085 + vWorld.z * 0.062) * 0.5 + 0.5;
       float broad2 = sin(vWorld.x * 0.021 - vWorld.z * 0.033 + 1.7) * 0.5 + 0.5;
       float drift = broad * 0.6 + broad2 * 0.4;
-      turf = mix(turf * vec3(0.86, 0.95, 0.9), turf * vec3(1.12, 1.06, 0.82), drift);
+      turf = mix(turf * vec3(0.9, 0.96, 0.98), turf * uDrift, drift);
       float petalDot = smoothstep(0.3, 0.1, length(bf * 1.5)) * step(0.965, h21(bc + 13.0));
-      vec3 petal = h21(bc + 2.0) > 0.5 ? vec3(1.0, 0.45, 0.62) : vec3(1.0, 0.92, 0.55);
+      vec3 petal = mix(uPetal, vec3(1.0), h21(bc + 2.0) > 0.5 ? 0.15 : 0.0);
       turf = mix(turf, petal, petalDot * bloom * 0.9);
       turf = mix(turf, tip * 1.15, grown * fleck * 0.35);
       vec3 bladeN = normalize(vec3(sway * 0.55, 1.0, gust * 0.35));
       float bladeLit = clamp(dot(bladeN, sunDir) * 0.5 + 0.5, 0.0, 1.0);
-      turf += vec3(0.72, 0.78, 0.28) * fleck * grass * bladeLit * 0.16;
+      turf += mix(uGrass, vec3(1.0), 0.4) * fleck * grass * bladeLit * 0.18;
       col = mix(damp, turf, clamp(grass * 0.95 + bloom * 0.2, 0.0, 1.0));
       col = mix(col, mix(uLiveA, uLiveB, fleck), grown * 0.55);
       vec2 local = fract(vWorld.xz * 3.125) - 0.5;
@@ -596,23 +650,44 @@ const VOXEL_FRAG = /* glsl */ `
       : smoothstep(0.5, 0.98, lifeMask.r) * 0.62;
     float wrap = clamp(dot(normalize(vN), sunDir) * 0.5 + 0.5, 0.0, 1.0);
     col *= mix(mix(0.78, 1.08, wrap), 1.0, uGlobe);
-    // Unrestored ground stays in the world's dusk. Restored ground is what the light finds.
-    vec3 dusk = mix(uDusk, vec3(1.05, 0.38, 0.55), 0.72);
-    col = mix(col * dusk, col * vec3(1.0, 0.98, 0.9), smoothstep(0.25, 0.88, life));
-    float exposure = mix(0.58, 0.98, life);
+    // Unrestored ground stays dark in this island's own dusk. Restored ground
+    // comes up to full colour, so every world has the same "lights up where you grow" read.
+    vec3 night = mix(uDusk * 0.32, vec3(0.1, 0.08, 0.12), 0.5);
+    col = mix(col * night, col * vec3(1.06, 1.03, 0.98), smoothstep(0.18, 0.86, life));
+    float exposure = mix(0.4, 1.06, smoothstep(0.12, 0.9, life));
     exposure = mix(exposure, mix(0.55, 1.05, life), uGlobe);
     col *= exposure;
     // Light should make the ground look alive, not pale. Push the colour back
     // in where the light lands instead of only adding brightness.
     float luma = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(vec3(luma), col, 1.0 + 0.14 * life);
-    col += vec3(1.0, 0.62, 0.7) * smoothstep(0.08, 0.32, life) * (1.0 - smoothstep(0.55, 0.9, life)) * 0.18;
+    vec3 wake = mix(vec3(1.0, 0.62, 0.7), uLiveB, 0.62);
+    col += wake * smoothstep(0.08, 0.32, life) * (1.0 - smoothstep(0.55, 0.9, life)) * 0.22;
     col += uSunColor * smoothstep(0.72, 1.0, wrap) * 0.08 * life * (1.0 - uGlobe);
     // Thirsty ground shimmers. It keeps shimmering for patches that are nearly
     // done, so the last few cells of an island never go quiet.
     float thirsty = uSeek * (1.0 - smoothstep(0.05, 0.92, life));
     float blink = 0.55 + 0.45 * sin(uTime * 2.8 + vWorld.x * 0.9 + vWorld.z * 0.55);
     col = mix(col, vec3(0.72, 0.88, 0.62), thirsty * blink * (vUp > 0.5 ? 0.28 : 0.12));
+    // Sci-fi scan: a ring leaves the island centre. Each unfinished cell
+    // lights on its own, the same way a dirt map marks every speck.
+    float raw = lifeMask.r;
+    float unfinished = (1.0 - smoothstep(0.84, 0.995, raw)) * step(0.5, playableAtCell(maskCell()));
+    float scanDist = length(vWorld.xz - uScanOrigin);
+    float scanned = smoothstep(uScanRadius + 0.15, uScanRadius - 1.1, scanDist);
+    float band = smoothstep(1.35, 0.0, abs(scanDist - uScanRadius));
+    float mark = unfinished * scanned * uScanAmp;
+    vec2 cellMid = fract(maskCell()) - 0.5;
+    float spot = smoothstep(0.5, 0.06, length(cellMid));
+    float halo = smoothstep(0.55, 0.18, length(cellMid));
+    float pulse = 0.55 + 0.45 * sin(uTime * 5.5);
+    // Cool cyan on green and sand. Hot magenta on frost, where the ground is already ice.
+    vec3 scanCol = mix(vec3(0.25, 0.8, 1.0), vec3(1.0, 0.06, 0.38), uScanWarm);
+    vec3 scanHot = mix(vec3(0.55, 0.95, 1.0), vec3(1.0, 0.22, 0.55), uScanWarm);
+    col += scanCol * mark * halo * 1.15;
+    col += scanHot * mark * spot * pulse * 2.1;
+    col += mix(scanHot, vec3(1.0), 0.28) * mark * smoothstep(0.14, 0.0, length(cellMid)) * pulse * 1.5;
+    col += scanHot * band * uScanAmp * 1.15;
     if (vUp > 0.5) {
       float cd = length(vWorld.xz - uCloud.xy);
       float shadow = (1.0 - smoothstep(uCloud.z * 0.28, uCloud.z, cd)) * (1.0 - uGlobe);

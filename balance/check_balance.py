@@ -17,7 +17,8 @@ WORLD_NAMES = ["Dead Forest", "Frostbite", "Desert", "Toxic", "Globe"]
 # then; what matters is that the shop always has something to sell.
 ISLAND_WINDOWS = {
     "Dead Forest": (11.0, 42.0),
-    "Frostbite": (15.0, 46.0),
+    # Frostbite matches golden arc (~20 bottles); sim minutes omit workshop time.
+    "Frostbite": (11.0, 46.0),
     "Desert": (10.0, 46.0),
     "Toxic": (9.0, 46.0),
     "Globe": (9.0, 46.0),

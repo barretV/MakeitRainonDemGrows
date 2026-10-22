@@ -20,11 +20,14 @@ import {
   worldDef,
   type Decor,
 } from './balance';
+import { landmarkTexture } from './landmarkArt';
+import { buildLivingRibbon, poseLivingRibbon, ribbonsForWorld, type LivingRibbon } from './livingRibbon';
 import { buildLandmarkGroup, type LandmarkKit } from './landmarkView';
 import {
   LANDMARK_WORLD_SCALE,
-  isRevivalPct,
+  landmarkLamp,
   landmarkLocalWet,
+  landmarkStage,
   landmarksForWorld,
   type LandmarkDef,
 } from './landmarks';
@@ -224,6 +227,8 @@ interface TileView {
   /** 0 = duck pond, 1 = frog pond */
   pondCritter: number;
   pondFill: number;
+  /** Visual fill. Lags the real soak so a one-hit pond still rises on screen. */
+  pondShown: number;
   pondStage: number;
   x: number;
   y: number;
@@ -285,12 +290,24 @@ interface LandmarkRuntime {
   def: LandmarkDef;
   root: THREE.Group;
   base: number;
-  unlocked: boolean;
-  age: number;
+  /** 0 buried through 4 restored. Driven by the ground under the landmark. */
+  stage: number;
+  /** Smoothed rise out of the ground, 0–1. */
+  rise: number;
+  /** Smoothed ruin→color, 0–1. */
+  colorT: number;
+  /** Seconds left in the full-restore celebration. */
+  celebrate: number;
+  celebrated: boolean;
+  encore: boolean;
+  /** How long each layer has been visible, for its pop. */
+  layerAt: number[];
   wet: number;
   ruin: THREE.Color;
   live: THREE.Color;
   tint: THREE.Color;
+  /** Saturated light this landmark carries, separate from the sun on the trees. */
+  lamp: THREE.Color;
   ax: number;
   ay: number;
   az: number;
@@ -341,6 +358,8 @@ interface TurnStick {
   id: number;
   x: number;
 }
+
+const landmarkWhite = new THREE.Color('#fff6e4');
 
 export class RainGame {
   readonly audio = new AudioBus();
@@ -491,6 +510,12 @@ export class RainGame {
   private boxes: THREE.Mesh[] = [];
   private worldFlairMeshes: THREE.Mesh[] = [];
   private landmarkViews: LandmarkRuntime[] = [];
+  private ribbons: LivingRibbon[] = [];
+  private fireflies: THREE.Mesh[] = [];
+  /** Ponds that have already played their fill-and-swell, keyed by world:index. */
+  private pondSwelled = new Set<string>();
+  /** Worlds whose already-full ponds were marked so an old save does not replay them. */
+  private pondSwellSeeded = new Set<number>();
   /** Set when a revival toast just played, so a landmark unlock does not replace it. */
   private milestoneBeat = 0;
   private readonly landmarkUp = new THREE.Vector3(0, 1, 0);
@@ -770,6 +795,22 @@ export class RainGame {
         phase: i * 1.07,
         spin: kind === 2 ? 2.4 : 1.1,
       });
+    }
+
+    for (let i = 0; i < 8; i += 1) {
+      const mesh = this.billboard(this.art.spark, 0.22, 0.22, 0.02);
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.color.set('#ffe38a');
+      mat.transparent = true;
+      mat.depthWrite = false;
+      mat.blending = THREE.AdditiveBlending;
+      mat.fog = false;
+      mat.toneMapped = false;
+      mat.opacity = 0;
+      mesh.visible = false;
+      mesh.renderOrder = 6;
+      this.scene.add(mesh);
+      this.fireflies.push(mesh);
     }
 
     this.skyMat = new THREE.ShaderMaterial({
@@ -1971,8 +2012,9 @@ export class RainGame {
 
     this.applySkyLift(dt);
     this.syncLandmarks(dt, t);
+    this.syncRibbons(t);
     this.faceAll();
-    this.syncProps(t);
+    this.syncProps(dt, t);
     this.syncCritters(dt, t);
     this.stepAmbient(dt, t);
     this.stepFx(dt);
@@ -2095,7 +2137,7 @@ export class RainGame {
       state.sealFinaleLandscape();
       this.syncMask();
       this.syncPulse();
-      this.syncProps(t);
+      this.syncProps(dt, t);
       for (let i = 0; i < this.views.length; i += 1) {
         if (this.views[i] && !this.views[i]!.dressed) this.dressTile(i);
       }
@@ -2135,6 +2177,7 @@ export class RainGame {
     this.boxes = [];
     this.worldFlairMeshes = [];
     this.landmarkViews = [];
+    this.ribbons = [];
     for (const fall of this.waterfalls) {
       this.track.remove(fall.fall);
       this.track.remove(fall.mist);
@@ -2269,6 +2312,12 @@ export class RainGame {
     }
     const tiles = state.current();
     this.buildPropShadows(tiles.length);
+    if (!this.pondSwellSeeded.has(world)) {
+      this.pondSwellSeeded.add(world);
+      for (let i = 0; i < tiles.length; i += 1) {
+        if (state.spec(i).kind === 'pond' && state.isRestored(i)) this.pondSwelled.add(`${world}:${i}`);
+      }
+    }
     for (let i = 0; i < tiles.length; i += 1) {
       const spec = state.spec(i);
       const at = this.tilePos(i);
@@ -2299,6 +2348,7 @@ export class RainGame {
           pondSize: restored ? 1.3 : 1,
           pondCritter: i % 2,
           pondFill: restored ? 1 : 0,
+          pondShown: restored ? 1 : 0,
           pondStage: restored ? 2 : 0,
           x: at.x,
           y: at.y,
@@ -2363,6 +2413,7 @@ export class RainGame {
         pondSize: restored ? 1.3 : 1,
         pondCritter: i % 2,
         pondFill: restored ? 1 : 0,
+        pondShown: restored ? 1 : 0,
         pondStage: restored ? 2 : 0,
         x: at.x,
         y: this.globe ? at.y : column,
@@ -2387,6 +2438,7 @@ export class RainGame {
     this.syncCritters(0, 0, true);
     this.syncWorldFlair();
     this.mountLandmarks();
+    this.mountRibbons();
     this.restoreWaterfalls();
   }
 
@@ -2405,12 +2457,11 @@ export class RainGame {
     };
   }
 
-  /** Plants each world's showpieces. Ruins are already there; awakening is just a scale and color change. */
+  /** Plants each world's showpieces. They stay buried until that patch of land comes back. */
   private mountLandmarks(): void {
     const state = this.state;
     if (!state) return;
     const world = state.world;
-    const pct = Math.floor(state.ratio() * 100);
     const { cols, rows } = maskOf(world);
     const worldScale = LANDMARK_WORLD_SCALE[world] ?? 1;
     const kit = this.landmarkKit();
@@ -2419,17 +2470,26 @@ export class RainGame {
       root.frustumCulled = false;
       const spot = this.plantLandmark(root, def.u, def.v);
       this.track.add(root);
-      const unlocked = pct >= def.unlockPct;
+      const wet = landmarkLocalWet(state.pixels, cols, rows, def.u, def.v);
+      const stage = landmarkStage(wet);
+      const layerAt = [0, 0, 0, 0, 0];
+      for (let s = 1; s <= stage; s += 1) layerAt[s] = 8;
       const view: LandmarkRuntime = {
         def,
         root,
         base: worldScale * def.scale,
-        unlocked,
-        age: unlocked ? 4 : 0,
-        wet: landmarkLocalWet(state.pixels, cols, rows, def.u, def.v),
+        stage,
+        rise: stage <= 0 ? 0 : stage === 1 ? 0.62 : stage === 2 ? 0.8 : stage === 3 ? 0.92 : 1,
+        colorT: stage <= 1 ? 0 : stage === 2 ? 0.4 : stage === 3 ? 0.75 : 1,
+        celebrate: 0,
+        celebrated: stage >= 4,
+        encore: stage >= 4,
+        layerAt,
+        wet,
         ruin: new THREE.Color(def.ruin),
         live: new THREE.Color(def.live),
         tint: new THREE.Color(def.ruin),
+        lamp: new THREE.Color(landmarkLamp(def.ruin)),
         ax: spot.x,
         ay: spot.y,
         az: spot.z,
@@ -2437,11 +2497,62 @@ export class RainGame {
         ny: spot.ny,
         nz: spot.nz,
       };
-      root.scale.setScalar(view.base * (unlocked ? 1 : 0.76));
-      const shown = unlocked ? 1 : view.wet * 0.32;
-      view.tint.copy(view.ruin).lerp(view.live, shown);
-      this.poseLandmark(view, 0, 0, shown);
+      view.tint.copy(view.ruin).lerp(view.live, view.colorT);
+      view.root.visible = view.stage > 0 || view.wet > 0.05;
+      view.root.scale.setScalar(view.base);
+      this.poseLandmark(view, 0, 0);
       this.landmarkViews.push(view);
+    }
+  }
+
+  private mountRibbons(): void {
+    const state = this.state;
+    if (!state) return;
+    const kit = {
+      reed: this.art.cattail,
+      fish: this.art.koi,
+      fly: this.art.butterfly,
+      palm: landmarkTexture('palm'),
+      coral: landmarkTexture('coral'),
+      mote: this.art.spark,
+    };
+    for (const def of ribbonsForWorld(state.world)) {
+      const ribbon = buildLivingRibbon(def, (u, v) => this.ribbonPoint(u, v), this.timeU, kit);
+      this.track.add(ribbon.root);
+      const { cols, rows } = maskOf(state.world);
+      for (let s = 0; s < ribbon.segmentUv.length; s += 1) {
+        const at = ribbon.segmentUv[s]!;
+        ribbon.fills[s] = landmarkLocalWet(state.pixels, cols, rows, at.u, at.v);
+      }
+      poseLivingRibbon(ribbon, 0);
+      this.ribbons.push(ribbon);
+    }
+  }
+
+  private ribbonPoint(u: number, v: number): {
+    x: number; y: number; z: number; nx: number; ny: number; nz: number; u: number; v: number;
+  } {
+    if (this.globe) {
+      const lon = u * Math.PI * 2;
+      const lat = (v - 0.5) * Math.PI * 0.82;
+      const p = this.lonLatPoint(lon, lat, GLOBE_SURFACE_RADIUS + 0.12);
+      const len = Math.hypot(p.x, p.y, p.z) || 1;
+      return { x: p.x, y: p.y, z: p.z, nx: p.x / len, ny: p.y / len, nz: p.z / len, u, v };
+    }
+    const at = flairWorldPoint(this.state?.world ?? 0, u, v);
+    return { x: at.x, y: this.groundY(at.x, at.z), z: at.z, nx: 0, ny: 1, nz: 0, u, v };
+  }
+
+  private syncRibbons(t: number): void {
+    const state = this.state;
+    if (!state || this.ribbons.length === 0) return;
+    const { cols, rows } = maskOf(state.world);
+    for (const ribbon of this.ribbons) {
+      for (let s = 0; s < ribbon.segmentUv.length; s += 1) {
+        const at = ribbon.segmentUv[s]!;
+        ribbon.fills[s] = landmarkLocalWet(state.pixels, cols, rows, at.u, at.v);
+      }
+      poseLivingRibbon(ribbon, t);
     }
   }
 
@@ -2476,76 +2587,164 @@ export class RainGame {
       this.milestoneBeat = 0;
       return;
     }
-    const pct = Math.floor(state.ratio() * 100);
     const { cols, rows } = maskOf(state.world);
-    const fresh: LandmarkRuntime[] = [];
     const boost = this.globe ? 1 : 1 + (this.detailBoost() - 1) * 0.35;
+    const glide = dt <= 0 ? 1 : 1 - Math.exp(-dt * 4.2);
     for (const view of this.landmarkViews) {
       view.wet = landmarkLocalWet(state.pixels, cols, rows, view.def.u, view.def.v);
-      if (pct >= view.def.unlockPct && !view.unlocked) {
-        view.unlocked = true;
-        view.age = 0;
-        fresh.push(view);
+      const next = landmarkStage(view.wet);
+      if (next > view.stage) {
+        const prev = view.stage;
+        view.stage = next;
+        for (let s = prev + 1; s <= next; s += 1) view.layerAt[s] = 0;
+        if (next >= 4 && !view.celebrated) {
+          view.celebrated = true;
+          view.celebrate = 1.85;
+          this.finishLandmark(view);
+        } else if (prev === 0) {
+          this.audio.grow();
+          this.burst(view.ax, view.ay + 0.4, view.az, 10);
+          this.shake = Math.max(this.shake, 0.06);
+          if (this.milestoneBeat === 0) state.toast = `${view.def.title} stirs`;
+        } else {
+          this.audio.grow();
+          this.burst(view.ax, view.ay + 0.6, view.az, 8);
+        }
       }
-      if (view.unlocked) view.age += dt;
-      const shown = view.unlocked ? Math.min(1, view.age / 0.62) : view.wet * 0.32;
-      const pop = view.unlocked ? Math.max(0.76, easeOutBack(Math.min(1, view.age / 0.72))) : 0.76 + shown;
-      view.root.scale.setScalar(Math.max(0.12, view.base * pop * boost));
-      view.tint.copy(view.ruin).lerp(view.live, shown);
-      const bob = Math.sin(t * 1.1 + view.def.unlockPct) * 0.03;
-      view.root.position.set(view.ax + view.nx * bob, view.ay + view.ny * bob, view.az + view.nz * bob);
-      this.poseLandmark(view, dt, t, shown);
-    }
-    if (fresh.length > 0) {
-      const extras = fresh.filter((view) => !isRevivalPct(view.def.unlockPct));
-      if (extras.length > 0 && this.milestoneBeat === 0) {
-        const top = extras[extras.length - 1]!;
-        this.audio.milestone(2);
-        state.toast = `${top.def.title} awakens`;
+      for (let s = 1; s <= view.stage; s += 1) view.layerAt[s] = (view.layerAt[s] ?? 0) + dt;
+      const riseTarget = view.stage <= 0 ? 0 : view.stage === 1 ? 0.62 : view.stage === 2 ? 0.82 : view.stage === 3 ? 0.94 : 1;
+      const colorTarget = view.stage <= 1 ? 0 : view.stage === 2 ? 0.42 : view.stage === 3 ? 0.78 : 1;
+      view.rise += (riseTarget - view.rise) * glide;
+      view.colorT += (colorTarget - view.colorT) * glide;
+      if (view.celebrate > 0) view.celebrate = Math.max(0, view.celebrate - dt);
+      view.tint.copy(view.ruin).lerp(view.live, view.colorT);
+      const hop = view.celebrate > 0 ? Math.sin((1 - view.celebrate / 1.85) * Math.PI) * 0.95 : 0;
+      const bob = view.stage >= 4 ? Math.sin(t * 1.5 + view.def.unlockPct) * 0.045 : 0;
+      const sink = view.stage === 0 ? 0 : (1 - view.rise) * 2.2;
+      const lift = bob + hop - sink;
+      view.root.position.set(
+        view.ax + view.nx * lift,
+        view.ay + view.ny * lift,
+        view.az + view.nz * lift,
+      );
+      view.root.visible = view.stage > 0 || view.wet > 0.05;
+      if (view.celebrate > 0) {
+        const u = 1 - view.celebrate / 1.85;
+        const punch = Math.max(0.35, easeOutBack(Math.min(1, u / 0.48)));
+        const wave = Math.sin(u * Math.PI);
+        const wide = 1 + wave * 0.24;
+        const tall = 1 - wave * 0.14;
+        const s = view.base * boost * punch;
+        view.root.scale.set(s * wide, s * tall, s * wide);
+        if (!view.encore && view.celebrate < 0.95) {
+          view.encore = true;
+          this.burst(view.root.position.x, view.root.position.y + 1.1, view.root.position.z, 18);
+          this.skyLift = Math.max(this.skyLift, 2.4);
+        }
+      } else {
+        view.root.scale.setScalar(view.base * boost);
       }
-      for (const view of fresh) {
-        this.burst(view.root.position.x, view.root.position.y + 0.8, view.root.position.z, view.def.unlockPct >= 100 ? 22 : 14);
-        this.skyLift = Math.max(this.skyLift, view.def.unlockPct >= 100 ? 3.4 : 1.5);
-        this.grin = Math.max(this.grin, 0.5);
-        this.shake = Math.max(this.shake, view.def.unlockPct >= 100 ? 0.07 : 0.03);
-      }
+      this.poseLandmark(view, dt, t);
     }
     this.milestoneBeat = 0;
   }
 
-  private poseLandmark(view: LandmarkRuntime, dt: number, t: number, shown: number): void {
-    const speed = view.unlocked ? 1.5 : 0.2;
+  /** The moment a landmark's own ground is whole. Louder than a normal sprout. */
+  private finishLandmark(view: LandmarkRuntime): void {
+    const state = this.state;
+    this.audio.milestone(4);
+    this.burst(view.ax, view.ay + 0.8, view.az, 26);
+    this.skyLift = Math.max(this.skyLift, 4.6);
+    this.shake = Math.max(this.shake, 0.22);
+    this.grin = Math.max(this.grin, 1);
+    if (state && this.milestoneBeat === 0) state.toast = `${view.def.title} is restored!`;
+  }
+
+  private poseLandmark(view: LandmarkRuntime, dt: number, t: number): void {
+    const speed = view.celebrate > 0 ? 9 : view.stage >= 4 ? 1.7 : view.stage >= 2 ? 0.4 : 0.08;
+    const shown = view.colorT;
+    const lamp =
+      view.celebrate > 0 ? 1.45 :
+      view.stage <= 0 ? 0 :
+      view.stage === 1 ? 0.48 :
+      view.stage === 2 ? 0.72 :
+      view.stage === 3 ? 0.9 : 1;
+    const pulse = 0.86 + Math.sin(t * (view.stage >= 4 ? 2.6 : 1.4)) * 0.14;
     view.root.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
+      const layer = mesh.userData['layer'];
+      if (typeof layer === 'number' && layer >= 1) {
+        const ready = view.stage >= layer;
+        mesh.visible = ready;
+        if (ready) {
+          const pop = easeOutBack(Math.min(1, (view.layerAt[layer] ?? 0) / 0.42));
+          mesh.scale.setScalar(Math.max(0.02, pop));
+        }
+      }
+      if (mesh.userData['revealRing']) {
+        const mat = mesh.material as THREE.MeshBasicMaterial;
+        const party = view.celebrate > 0;
+        const tease = view.stage === 0 && view.wet > 0.05;
+        mesh.visible = tease || party || view.stage > 0;
+        if (party) {
+          const u = 1 - view.celebrate / 1.85;
+          mesh.scale.setScalar(1 + u * 6);
+          mat.opacity = (1 - u) * 0.9;
+          mat.color.set('#fff6c2');
+        } else if (tease) {
+          mesh.scale.setScalar(0.65 + Math.sin(t * 3.2) * 0.08);
+          mat.opacity = 0.22 + Math.sin(t * 4.5) * 0.1;
+          mat.color.set('#fff1b0');
+        } else {
+          mesh.scale.setScalar(1.15 + shown * 0.35);
+          mat.opacity = (1 - shown) * 0.4;
+          mat.color.set('#ffe7a0');
+        }
+      }
+      if (mesh.userData['beaconPool'] || mesh.userData['beaconShaft']) {
+        const mat = mesh.material as THREE.MeshBasicMaterial;
+        const shaft = mesh.userData['beaconShaft'] === 1;
+        const tease = view.stage === 0 && view.wet > 0.05;
+        const on = shaft ? view.stage >= 2 || view.celebrate > 0 : tease || view.stage > 0;
+        mesh.visible = on;
+        const gain = shaft
+          ? (view.celebrate > 0 ? 0.72 : view.stage >= 4 ? 0.42 : view.stage === 3 ? 0.26 : 0.14)
+          : (tease ? 0.34 : 0.4 + shown * 0.38) * (view.celebrate > 0 ? 1.35 : 1);
+        mat.color.copy(view.lamp).lerp(landmarkWhite, shaft ? 0.45 : 0.2);
+        mat.color.multiplyScalar(shaft ? 1.7 : 1.45);
+        mat.opacity = on ? gain * pulse : 0;
+        const spread = shaft ? 0.85 + shown * 0.25 : (tease ? 0.72 : 0.9 + shown * 0.28) * pulse;
+        mesh.scale.setScalar(spread);
+      }
       if (mesh.userData['spin']) mesh.rotation.z += dt * speed;
       if (mesh.userData['beam']) {
-        mesh.rotation.y = t * (view.unlocked ? 0.8 : 0.08);
-        (mesh.material as THREE.MeshBasicMaterial).opacity = shown * 0.65;
+        mesh.rotation.y = t * (view.stage >= 4 ? 0.9 : 0.15);
+        (mesh.material as THREE.MeshBasicMaterial).opacity = view.stage >= 3 ? 0.15 + shown * 0.7 : 0;
       }
       if (mesh.userData['light']) {
-        (mesh.material as THREE.MeshBasicMaterial).opacity = 0.1 + shown * 0.85;
+        (mesh.material as THREE.MeshBasicMaterial).opacity = 0.08 + shown * 0.9;
       }
       if (mesh.userData['smoke']) {
         mesh.position.y = Number(mesh.userData['baseY']) + Math.sin(t * 1.4) * 0.08;
-        mesh.visible = shown > 0.25;
       }
       if (mesh.userData['smoke'] || mesh.userData['crown']) {
         const mat = mesh.material as THREE.Material;
-        if ((mat as THREE.ShaderMaterial).uniforms?.['uOpacity']) litOpacity(mat).value = shown * 0.8;
+        if ((mat as THREE.ShaderMaterial).uniforms?.['uOpacity']) {
+          litOpacity(mat).value = (view.stage >= 3 ? 0.15 : 0) + shown * 0.85;
+        }
       }
-      if (mesh.userData['moth'] != null) {
+      if (mesh.userData['moth'] != null && mesh.visible) {
         const i = Number(mesh.userData['moth']);
-        const ang = t * 1.6 + i * 1.57;
-        const rad = 0.2 + shown * 0.9;
+        const ang = t * (view.celebrate > 0 ? 4.2 : 1.6) + i * 1.57;
+        const rad = 0.15 + shown * 1.05;
         mesh.position.set(Math.cos(ang) * rad, 1.55 + Math.sin(t * 2.2 + i) * 0.32, Math.sin(ang) * 0.5);
-        mesh.visible = shown > 0.05;
       }
-      if (mesh.userData['bear'] != null) {
+      if (mesh.userData['bear'] != null && mesh.visible) {
         const i = Number(mesh.userData['bear']);
-        const wander = view.unlocked ? Math.sin(t * 0.55 + i * 1.7) * 0.16 : 0;
+        const wander = view.stage >= 4 ? Math.sin(t * 0.55 + i * 1.7) * 0.16 : 0;
         mesh.position.set(
           Number(mesh.userData['baseX']) + wander,
-          Number(mesh.userData['baseY']) + Math.abs(Math.sin(t * 3 + i)) * (view.unlocked ? 0.05 : 0),
+          Number(mesh.userData['baseY']) + Math.abs(Math.sin(t * 3 + i)) * (view.stage >= 4 ? 0.05 : 0),
           Number(mesh.userData['baseZ']),
         );
       }
@@ -2557,6 +2756,10 @@ export class RainGame {
       const mat = mesh.material as THREE.ShaderMaterial | THREE.MeshBasicMaterial;
       if ((mat as THREE.ShaderMaterial).uniforms?.['uColor']) litColor(mat).copy(out);
       else if (mat instanceof THREE.MeshBasicMaterial) mat.color.copy(out);
+      const beacon = (mat as THREE.ShaderMaterial).uniforms?.['uBeacon'] as { value: number } | undefined;
+      const lampColor = (mat as THREE.ShaderMaterial).uniforms?.['uLamp']?.value as THREE.Color | undefined;
+      if (beacon) beacon.value = lamp;
+      if (lampColor) lampColor.copy(view.lamp);
     });
   }
 
@@ -2596,9 +2799,12 @@ export class RainGame {
     if (!tileIsLand(world, index % grid.cols, Math.floor(index / grid.cols))) {
       view.prop = null;
       view.pond = null;
+      this.views.push(view);
       return;
     }
     if (spec.kind === 'pond') {
+      const swelled = this.pondSwelled.has(`${world}:${index}`);
+      const shown = swelled ? 1 : state.isRestored(index) ? 0.08 : state.pondFill(index);
       const group = new THREE.Group();
       group.userData['bb'] = 1;
       group.visible = !this.globe;
@@ -2623,15 +2829,15 @@ export class RainGame {
       glow.position.z = 0.04;
       glow.renderOrder = 1;
       core.add(glow);
-      const basin = this.sprite(restored ? art.pondFull : art.pondEmpty, 2.85, 1.52, 0.2, 0);
+      const basin = this.sprite(swelled ? art.pondFull : art.pondEmpty, 2.85, 1.52, 0.2, 0);
       basin.renderOrder = 2;
       core.add(basin);
       // billboards are flipped by faceAll, so layers stack toward -Z
       const water = new THREE.Mesh(new THREE.PlaneGeometry(2.38, 1.24), makePondWater(this.timeU, this.sunDir, this.sunColor, this.rainUniform));
       water.position.z = -0.07;
       water.renderOrder = 3;
-      water.visible = false;
-      if (restored) setPondFill(water.material as THREE.Material, 1);
+      water.visible = shown > 0.02;
+      if (shown > 0.02) setPondFill(water.material as THREE.Material, shown);
       core.add(water);
       const lily0 = this.sprite(art.lilyPad, 0.76, 0.57, 0.06, -0.1);
       lily0.position.set(-0.35, -0.08, -0.05);
@@ -2671,7 +2877,7 @@ export class RainGame {
         core.add(reed);
         cattails.push(reed);
       }
-      core.scale.setScalar(restored ? 1.3 : 1);
+      core.scale.setScalar(swelled ? 1.3 : 1);
       this.track.add(group);
       view.pond = basin;
       view.pondWater = water;
@@ -2681,11 +2887,12 @@ export class RainGame {
       view.pondGlow = glow;
       view.pondCore = core;
       view.pondCattails = cattails;
-      view.pondSize = restored ? 1.3 : 1;
+      view.pondSize = swelled ? 1.3 : 1;
       view.koi = koi;
-      view.pondFill = restored ? 1 : 0;
-      view.pondStage = restored ? 2 : 0;
-      if (restored) {
+      view.pondFill = shown;
+      view.pondShown = shown;
+      view.pondStage = swelled ? 2 : shown >= 0.45 ? 1 : 0;
+      if (swelled) {
         water.visible = true;
         water.scale.setScalar(1);
         lily0.visible = true;
@@ -2777,24 +2984,6 @@ export class RainGame {
       if (spec.kind === 'seed') view.prop.userData['s'] = 1.25;
       view.stage = 2;
     }
-    if (spec.kind === 'pond') {
-      if (view.pondWater) {
-        view.pondWater.visible = true;
-        view.pondWater.scale.setScalar(1);
-        setPondFill(view.pondWater.material as THREE.Material, 1);
-      }
-      for (const lily of view.pondLily) lily.visible = true;
-      if (view.pondCritter === 1) {
-        if (view.pondFrog) view.pondFrog.visible = true;
-        if (view.koi) view.koi.visible = true;
-      } else if (view.pondDuck) view.pondDuck.visible = true;
-      if (view.pondGlow) (view.pondGlow.material as THREE.MeshBasicMaterial).opacity = 0.42;
-      view.pondSize = 1.3;
-      if (view.pondCore) view.pondCore.scale.setScalar(1.3);
-      for (const reed of view.pondCattails) reed.visible = true;
-      view.pondFill = 1;
-      view.pondStage = 2;
-    }
     if (view.koi && spec.kind === 'pond' && view.pondCritter !== 1) view.koi.visible = false;
   }
 
@@ -2811,10 +3000,7 @@ export class RainGame {
     if (result.dew > 0) {
       this.floatText(at.x, 1.35, result.crit ? `CRIT +${Math.floor(result.dew)}` : `+${Math.floor(result.dew)}`, result.crit);
     }
-    if (result.pond) {
-      this.audio.splash();
-      this.leapKoi(index);
-    } else if (result.bloomed) this.audio.bloom();
+    if (!result.pond && result.bloomed) this.audio.bloom();
     // Bloom Sparkle: little glints rising off the new growth.
     if (this.state && this.state.ranks.sparkle >= 1) {
       for (let i = 0; i < 5; i += 1) {
@@ -2831,7 +3017,7 @@ export class RainGame {
     this.syncCritters(0, 0, true);
   }
 
-  private syncProps(t: number): void {
+  private syncProps(dt: number, t: number): void {
     const state = this.state;
     if (!state) return;
     this.syncBoxes(false);
@@ -2848,8 +3034,16 @@ export class RainGame {
       const grown = restored || spectacle;
       const gust = this.gustAt(view.x, view.z, t);
       if (spec.kind === 'pond') {
-        if (grown && view.pondFill < 1) view.pondFill = 1;
-        const fill = grown ? 1 : state.pondFill(i);
+        const key = `${state.world}:${i}`;
+        const done = this.pondSwelled.has(key);
+        const actual = state.pondFill(i);
+        const catching = !done && actual >= 0.985 && view.pondShown < 0.98;
+        const target = done ? 1 : actual;
+        const rate = catching ? 1.55 : 5;
+        if (dt <= 0) view.pondShown = target;
+        else view.pondShown += (target - view.pondShown) * (1 - Math.exp(-dt * rate));
+        if (!done && actual >= 0.985 && view.pondShown >= 0.985) this.pondSwelled.add(key);
+        const fill = view.pondShown;
         view.pondFill = fill;
         const stage = fill >= 0.985 ? 2 : fill >= 0.45 ? 1 : 0;
         if (stage > view.pondStage) {
@@ -2860,6 +3054,7 @@ export class RainGame {
             this.burst(view.x, view.y + 0.45, view.z, 12);
             this.rippleAt(view.x, view.z, '#bfeaff');
             this.audio.splash();
+            this.leapKoi(i);
             // The lake is full: it spills over the edge of the world.
             this.spawnWaterfall(view, i);
           }
@@ -3187,6 +3382,37 @@ export class RainGame {
       if (mesh.position.y > 7.5 || mesh.position.x < ox - 1.6) mesh.position.y = 1.2 + Math.random() * 2.4;
       const depthScale = 0.14 + Math.min(0.1, (m.mesh.position.y - 0.4) * 0.02);
       mesh.scale.setScalar(depthScale / 0.16);
+    }
+    this.stepFireflies(t);
+  }
+
+  /** Soft lights over green grass. Only the Dead Forest, and only where it has come back. */
+  private stepFireflies(t: number): void {
+    const state = this.state;
+    if (!state || state.world !== 0 || (state.phase !== 'play' && state.phase !== 'finale')) {
+      for (const mesh of this.fireflies) mesh.visible = false;
+      return;
+    }
+    const spots = this.restoredSpots();
+    const alive = spots.length > 0 ? Math.min(this.fireflies.length, 2 + Math.floor(spots.length / 4)) : 0;
+    for (let i = 0; i < this.fireflies.length; i += 1) {
+      const mesh = this.fireflies[i]!;
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      if (i >= alive) {
+        mesh.visible = false;
+        continue;
+      }
+      const spot = spots[i % spots.length] ?? 0;
+      const view = this.views[spot];
+      if (!view || (!state.isRestored(spot) && state.hillWet(spot) < 0.4)) {
+        mesh.visible = false;
+        continue;
+      }
+      const wander = Math.sin(t * 0.7 + i * 1.8) * 0.55;
+      const lift = 0.7 + Math.sin(t * 1.6 + i) * 0.22;
+      mesh.visible = true;
+      mesh.position.set(view.x + wander, view.y + lift, view.z + Math.cos(t * 0.6 + i) * 0.4);
+      mat.opacity = 0.35 + Math.sin(t * 3.2 + i * 1.3) * 0.25;
     }
   }
 

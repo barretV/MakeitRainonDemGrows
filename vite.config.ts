@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { rundotGameLibrariesPlugin } from '@series-inc/rundot-game-sdk/vite';
+import { playbookSyncPlugin } from './vite-playbook-plugin';
 
 // CDN assets in cdn/ folder are automatically served in dev mode
 
@@ -11,12 +12,14 @@ export default defineConfig({
     react(), // Must come first - handles JSX transform
     tailwindcss(),
     rundotGameLibrariesPlugin(),
+    playbookSyncPlugin(),
   ],
   base: './',
   server: {
     allowedHosts: true,
     watch: {
-      ignored: ['**/*.zip'],
+      // Playbook sync writes this on every bottle — must not full-reload the game.
+      ignored: ['**/*.zip', '**/balance/playthrough-log.json'],
     },
   },
   resolve: {

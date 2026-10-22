@@ -52,13 +52,13 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 18,
     rows: 16,
     tiles: 288,
-    hp: 3070,
-    pay: 2,
-    skyTop: '#101828',
-    skyMid: '#243858',
-    skyBot: '#c87898',
-    hill: '#7ea0d0',
-    farHill: '#c47ab8',
+    hp: 700,
+    pay: 3,
+    skyTop: '#071018',
+    skyMid: '#16324f',
+    skyBot: '#d7ecff',
+    hill: '#d7e8f8',
+    farHill: '#8eb4d8',
     sun: [0.74, 0.38, -0.2],
   },
   {
@@ -66,7 +66,7 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 31,
     rows: 24,
     tiles: 744,
-    hp: 2400,
+    hp: 1040,
     pay: 3,
     skyTop: '#3a1c10',
     skyMid: '#6a3818',
@@ -80,7 +80,7 @@ export const WORLDS: readonly WorldDef[] = [
     cols: 34,
     rows: 26,
     tiles: 884,
-    hp: 13700,
+    hp: 2200,
     pay: 5,
     skyTop: '#1c1828',
     skyMid: '#3a4030',
@@ -114,6 +114,43 @@ export function worldDef(index: number): WorldDef {
 export function gridOf(world: number): { cols: number; rows: number } {
   const w = worldDef(world);
   return { cols: w.cols, rows: w.rows };
+}
+
+/** Decorative props sprinkled on each island (snowmen, signs, etc.). */
+export interface WorldFlairSpot {
+  u: number;
+  v: number;
+  scale?: number;
+}
+
+export const WORLD_FLAIR_SPOTS: readonly (readonly WorldFlairSpot[])[] = [
+  [{ u: 0.2, v: 0.4 }, { u: 0.76, v: 0.34, scale: 0.92 }, { u: 0.48, v: 0.74 }],
+  [
+    { u: 0.14, v: 0.48 },
+    { u: 0.3, v: 0.66 },
+    { u: 0.54, v: 0.26 },
+    { u: 0.7, v: 0.58, scale: 1.08 },
+    { u: 0.42, v: 0.2 },
+  ],
+  [{ u: 0.22, v: 0.42 }, { u: 0.68, v: 0.36 }, { u: 0.52, v: 0.72, scale: 1.05 }],
+  [{ u: 0.24, v: 0.46 }, { u: 0.64, v: 0.4 }, { u: 0.44, v: 0.68 }],
+  [],
+];
+
+export function flairWorldPoint(world: number, u: number, v: number): { x: number; z: number } {
+  const { cols, rows } = gridOf(world);
+  const w = cols * TILE;
+  const h = rows * TILE;
+  return { x: -TILE / 2 + u * w, z: -TILE / 2 + v * h };
+}
+
+export function tileAtWorld(world: number, x: number, z: number): { col: number; row: number } {
+  const { cols, rows } = gridOf(world);
+  const w = cols * TILE;
+  const h = rows * TILE;
+  const col = Math.min(cols - 1, Math.max(0, Math.floor(((x + TILE / 2) / w) * cols)));
+  const row = Math.min(rows - 1, Math.max(0, Math.floor(((z + TILE / 2) / h) * rows)));
+  return { col, row };
 }
 
 export interface AchievementDef {

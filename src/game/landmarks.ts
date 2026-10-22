@@ -1,9 +1,8 @@
 /**
- * Showpiece landmarks. Each one is a ruin until the island's revival
- * crosses `unlockPct`, then it blooms into its restored colors.
- * Keep unlock steps that match revival toasts aligned with
- * REVIVAL_MILESTONES in state.ts (10, 25, 50, 75, 100). Other steps
- * still unlock in the world; they just use their own short toast.
+ * Showpiece landmarks. They stay buried until the ground under them
+ * is actually watered, then come up in layers: a glimmer, the ruin,
+ * the missing pieces, the color, and a celebration when that patch is whole.
+ * `unlockPct` is only a hint for which one tends to be found first.
  */
 
 export type LandmarkKind = 'billboard' | 'ribbon' | 'disc' | 'group';
@@ -69,6 +68,19 @@ const sludge = '#6d7358';
 const orbit = '#7d8aa4';
 const full = '#ffffff';
 
+/** The light a landmark carries. Brighter than the sun on the trees around it. */
+const LAMPS: Record<string, string> = {
+  [forest]: '#ffd27a',
+  [frost]: '#9aefff',
+  [sand]: '#ffb15a',
+  [sludge]: '#c6ff6a',
+  [orbit]: '#ffe39a',
+};
+
+export function landmarkLamp(ruin: string): string {
+  return LAMPS[ruin] ?? '#ffe7a0';
+}
+
 export const LANDMARKS_BY_WORLD: readonly (readonly LandmarkDef[])[] = [
   [
     { id: 'mossbrook', title: 'Mossbrook', unlockPct: 25, u: 0.4, v: 0.62, scale: 1.08, kind: 'ribbon', art: 'stream', ruin: forest, live: full },
@@ -109,25 +121,45 @@ export const LANDMARKS_BY_WORLD: readonly (readonly LandmarkDef[])[] = [
   ],
 ];
 
-const REVIVAL_PCTS = new Set([10, 25, 50, 75, 100]);
-
-export function isRevivalPct(pct: number): boolean {
-  return REVIVAL_PCTS.has(pct);
-}
+/** Local wetness where a buried landmark first breaks the surface. */
+export const LANDMARK_BURIED = 0.14;
+/** Second layer: the missing pieces pop in. */
+export const LANDMARK_FORM = 0.45;
+/** Third layer: color returns. */
+export const LANDMARK_BLOOM = 0.72;
+/** The patch under the landmark is restored. This is the celebration. */
+export const LANDMARK_DONE = 0.9;
 
 export function landmarksForWorld(world: number): readonly LandmarkDef[] {
   return LANDMARKS_BY_WORLD[world] ?? [];
 }
 
-export function landmarkTitlesAt(world: number, pct: number): string[] {
-  return landmarksForWorld(world).filter((mark) => mark.unlockPct === pct).map((mark) => mark.title);
+/** 0 buried, 1 rising ruin, 2 pieces, 3 color, 4 fully restored. */
+export function landmarkStage(wet: number): number {
+  if (wet < LANDMARK_BURIED) return 0;
+  if (wet < LANDMARK_FORM) return 1;
+  if (wet < LANDMARK_BLOOM) return 2;
+  if (wet < LANDMARK_DONE) return 3;
+  return 4;
 }
 
-/** The next landmark that has not awakened yet, if one is still waiting. */
-export function nextLandmarkTitle(world: number, ratio: number): string | null {
-  const pct = Math.floor(ratio * 100);
-  const next = landmarksForWorld(world).find((mark) => mark.unlockPct > pct);
-  return next?.title ?? null;
+/**
+ * The landmark the player is uncovering right now: the wettest patch that
+ * has started and is not finished. Distant buried ones stay a secret.
+ */
+export function risingLandmarkTitle(
+  world: number,
+  pixels: Uint8Array,
+  cols: number,
+  rows: number,
+): string | null {
+  let best: { title: string; wet: number } | null = null;
+  for (const mark of landmarksForWorld(world)) {
+    const wet = landmarkLocalWet(pixels, cols, rows, mark.u, mark.v);
+    if (wet < 0.06 || wet >= LANDMARK_DONE) continue;
+    if (!best || wet > best.wet) best = { title: mark.title, wet };
+  }
+  return best?.title ?? null;
 }
 
 /** Mean mask wetness around a landmark, so rain nearby starts to warm the ruin. */
@@ -141,7 +173,7 @@ export function landmarkLocalWet(
   if (cols < 1 || rows < 1 || pixels.length < 4) return 0;
   const cx = Math.min(cols - 1, Math.max(0, Math.floor(u * cols)));
   const cy = Math.min(rows - 1, Math.max(0, Math.floor(v * rows)));
-  const rad = Math.max(2, Math.round(Math.min(cols, rows) * 0.035));
+  const rad = Math.max(4, Math.round(Math.min(cols, rows) * 0.06));
   let sum = 0;
   let n = 0;
   for (let y = cy - rad; y <= cy + rad; y += 1) {
