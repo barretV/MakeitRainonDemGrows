@@ -7,6 +7,7 @@ import {
   PRIORITY,
   TREE_CANVAS,
   nodesUnlockedSince,
+  spokeLabels,
   type NodeId,
   type TreeNodeView,
 } from '../game/tree';
@@ -36,12 +37,15 @@ const BRANCH_HINTS: Record<string, string> = {
   bloom: 'Rare bloom upgrades.',
 };
 
-const MIN_ZOOM = 0.42;
+const MIN_ZOOM = 0.34;
 const MAX_ZOOM = 1.7;
 const COMFORT_ZOOM = 1.05;
-/** Zoom that fits the whole upgrade web on screen. */
-const WEB_ZOOM = 0.95;
-const WORKSHOP_VIEW_KEY = 'mir-workshop-view-v1';
+/** Opens framed on the whole flower. Pinch in to read a branch. */
+const WEB_ZOOM = Math.max(
+  MIN_ZOOM,
+  Math.min(0.72, Math.min(1000 / TREE_CANVAS.w, 660 / TREE_CANVAS.h) * 0.92),
+);
+const WORKSHOP_VIEW_KEY = 'mir-workshop-view-v2';
 
 type View = { x: number; y: number; s: number };
 
@@ -132,8 +136,8 @@ function vinePath(x1: number, y1: number, x2: number, y2: number): string {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 1;
-  const nx = (-dy / len) * Math.min(48, len * 0.22);
-  const ny = (dx / len) * Math.min(48, len * 0.22);
+  const nx = (-dy / len) * Math.min(18, len * 0.1);
+  const ny = (dx / len) * Math.min(18, len * 0.1);
   return `M ${x1} ${y1} Q ${mx + nx} ${my + ny} ${x2} ${y2}`;
 }
 
@@ -172,7 +176,7 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
 
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<View>(savedWorkshopView ?? { x: 0, y: 0, s: 0.82 });
+  const viewRef = useRef<View>(savedWorkshopView ?? { x: 0, y: 0, s: WEB_ZOOM });
   const tweenRef = useRef<View | null>(null);
   const tweenRafRef = useRef<number | null>(null);
   const panStart = useRef<{ vx: number; vy: number; cx: number; cy: number } | null>(null);
@@ -656,6 +660,19 @@ export function UpgradeTree({ model, game }: { model: HudModel; game: RainGame }
             height={TREE_CANVAS.h}
             viewBox={`0 0 ${TREE_CANVAS.w} ${TREE_CANVAS.h}`}
           >
+            {spokeLabels.map((label) => (
+              <text
+                key={label.branch}
+                x={label.x}
+                y={label.y}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className="workshop-spoke-label"
+                fill={BRANCH_COLORS[label.branch]}
+              >
+                {(BRANCH_LABELS[label.branch] ?? label.branch).toUpperCase()}
+              </text>
+            ))}
             {shown.map((node) => {
               if (!node.parent) return null;
               const parent = nodesById.get(node.parent);

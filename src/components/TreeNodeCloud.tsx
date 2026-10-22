@@ -51,18 +51,12 @@ function SymbolWrap({
   muted?: boolean;
   children: ReactNode;
 }) {
-  const ink = muted ? '#9aa3b8' : '#1e3050';
+  const paper = muted ? '#e4e7f0' : '#fffdf8';
+  const ink = muted ? '#4e5566' : '#241c30';
   return (
     <g transform={`translate(${cx} ${cy})`}>
-      <circle className="tree-node__icon-plate" r={12} />
-      <g
-        transform="scale(0.88)"
-        fill={ink}
-        stroke={ink}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
+      <circle className="tree-node__icon-plate" r={14.5} />
+      <g fill={paper} stroke={ink} strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round">
         {children}
       </g>
     </g>
@@ -85,8 +79,8 @@ function NodeSymbol({
   if (!gateOpen) {
     return (
       <SymbolWrap cx={center.cx} cy={center.cy} muted>
-        <rect x={-5} y={-2} width={10} height={8} rx={1.5} fill="none" />
-        <path d="M -4 -2 v -3 a 4 4 0 0 1 8 0 v 3" fill="none" />
+        <rect x={-5} y={-1.5} width={10} height={8} rx={1.6} />
+        <path d="M-3.6 -1.5v-2.6a3.6 3.6 0 0 1 7.2 0v2.6" fill="none" strokeWidth={1.7} />
       </SymbolWrap>
     );
   }
@@ -94,214 +88,242 @@ function NodeSymbol({
   const icons: Record<NodeId, ReactNode> = {
     puff: (
       <>
-        <circle cx={0} cy={0} r={5.5} fill="none" />
-        <path d="M0 -8v16M-8 0h16" fill="none" />
+        <circle cx={0} cy={0} r={3.1} />
+        <path d="M0 -8.2v3.2M0 5v3.2M-8.2 0h3.2M5 0h3.2" fill="none" strokeWidth={2.4} />
       </>
     ),
-    bottle: <path d="M-3 -7h6v3c0 2-5 2-5 5v7h-2v-7c0-3-5-3-5-5v-3h6" fill="none" />,
+    bottle: <path d="M-2.2 -8h4.4v2.6h1.8v1.6h-8v-1.6h1.8zM-4.2 -2.2h8.4v9.2h-8.4z" />,
     flask: (
       <>
-        <path d="M-3 -8h6v4l5 10H-8l5-10v-4" fill="none" />
-        <path d="M-5 6h10" fill="none" />
+        <path d="M-2.4 -8h4.8v2.4l4.6 9.2h-14z" />
+        <path d="M-5.2 3.4h10.4" fill="none" stroke="#241c30" strokeWidth={1.3} />
       </>
     ),
     reservoir: (
       <>
-        <path d="M-7 4h14M-7 0h14M-7 -4h14" fill="none" />
-        <rect x={-5} y={-9} width={10} height={4} rx={1} fill="none" />
+        <rect x={-6.4} y={-2.2} width={12.8} height={8.6} rx={1.4} />
+        <rect x={-3.4} y={-6.6} width={6.8} height={3.2} rx={0.8} />
+        <path d="M-4.6 1.2h9.2M-4.6 3.6h9.2" fill="none" stroke="#241c30" strokeWidth={1.2} />
       </>
     ),
-    linger: (
-      <>
-        <path d="M-6 -6h12v12H-6z" fill="none" />
-        <path d="M-2 -2v5M2 -4v7" fill="none" />
-      </>
-    ),
+    linger: <path d="M-6.2 -7.4h12.4L1.1 0 6.2 7.4h-12.4L-1.1 0z" />,
     glacier: (
       <>
-        <path d="M0 -9L7 7H-7L0 -9z" fill="none" />
-        <path d="M-3 2h6M-1 -2h2" fill="none" />
+        <path d="M0 -8.2L6.4 0 0 8.2-6.4 0z" />
+        <path d="M0 -4.2v8.4M-3.2 0h6.4" fill="none" stroke="#241c30" strokeWidth={1.2} />
       </>
     ),
-    drizzle: <path d="M0 -7c2 4 3 6 3 8a3 3 0 1 1-6 0c0-2 1-4 3-8z" fill="none" />,
+    drizzle: <path d="M0 -8c2.4 4.2 4.2 6.4 4.2 8.2a4.2 4.2 0 1 1-8.4 0C-4.2 -1.6-2.4 -3.8 0 -8z" />,
     specks: (
       <>
-        <circle cx={-5} cy={-3} r={1.8} />
-        <circle cx={4} cy={-5} r={1.8} />
-        <circle cx={0} cy={4} r={1.8} />
+        <circle cx={-4.4} cy={-3.2} r={2.3} />
+        <circle cx={3.6} cy={-4.4} r={1.7} />
+        <circle cx={1.2} cy={3.4} r={2.6} />
       </>
     ),
     mist: (
       <>
-        <path d="M-8 0q4-4 8 0t8 0" fill="none" />
-        <path d="M-8 5q4-4 8 0t8 0" fill="none" />
+        <path d="M-8 -2.4c2.2-2.6 4.2-2.6 6.2 0s4 2.6 6.2 0" fill="none" strokeWidth={2.3} />
+        <path d="M-8 2.2c2.2-2.6 4.2-2.6 6.2 0s4 2.6 6.2 0" fill="none" strokeWidth={2.3} />
       </>
     ),
     soak: (
       <>
-        <ellipse cx={0} cy={4} rx={8} ry={2.5} fill="none" />
-        <path d="M0 -7c2 3 3 6 3 8a3 3 0 1 1-6 0c0-2 1-5 3-8z" fill="none" />
+        <ellipse cx={0} cy={5.4} rx={7.4} ry={2.5} />
+        <path d="M0 -8c1.8 3.2 3.2 5 3.2 6.6a3.2 3.2 0 1 1-6.4 0C-3.2 -3-1.8 -4.8 0 -8z" />
       </>
     ),
     downpour: (
       <>
-        <path d="M-3 -8h6v2H-3z" fill="none" />
-        <path d="M-5 0l2 6M0 -1l2 7M5 0l2 6" fill="none" />
+        <path d="M-7.4 -6.4h14.8v3.4h-14.8z" />
+        <path d="M-4.6 -1.2c.8 2.4 1.4 3.6 1.4 4.6a1.4 1.4 0 1 1-2.8 0c0-1 .6-2.2 1.4-4.6z" />
+        <path d="M0 -2.2c.8 2.4 1.4 3.6 1.4 4.6a1.4 1.4 0 1 1-2.8 0c0-1 .6-2.2 1.4-4.6z" />
+        <path d="M4.6 -1.2c.8 2.4 1.4 3.6 1.4 4.6a1.4 1.4 0 1 1-2.8 0c0-1 .6-2.2 1.4-4.6z" />
       </>
     ),
-    reach: (
-      <>
-        <circle cx={0} cy={0} r={7} fill="none" />
-        <circle cx={0} cy={0} r={2.5} />
-      </>
-    ),
-    circle: (
-      <>
-        <circle cx={0} cy={0} r={8} fill="none" />
-        <circle cx={0} cy={0} r={4} fill="none" />
-      </>
-    ),
-    wide: (
-      <>
-        <ellipse cx={0} cy={0} rx={10} ry={6} fill="none" />
-        <ellipse cx={0} cy={0} rx={5} ry={3} fill="none" />
-      </>
-    ),
-    horizon: (
-      <>
-        <path d="M-10 4h20" fill="none" />
-        <path d="M-8 0h16M-5 -4h10" fill="none" />
-      </>
-    ),
-    charm: <path d="M0 7C-8-2-8-8 0-4c8-4 8 2 0 11z" fill="none" />,
-    dew: (
-      <>
-        <path d="M0 -7c2 3 3 6 3 8a3 3 0 1 1-6 0c0-2 1-4 3-8z" fill="none" />
-        <path d="M6 -5l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" fill="none" strokeWidth={1.2} />
-      </>
-    ),
-    bounty: (
-      <>
-        <circle cx={0} cy={0} r={7} fill="none" />
-        <path d="M0 -4v8M-4 0h8" fill="none" />
-      </>
-    ),
-    crit: <path d="M0 -9l2 6h6l-5 4 2 6-5-4-5 4 2-6-5-4h6z" fill="none" />,
-    sprinkler: (
-      <>
-        <circle cx={0} cy={0} r={3} fill="none" />
-        <path d="M0 -8v4M0 4v4M-8 0h4M4 0h4" fill="none" />
-      </>
-    ),
-    spin: (
-      <>
-        <path d="M6 -6A8 8 0 0 1 6 6" fill="none" />
-        <path d="M6 6l-3-1 1-3" fill="none" />
-      </>
-    ),
-    drone: (
-      <>
-        <ellipse cx={-4} cy={1} rx={4} ry={2.4} fill="none" />
-        <ellipse cx={4} cy={-1} rx={3.2} ry={2} fill="none" />
-        <path d="M-4 3v3M4 1v3" fill="none" />
-      </>
-    ),
-    lightning: <path d="M3 -9L-4 2h5l-2 9 9-11h-5z" fill="none" />,
-    zap: (
-      <>
-        <path d="M3 -8L-3 1h4l-2 7 6-9h-4z" fill="none" transform="translate(-3 0) scale(0.9)" />
-        <path d="M3 -8L-3 1h4l-2 7 6-9h-4z" fill="none" transform="translate(3 0) scale(0.9)" />
-      </>
-    ),
-    tornado: (
-      <>
-        <path d="M-8 -6q8 4 0 8t0 8" fill="none" />
-        <path d="M-5 -2q5 3 0 6" fill="none" />
-      </>
-    ),
-    twist: (
-      <>
-        <path d="M-7 -7c10 4 10 14 0 18" fill="none" />
-        <path d="M7 7c-10-4-10-14 0-18" fill="none" />
-      </>
-    ),
-    geyser: <path d="M0 8V-6M-4 0h8M0 -6l-3 4h6z" fill="none" />,
     flow: (
       <>
-        <path d="M-8 -7h16" fill="none" />
-        <path d="M-5 -3c-2 4-2 6 0 9M0 -3c-2 4-2 6 0 9M5 -3c-2 4-2 6 0 9" fill="none" />
+        <path d="M-5 -7.6c1.2 3 1.6 5 1.6 6.4a1.6 1.6 0 1 1-3.2 0c0-1.4.4-3.4 1.6-6.4z" />
+        <path d="M0 -7.6c1.2 3 1.6 5 1.6 6.4a1.6 1.6 0 1 1-3.2 0c0-1.4.4-3.4 1.6-6.4z" />
+        <path d="M5 -7.6c1.2 3 1.6 5 1.6 6.4a1.6 1.6 0 1 1-3.2 0c0-1.4.4-3.4 1.6-6.4z" />
       </>
     ),
     spring: (
       <>
-        <ellipse cx={0} cy={7} rx={9} ry={2.4} fill="none" />
-        <path d="M0 7V2" fill="none" />
-        <path d="M-5 1c0-5 10-5 10 0" fill="none" />
-        <path d="M0 -8c-2 3-2 5 0 7 2-2 2-4 0-7z" fill="none" />
+        <path d="M0 7.4V1.2" fill="none" strokeWidth={2} />
+        <path d="M0 1.2C-5.4 1.2-6.6 -4.2-2.2 -5.2-2.2 -2.2 0 1.2 0 1.2 0 1.2 2.2 -2.2 2.2 -5.2 6.6 -4.2 5.4 1.2 0 1.2z" />
+        <ellipse cx={0} cy={7.2} rx={6.4} ry={1.7} />
       </>
     ),
-    spore: <circle cx={0} cy={0} r={6} fill="none" />,
-    rainbow: <path d="M-8 4a8 8 0 0 1 16 0" fill="none" />,
-    hail: <path d="M-4 -6l4 8 4-8M0 2v6" fill="none" />,
-    mirage: <path d="M-9 0h18M-6 3h12" fill="none" />,
-    waterbomb: <circle cx={0} cy={0} r={5} fill="none" />,
+    reach: (
+      <path
+        fillRule="evenodd"
+        d="M0 -7.2a7.2 7.2 0 1 0 0.01 0zM0 -3.1a3.1 3.1 0 1 1 -0.01 0z"
+      />
+    ),
+    circle: (
+      <>
+        <circle cx={0} cy={0} r={7} />
+        <circle cx={0} cy={0} r={3.3} fill="#241c30" stroke="none" />
+      </>
+    ),
+    wide: <ellipse cx={0} cy={0} rx={8.2} ry={4.4} />,
+    horizon: (
+      <>
+        <path d="M-6.4 2.4a6.4 6.4 0 0 1 12.8 0z" />
+        <rect x={-8.2} y={2.6} width={16.4} height={2.3} rx={1} />
+      </>
+    ),
+    waterbomb: (
+      <>
+        <circle cx={0} cy={1.4} r={5.4} />
+        <rect x={-0.9} y={-8} width={1.8} height={3.2} rx={0.6} />
+        <circle cx={2.4} cy={-6.2} r={1.5} />
+      </>
+    ),
+    mirage: (
+      <>
+        <path d="M-8 -2.2c2.2-2.4 4-2.4 6.2 0s4 2.4 6.2 0" fill="none" strokeWidth={2.4} />
+        <path d="M-8 2.8c2.2-2.4 4-2.4 6.2 0s4 2.4 6.2 0" fill="none" strokeWidth={2.4} />
+      </>
+    ),
     tide: (
+      <path d="M-8.4 1.2c1.6-3.2 3.4-3.2 5 0s3.4 3.2 5 0 3.4-3.2 5 0v5.4H-8.4z" />
+    ),
+    charm: <path d="M0 6.6C-6.6 -1.2-6.4 -7.2 0 -3.6 6.4 -7.2 6.6 -1.2 0 6.6z" />,
+    dew: (
       <>
-        <path d="M-10 2c2-3 4-3 6 0s4 3 6 0" fill="none" />
-        <path d="M-10 6c2-3 4-3 6 0s4 3 6 0" fill="none" />
+        <path d="M-1.2 -6.4c1.8 3.2 3.2 5 3.2 6.6a3.2 3.2 0 1 1-6.4 0c0-1.6 1.4-3.4 3.2-6.6z" />
+        <path d="M5.2 -6.6l1 2.4 2.4 1-2.4 1-1 2.4-1-2.4-2.4-1 2.4-1z" />
       </>
     ),
-    purify: <path d="M0 7C-7-2-7-8 0-4c7-4 7 2 0 11z" fill="none" />,
-    monsoon: <path d="M-10 0h20M-6 -4h12M-6 4h12" fill="none" />,
-    harvest: (
+    bounty: (
       <>
-        <path d="M0 6 V-2" fill="none" />
-        <path d="M0 -2 C-6 -2 -7 -8 -2 -8 C-2 -4 0 -2 0 -2 C0 -2 2 -4 2 -8 C7 -8 6 -2 0 -2" fill="none" />
+        <circle cx={0} cy={0} r={6.6} />
+        <path d="M0 -3.4v6.8M-3.4 0h6.8" fill="none" stroke="#241c30" strokeWidth={1.6} />
+      </>
+    ),
+    crit: <path d="M0 -8.2l1.8 5.2h5.4l-4.4 3.4 1.7 5.2L0 2.6l-4.5 3 1.7-5.2-4.4-3.4h5.4z" />,
+    harvest: (
+      <path d="M0 7.2V0C-6.4 0-7.6 -6.2-2.4 -7.4-2.4 -3.2 0 0 0 0 0 0 2.4 -3.2 2.4 -7.4 7.6 -6.2 6.4 0 0 0z" />
+    ),
+    purify: (
+      <>
+        <path d="M0 -7.6c2.2 3.6 3.8 5.6 3.8 7.4a3.8 3.8 0 1 1-7.6 0c0-1.8 1.6-3.8 3.8-7.4z" />
+        <path d="M0 -1.4v5.2M-2.4 1.2h4.8" fill="none" stroke="#241c30" strokeWidth={1.4} />
+      </>
+    ),
+    sprinkler: (
+      <>
+        <circle cx={0} cy={0} r={2.5} />
+        <circle cx={0} cy={-6.4} r={1.7} />
+        <circle cx={0} cy={6.4} r={1.7} />
+        <circle cx={-6.4} cy={0} r={1.7} />
+        <circle cx={6.4} cy={0} r={1.7} />
+      </>
+    ),
+    spin: (
+      <>
+        <path d="M6.4 -2.2A6.6 6.6 0 1 0 2.2 6.4" fill="none" strokeWidth={2.3} />
+        <path d="M6.6 1.2L2.2 6.4 7.6 7.2z" />
+      </>
+    ),
+    drone: (
+      <>
+        <ellipse cx={-3.6} cy={0.4} rx={4.2} ry={2.7} />
+        <ellipse cx={3.8} cy={-1.2} rx={3.4} ry={2.2} />
+        <path d="M-3.6 3v2.6M3.8 1v2.6" fill="none" strokeWidth={1.6} />
+      </>
+    ),
+    lightning: <path d="M2.6 -8.2L-3.6 1.2h4.2L-1.2 8.2 6.4 -1.6H2.2z" />,
+    zap: (
+      <>
+        <path d="M-1.4 -7.4L-5.2 0h2.8l-1.4 5.6 4.6-6.4H-1z" />
+        <path d="M4.2 -5.6L0.6 1.2h2.6L2 6.2l4.2-5.8H4.6z" />
+      </>
+    ),
+    tornado: <path d="M-7.2 -7.2h14.4l-2.6 4.2h-9.2l2.2 3.6H-4.2L-2.4 4.2h4.8L0 8.2z" />,
+    twist: (
+      <>
+        <path d="M-6.4 -7.2c8 2.4 8 8.4 0 11" fill="none" strokeWidth={2.3} />
+        <path d="M6.4 7.2c-8 -2.4-8 -8.4 0 -11" fill="none" strokeWidth={2.3} />
+      </>
+    ),
+    geyser: (
+      <>
+        <ellipse cx={0} cy={5.6} rx={6.6} ry={2.2} />
+        <path d="M-2.2 4.8L0 -7.6 2.2 4.8z" />
+        <path d="M-4.6 -1.2L0 -6.4 4.6 -1.2" fill="none" strokeWidth={1.6} />
+      </>
+    ),
+    spore: (
+      <>
+        <circle cx={0} cy={0} r={3.1} />
+        <circle cx={0} cy={-6.2} r={1.5} />
+        <circle cx={5.4} cy={-3.1} r={1.5} />
+        <circle cx={5.4} cy={3.1} r={1.5} />
+        <circle cx={0} cy={6.2} r={1.5} />
+        <circle cx={-5.4} cy={3.1} r={1.5} />
+        <circle cx={-5.4} cy={-3.1} r={1.5} />
+      </>
+    ),
+    rainbow: (
+      <>
+        <path d="M-8 4.2a8 8 0 0 1 16 0" fill="none" strokeWidth={2.5} />
+        <path d="M-4.6 4.2a4.6 4.6 0 0 1 9.2 0" fill="none" strokeWidth={2.2} />
+      </>
+    ),
+    hail: (
+      <>
+        <path d="M-4.6 -6.4l2.3 3.6-2.3 3.6-2.3-3.6z" />
+        <path d="M4.8 -4.2l2.1 3.2-2.1 3.2-2.1-3.2z" />
+        <path d="M0 1.2l2.3 3.6L0 8.4l-2.3-3.6z" />
+      </>
+    ),
+    monsoon: (
+      <>
+        <path d="M-7.2 -1.2a3.4 3.4 0 0 1 3.2-4.2 3.6 3.6 0 0 1 6.6 1.2 3 3 0 0 1 2.6 3.2z" />
+        <path d="M-4.2 2.4c.7 2 1.2 3 1.2 3.8a1.2 1.2 0 1 1-2.4 0c0-.8.5-1.8 1.2-3.8z" />
+        <path d="M0 1.6c.7 2 1.2 3 1.2 3.8a1.2 1.2 0 1 1-2.4 0c0-.8.5-1.8 1.2-3.8z" />
+        <path d="M4.2 2.4c.7 2 1.2 3 1.2 3.8a1.2 1.2 0 1 1-2.4 0c0-.8.5-1.8 1.2-3.8z" />
       </>
     ),
     blush: (
       <>
-        <circle cx={-5} cy={2} r={2.2} fill="none" />
-        <circle cx={5} cy={2} r={2.2} fill="none" />
-        <path d="M-3 -4q3 -3 6 0" fill="none" />
+        <circle cx={-3.6} cy={1.4} r={2.3} />
+        <circle cx={3.6} cy={1.4} r={2.3} />
+        <path d="M-3.2 -4.2c2-2.6 4.4-2.6 6.4 0" fill="none" strokeWidth={1.7} />
       </>
     ),
-    bow: (
-      <>
-        <path d="M0 0C-8-6-9 4 0 0c9 4 8-6 0 0z" fill="none" />
-        <path d="M0 -3v6" fill="none" />
-      </>
-    ),
+    bow: <path d="M0 -0.4C-7.4 -6.4-8.4 4.2 0 -0.4 8.4 4.2 7.4 -6.4 0 -0.4zM-1.3 -3.4h2.6v6.8h-2.6z" />,
     trail: (
       <>
-        <path d="M-4 -7c1.6 2.4 2.4 4.6 2.4 6a2.4 2.4 0 1 1-4.8 0c0-1.4.8-3.6 2.4-6z" fill="none" />
-        <path d="M4 -3c1.6 2.4 2.4 4.6 2.4 6a2.4 2.4 0 1 1-4.8 0c0-1.4.8-3.6 2.4-6z" fill="none" />
+        <path d="M-3.2 -7.4c1.4 2.6 2.2 4.2 2.2 5.4a2.2 2.2 0 1 1-4.4 0c0-1.2.8-2.8 2.2-5.4z" />
+        <path d="M3.4 -2.2c1.4 2.6 2.2 4.2 2.2 5.4a2.2 2.2 0 1 1-4.4 0c0-1.2.8-2.8 2.2-5.4z" />
       </>
     ),
     buddy: (
       <>
-        <ellipse cx={0} cy={2} rx={6} ry={5} fill="none" />
-        <path d="M-4 -3l-1 -4 4 2M4 -3l1 -4-4 2" fill="none" />
+        <circle cx={0} cy={1.2} r={4.6} />
+        <circle cx={-4.6} cy={-2.6} r={2} />
+        <circle cx={4.6} cy={-2.6} r={2} />
+        <circle cx={-1.6} cy={0.6} r={0.7} fill="#241c30" stroke="none" />
+        <circle cx={1.6} cy={0.6} r={0.7} fill="#241c30" stroke="none" />
       </>
     ),
-    sparkle: (
-      <>
-        <path d="M0 -9l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="none" />
-        <path d="M7 -7l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" fill="none" strokeWidth={1.1} />
-      </>
-    ),
+    sparkle: <path d="M0 -8.4l1.6 5.2 5.6 1.6-5.6 1.6L0 8.4l-1.6-5.2L-7.2 -1.6l5.6-1.6z" />,
     hum: (
       <>
-        <path d="M-3 6V-6l7-2v8" fill="none" />
-        <circle cx={-5} cy={6} r={2.2} fill="none" />
-        <circle cx={2} cy={-2} r={2.2} fill="none" />
+        <path d="M-1.2 4.8V-5.2l7.2-2.2v7.6" fill="none" strokeWidth={1.8} />
+        <circle cx={-3.2} cy={5.6} r={2.3} />
+        <circle cx={4.2} cy={-0.6} r={2.3} />
       </>
     ),
     press: (
       <>
-        <path d="M0 8V0" fill="none" />
-        <path d="M0 0C-7 0-8-7-2-6C-2-3 0 0 0 0C0 0 2-3 2-6C8-7 7 0 0 0" fill="none" />
-        <path d="M-6 8h12" fill="none" />
+        <path d="M0 7.6V1.4" fill="none" strokeWidth={1.8} />
+        <path d="M0 1.4C-6.2 1.4-7.2 -5.2-2.2 -6.2-2.2 -2.4 0 1.4 0 1.4 0 1.4 2.2 -2.4 2.2 -6.2 7.2 -5.2 6.2 1.4 0 1.4z" />
+        <path d="M-6.4 7.4h12.8" fill="none" strokeWidth={1.8} />
       </>
     ),
   };

@@ -1403,9 +1403,20 @@ canvas {
 }
 
 .tree-node__icon-plate {
-  fill: #ffffff;
-  stroke: #2a2540;
-  stroke-width: 1.8;
+  fill: color-mix(in srgb, var(--branch-color) 82%, #ffffff);
+  stroke: #241c30;
+  stroke-width: 1.5;
+}
+
+.workshop-spoke-label {
+  font-family: "Pixelify Sans", ui-rounded, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  pointer-events: none;
+  stroke: rgba(16, 12, 24, 0.88);
+  stroke-width: 5px;
+  paint-order: stroke fill;
 }
 
 .tree-node--owned .tree-node__cloud,

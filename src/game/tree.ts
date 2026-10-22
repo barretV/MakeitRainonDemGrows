@@ -1055,7 +1055,17 @@ export interface TreePoint {
   y: number;
 }
 
-export const TREE_CANVAS = { w: 1240, h: 900 };
+/** Filled in by layoutTree so the workshop frame always wraps the flower. */
+export const TREE_CANVAS = { w: 1600, h: 1380 };
+
+export interface SpokeLabel {
+  branch: Branch;
+  x: number;
+  y: number;
+}
+
+/** One quiet name past the tip of each straight spoke. */
+export let spokeLabels: SpokeLabel[] = [];
 
 export const BRANCH_COLORS: Record<Branch, string> = {
   core: '#ffe56a',
@@ -1068,114 +1078,235 @@ export const BRANCH_COLORS: Record<Branch, string> = {
   bloom: '#ffd9f0',
 };
 
-/** One spoke of the web: a chain of nodes radiating from the cloud. */
-interface Spoke {
-  /** Direction in radians (0 = right, -PI/2 = up). */
-  angle: number;
-  /** Node ids, first one nearest the centre. */
+/**
+ * Six straight spokes, one per branch that actually grows out of Cloud Puff.
+ * Spark upgrades hang beside the node that unlocks them, so their vines stay
+ * short instead of cutting across the flower. `side` 1 points toward the next
+ * spoke; tails continue a side branch outward in a column.
+ */
+interface SpokeDef {
+  branch: Branch;
   ids: readonly NodeId[];
-  /** Distance between two nodes on this spoke. */
-  step: number;
-  /** How much the spoke curls as it goes outward. */
-  drift: number;
-  /** Nodes that hang beside their parent instead of continuing the chain. */
-  buds?: ReadonlyArray<{ id: NodeId; after: NodeId; turn: number }>;
+  buds: ReadonlyArray<{ id: NodeId; after: NodeId; side: 1 | -1 }>;
+  tails?: ReadonlyArray<{ id: NodeId; after: NodeId }>;
 }
 
-/**
- * The upgrade web: Cloud Puff sits in the middle and every kind of power runs
- * out along its own spoke, so a finished build reads like a flower.
- */
-const SPOKES: readonly Spoke[] = [
+const SPOKES: readonly SpokeDef[] = [
   {
-    angle: -Math.PI / 2,
+    branch: 'pour',
     ids: ['bottle', 'flask', 'reservoir', 'linger', 'glacier'],
-    step: 74,
-    drift: 0.012,
+    buds: [],
   },
   {
-    angle: -Math.PI / 2 + 0.92,
+    branch: 'rain',
     ids: ['drizzle', 'specks', 'mist', 'soak', 'downpour'],
-    step: 72,
-    drift: 0.03,
     buds: [
-      { id: 'flow', after: 'soak', turn: -0.42 },
-      { id: 'spring', after: 'mist', turn: -0.4 },
+      { id: 'spore', after: 'specks', side: 1 },
+      { id: 'spring', after: 'mist', side: -1 },
+      { id: 'hail', after: 'mist', side: 1 },
+      { id: 'flow', after: 'soak', side: -1 },
+      { id: 'geyser', after: 'soak', side: 1 },
+      { id: 'monsoon', after: 'downpour', side: 1 },
     ],
   },
   {
-    angle: 0.12,
-    ids: ['geyser', 'spore', 'rainbow', 'hail', 'monsoon'],
-    step: 76,
-    drift: -0.028,
-  },
-  {
-    angle: Math.PI / 2 + 0.22,
+    branch: 'reach',
     ids: ['reach', 'circle', 'wide', 'horizon'],
-    step: 80,
-    drift: -0.03,
     buds: [
-      { id: 'waterbomb', after: 'circle', turn: 0.4 },
-      { id: 'mirage', after: 'wide', turn: 0.38 },
-      { id: 'tide', after: 'horizon', turn: 0.46 },
+      { id: 'waterbomb', after: 'circle', side: -1 },
+      { id: 'mirage', after: 'wide', side: 1 },
+    ],
+    tails: [{ id: 'tide', after: 'waterbomb' }],
+  },
+  {
+    branch: 'fortune',
+    ids: ['charm', 'dew', 'bounty', 'crit'],
+    buds: [
+      { id: 'rainbow', after: 'charm', side: -1 },
+      { id: 'harvest', after: 'bounty', side: -1 },
+      { id: 'purify', after: 'bounty', side: 1 },
     ],
   },
   {
-    angle: Math.PI - 0.28,
-    ids: ['charm', 'dew', 'bounty', 'crit', 'harvest'],
-    step: 78,
-    drift: 0.03,
-    buds: [{ id: 'purify', after: 'bounty', turn: 0.42 }],
-  },
-  {
-    angle: Math.PI + 0.42,
-    ids: ['sprinkler', 'lightning', 'zap', 'tornado', 'twist'],
-    step: 76,
-    drift: 0.034,
+    branch: 'storm',
+    ids: ['sprinkler', 'lightning', 'zap'],
     buds: [
-      { id: 'spin', after: 'sprinkler', turn: -0.42 },
-      { id: 'drone', after: 'sprinkler', turn: 0.48 },
+      { id: 'spin', after: 'sprinkler', side: -1 },
+      { id: 'drone', after: 'sprinkler', side: 1 },
+      { id: 'tornado', after: 'lightning', side: -1 },
     ],
+    tails: [{ id: 'twist', after: 'tornado' }],
   },
   {
-    angle: -Math.PI + 0.42,
+    branch: 'bloom',
     ids: ['blush', 'bow', 'trail', 'buddy', 'sparkle', 'hum'],
-    step: 70,
-    drift: -0.03,
-    buds: [{ id: 'press', after: 'blush', turn: 0.44 }],
+    buds: [{ id: 'press', after: 'blush', side: 1 }],
   },
 ];
 
-/** Pixel layout for the upgrade web: a hub with seven spokes. */
+const DROP_NODES = new Set<NodeId>([
+  'drizzle', 'specks', 'mist', 'soak', 'downpour', 'flow', 'spring',
+  'charm', 'dew', 'bounty', 'crit', 'harvest', 'purify',
+]);
+
+const GATE_NODES = new Set<NodeId>([
+  'bottle', 'drizzle', 'reach', 'charm', 'sprinkler', 'lightning', 'tornado',
+]);
+
+/** Match TreeNodeCloud sizes, plus room for the badge above and the rank chip. */
+function layoutSize(id: NodeId): { w: number; h: number } {
+  if (id === 'puff') return { w: 88, h: 58 };
+  const drop = DROP_NODES.has(id);
+  const gate = GATE_NODES.has(id);
+  if (drop) return gate ? { w: 58, h: 74 } : { w: 54, h: 70 };
+  return gate ? { w: 66, h: 46 } : { w: 60, h: 42 };
+}
+
+interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+function paddedBox(id: NodeId, x: number, y: number): Box {
+  const { w, h } = layoutSize(id);
+  return { x0: x - w / 2 - 8, y0: y - h / 2 - 16, x1: x + w / 2 + 14, y1: y + h / 2 + 10 };
+}
+
+function boxGap(a: Box, b: Box): number {
+  const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+  const oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  if (ox >= 0 && oy >= 0) return -Math.min(ox, oy);
+  if (ox >= 0) return -oy;
+  if (oy >= 0) return -ox;
+  return Math.hypot(-ox, -oy);
+}
+
+const CLEAR_GAP = 14;
+
+/** Pixel layout: a hub, six even spokes, and side columns that follow each parent. */
 export function layoutTree(): TreePoint[] {
-  const center = { x: TREE_CANVAS.w / 2, y: TREE_CANVAS.h / 2 };
-  const points: TreePoint[] = [{ id: 'puff', x: center.x, y: center.y }];
-  // The web is a little wider than tall so it fills a 16:9 workshop panel.
-  const squash = 0.82;
-  for (const spoke of SPOKES) {
-    const place = new Map<NodeId, { x: number; y: number }>();
+  const squash = 0.92;
+  const first = 198;
+  const cloudStep = 120;
+  const dropStep = 148;
+  const count = SPOKES.length;
+  const at = new Map<NodeId, { x: number; y: number }>();
+  const spokeOf = new Map<NodeId, number>();
+  const boxes: Box[] = [];
+  const basis: { tx: number; ty: number; rx: number; ry: number; step: number }[] = [];
+
+  const put = (id: NodeId, x: number, y: number, spoke: number) => {
+    at.set(id, { x, y });
+    spokeOf.set(id, spoke);
+    boxes.push(paddedBox(id, x, y));
+  };
+
+  put('puff', 0, 0, 0);
+
+  SPOKES.forEach((spoke, s) => {
+    const angle = -Math.PI / 2 + s * ((2 * Math.PI) / count);
+    const step = DROP_NODES.has(spoke.ids[0]!) ? dropStep : cloudStep;
+    let tx = -Math.sin(angle);
+    let ty = Math.cos(angle) * squash;
+    const tl = Math.hypot(tx, ty) || 1;
+    tx /= tl;
+    ty /= tl;
+    let rx = Math.cos(angle);
+    let ry = Math.sin(angle) * squash;
+    const rl = Math.hypot(rx, ry) || 1;
+    rx /= rl;
+    ry /= rl;
+    basis.push({ tx, ty, rx, ry, step });
     spoke.ids.forEach((id, i) => {
-      const angle = spoke.angle + spoke.drift * i;
-      const dist = 118 + i * spoke.step;
-      place.set(id, {
-        x: center.x + Math.cos(angle) * dist,
-        y: center.y + Math.sin(angle) * dist * squash,
-      });
+      const dist = first + i * step;
+      put(id, Math.cos(angle) * dist, Math.sin(angle) * dist * squash, s);
     });
-    for (const [id, p] of place) points.push({ id, x: p.x, y: p.y });
-    for (const bud of spoke.buds ?? []) {
-      const parent = place.get(bud.after);
-      if (!parent) continue;
-      const angle = spoke.angle + spoke.drift * (spoke.ids.indexOf(bud.after) + 1) + bud.turn;
-      const dist = 118 + (spoke.ids.indexOf(bud.after) + 1) * spoke.step;
-      points.push({
-        id: bud.id,
-        x: center.x + Math.cos(angle) * dist,
-        y: center.y + Math.sin(angle) * dist * squash,
-      });
+  });
+
+  const clearOf = (id: NodeId, x: number, y: number) => {
+    const box = paddedBox(id, x, y);
+    return boxes.every((other) => boxGap(box, other) >= CLEAR_GAP);
+  };
+
+  const parkBeside = (id: NodeId, after: NodeId, side: 1 | -1) => {
+    const spoke = spokeOf.get(after);
+    const parent = at.get(after);
+    if (spoke == null || !parent) return;
+    const { tx, ty, rx, ry } = basis[spoke]!;
+    for (const out of [0, 24, 52]) {
+      for (const sign of [side, -side] as const) {
+        for (let beside = 76; beside <= 240; beside += 4) {
+          const x = parent.x + tx * sign * beside + rx * out;
+          const y = parent.y + ty * sign * beside + ry * out;
+          if (!clearOf(id, x, y)) continue;
+          put(id, x, y, spoke);
+          return;
+        }
+      }
+    }
+    put(id, parent.x + tx * side * 200, parent.y + ty * side * 200, spoke);
+  };
+
+  for (const spoke of SPOKES) {
+    for (const bud of spoke.buds) parkBeside(bud.id, bud.after, bud.side);
+  }
+
+  for (const spoke of SPOKES) {
+    for (const tail of spoke.tails ?? []) {
+      const spokeIndex = spokeOf.get(tail.after);
+      const parent = at.get(tail.after);
+      if (spokeIndex == null || !parent) continue;
+      const { tx, ty, rx, ry, step } = basis[spokeIndex]!;
+      let placed = false;
+      for (const extra of [0, 16, -16, 32, -32]) {
+        if (placed) break;
+        for (const mul of [1, 1.15, 0.85, 1.35]) {
+          const x = parent.x + rx * step * mul + tx * extra;
+          const y = parent.y + ry * step * mul + ty * extra;
+          if (!clearOf(tail.id, x, y)) continue;
+          put(tail.id, x, y, spokeIndex);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) put(tail.id, parent.x + rx * step, parent.y + ry * step, spokeIndex);
     }
   }
-  return points;
+
+  const labels: { branch: Branch; x: number; y: number }[] = [];
+  SPOKES.forEach((spoke, s) => {
+    const tip = at.get(spoke.ids[spoke.ids.length - 1]!);
+    if (!tip) return;
+    const { rx, ry } = basis[s]!;
+    labels.push({ branch: spoke.branch, x: tip.x + rx * 96, y: tip.y + ry * 96 });
+  });
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [id, p] of at) {
+    const box = paddedBox(id, p.x, p.y);
+    minX = Math.min(minX, box.x0);
+    minY = Math.min(minY, box.y0);
+    maxX = Math.max(maxX, box.x1);
+    maxY = Math.max(maxY, box.y1);
+  }
+  for (const label of labels) {
+    minX = Math.min(minX, label.x - 78);
+    maxX = Math.max(maxX, label.x + 78);
+    minY = Math.min(minY, label.y - 18);
+    maxY = Math.max(maxY, label.y + 18);
+  }
+  const margin = 72;
+  TREE_CANVAS.w = Math.ceil(maxX - minX + margin * 2);
+  TREE_CANVAS.h = Math.ceil(maxY - minY + margin * 2);
+  const dx = margin - minX;
+  const dy = margin - minY;
+  spokeLabels = labels.map((label) => ({ branch: label.branch, x: label.x + dx, y: label.y + dy }));
+  return [...at.entries()].map(([id, p]) => ({ id, x: p.x + dx, y: p.y + dy }));
 }
 
 export interface TreeNodeView {
@@ -1276,3 +1407,5 @@ export function abilityOn(ranks: Ranks, which: 'sprinkler' | 'lightning' | 'torn
 export function worldCount(): number {
   return GLOBE_WORLD + 1;
 }
+
+layoutTree();
